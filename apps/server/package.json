@@ -10,7 +10,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sandbox": "tsx scripts/sandbox.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -2,7 +2,7 @@
 
 Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A especificação completa está em [SPEC.md](SPEC.md).
 
-**Status:** Fase 0 (fundação): monorepo, API com login, banco e PWA instalável.
+**Status:** Fase 0 concluída (login no celular via HTTPS). Fase 1 em andamento: cadastros prontos (categorias, produtos, mesas, impressoras, usuários, configurações).
 
 ## Estrutura
 
@@ -107,3 +107,4 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
 | `pnpm db:generate` | Gera migration após alterar `apps/server/src/db/schema.ts` |
 | `pnpm db:migrate` | Aplica migrations (a API também aplica ao iniciar) |
 | `pnpm db:seed` | Cria o usuário admin, se não existir |
+| `pnpm --filter @sistema-bar/server sandbox` | API com banco em memória para testes (precisa de `SANDBOX_PASSWORD`; usuário `teste`) |

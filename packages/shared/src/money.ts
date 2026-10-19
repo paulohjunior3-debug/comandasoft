@@ -15,6 +15,32 @@ export function formatBRL(cents: Cents): string {
   return brl.format(cents / 100).replace(/ /g, ' ');
 }
 
+/**
+ * Converte o que o usuário digita em centavos: "12,50", "R$ 1.234,56", "12.5", "12" → inteiro.
+ * Retorna null se não for um valor válido. Nunca passa por float.
+ */
+export function parseBRL(input: string): Cents | null {
+  let s = input.replace(/R\$|\s/g, '');
+  if (s === '') return null;
+  if (s.includes(',')) {
+    s = s.replace(/\./g, '').replace(',', '.'); // padrão brasileiro: ponto é milhar
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+    s = s.replace(/\./g, ''); // "1.234" sem vírgula = mil duzentos e trinta e quatro
+  }
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(s);
+  if (!match) return null;
+  const reais = Number(match[1]);
+  const centavos = Number((match[2] ?? '').padEnd(2, '0'));
+  const total = reais * 100 + centavos;
+  return Number.isSafeInteger(total) ? total : null;
+}
+
+/** Centavos → texto para campo de edição: 1250 → "12,50" */
+export function centsToInput(cents: Cents): string {
+  assertCents(cents);
+  return (cents / 100).toFixed(2).replace('.', ',');
+}
+
 /** Aplica percentual em pontos-base (1000 = 10%) com arredondamento meio-para-cima. */
 export function percentOf(cents: Cents, basisPoints: number): Cents {
   assertCents(cents);

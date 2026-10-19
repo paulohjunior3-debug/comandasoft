@@ -9,12 +9,16 @@ import { ZodError } from 'zod';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
+import { HttpError, mapDbError } from './lib/errors';
+import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
+import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 
 export interface AppDeps {
   db: Db;
   tokens: TokenService;
   guards: Guards;
+  listInstalledPrinters: ListInstalledPrinters;
 }
 
 export interface BuildAppOptions {
@@ -23,14 +27,22 @@ export interface BuildAppOptions {
   fastify?: FastifyServerOptions;
   /** Pasta do build da PWA. Padrão: apps/web/dist, se existir. `false` desliga. */
   webDist?: string | false;
+  /** Substituível nos testes; padrão: impressoras do Windows. */
+  listInstalledPrinters?: ListInstalledPrinters;
 }
 
 const defaultWebDist = fileURLToPath(new URL('../../web/dist', import.meta.url));
 
-export async function buildApp({ db, jwtSecret, fastify, webDist = defaultWebDist }: BuildAppOptions) {
+export async function buildApp({
+  db,
+  jwtSecret,
+  fastify,
+  webDist = defaultWebDist,
+  listInstalledPrinters = cachedLister(listWindowsPrinters),
+}: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
-  const deps: AppDeps = { db, tokens, guards: createGuards(tokens) };
+  const deps: AppDeps = { db, tokens, guards: createGuards(tokens, db), listInstalledPrinters };
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -39,6 +51,13 @@ export async function buildApp({ db, jwtSecret, fastify, webDist = defaultWebDis
         message: error.issues[0]?.message ?? 'Dados inválidos.',
         issues: error.issues,
       });
+    }
+    if (error instanceof HttpError) {
+      return reply.code(error.statusCode).send({ error: error.code, message: error.message });
+    }
+    const dbError = mapDbError(error);
+    if (dbError) {
+      return reply.code(dbError.statusCode).send({ error: dbError.code, message: dbError.message });
     }
     const err = error as { statusCode?: number; code?: string; message: string };
     if (err.statusCode === 429) {
@@ -61,6 +80,7 @@ export async function buildApp({ db, jwtSecret, fastify, webDist = defaultWebDis
         return { status: 'ok', db: 'ok', time: new Date().toISOString() };
       });
       await api.register((auth) => authRoutes(auth, deps), { prefix: '/auth' });
+      await api.register((admin) => adminRoutes(admin, deps), { prefix: '/admin' });
     },
     { prefix: '/api' },
   );

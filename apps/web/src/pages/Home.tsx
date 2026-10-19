@@ -1,11 +1,12 @@
 import { ROLE_LABELS, type Role } from '@sistema-bar/shared';
+import { Link } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useOnline } from '../lib/useOnline';
 
-const AREAS: { title: string; description: string; roles: Role[] }[] = [
+const AREAS: { title: string; description: string; roles: Role[]; to?: string }[] = [
   { title: 'Garçom', description: 'Mapa de mesas, comandas e pedidos', roles: ['GARCOM', 'GERENTE'] },
   { title: 'Caixa', description: 'Pagamentos, sangria e fechamento', roles: ['CAIXA', 'GERENTE'] },
-  { title: 'Administração', description: 'Cardápio, mesas, impressoras e usuários', roles: [] },
+  { title: 'Administração', description: 'Cardápio, mesas, impressoras e usuários', roles: [], to: '/admin' },
 ];
 
 export function HomePage() {
@@ -35,13 +36,26 @@ export function HomePage() {
       </header>
 
       <ul className="grid gap-3 sm:grid-cols-2">
-        {areas.map((area) => (
-          <li key={area.title} className="rounded-xl bg-slate-900 p-4">
-            <p className="font-semibold">{area.title}</p>
-            <p className="text-sm text-slate-400">{area.description}</p>
-            <p className="mt-2 text-xs text-amber-400">Disponível na fase 1</p>
-          </li>
-        ))}
+        {areas.map((area) => {
+          const content = (
+            <>
+              <p className="font-semibold">{area.title}</p>
+              <p className="text-sm text-slate-400">{area.description}</p>
+              {!area.to && <p className="mt-2 text-xs text-amber-400">Em desenvolvimento (fase 1)</p>}
+            </>
+          );
+          return (
+            <li key={area.title}>
+              {area.to ? (
+                <Link to={area.to} className="block h-full rounded-xl bg-slate-900 p-4 hover:bg-slate-800 active:bg-slate-800">
+                  {content}
+                </Link>
+              ) : (
+                <div className="h-full rounded-xl bg-slate-900 p-4 opacity-70">{content}</div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </main>
   );

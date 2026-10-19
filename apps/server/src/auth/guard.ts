@@ -1,5 +1,8 @@
 import type { AuthUser, Role } from '@sistema-bar/shared';
+import { eq } from 'drizzle-orm';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { Db } from '../db/client';
+import { users } from '../db/schema';
 import type { TokenService } from './tokens';
 
 declare module 'fastify' {
@@ -8,18 +11,29 @@ declare module 'fastify' {
   }
 }
 
-export function createGuards(tokens: TokenService) {
+export function createGuards(tokens: TokenService, db: Db) {
   async function authenticate(request: FastifyRequest, reply: FastifyReply) {
     const header = request.headers.authorization;
     const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
     if (!token) {
       return reply.code(401).send({ error: 'UNAUTHENTICATED', message: 'Faça login para continuar.' });
     }
+    let claims: AuthUser;
     try {
-      request.user = await tokens.verifyAccess(token);
+      claims = await tokens.verifyAccess(token);
     } catch {
       return reply.code(401).send({ error: 'UNAUTHENTICATED', message: 'Sessão expirada.' });
     }
+    // Perfil e status vêm do banco a cada requisição: desativar ou rebaixar alguém vale na hora,
+    // sem esperar o token de acesso expirar.
+    const [current] = await db
+      .select({ id: users.id, name: users.name, login: users.login, role: users.role, active: users.active })
+      .from(users)
+      .where(eq(users.id, claims.id));
+    if (!current?.active) {
+      return reply.code(401).send({ error: 'UNAUTHENTICATED', message: 'Sessão expirada.' });
+    }
+    request.user = { id: current.id, name: current.name, login: current.login, role: current.role };
   }
 
   /** Admin sempre passa; os demais perfis precisam estar na lista. */

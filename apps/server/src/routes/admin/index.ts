@@ -1,0 +1,20 @@
+import type { FastifyInstance } from 'fastify';
+import type { AppDeps } from '../../app';
+import { categoryRoutes } from './categories';
+import { printerRoutes } from './printers';
+import { productRoutes } from './products';
+import { settingsRoutes } from './settings';
+import { tableRoutes } from './tables';
+import { userRoutes } from './users';
+
+/** Painel administrativo: somente perfil ADMIN (SPEC 4). */
+export async function adminRoutes(app: FastifyInstance, deps: AppDeps) {
+  app.addHook('preHandler', deps.guards.requireRole());
+
+  await app.register((r) => categoryRoutes(r, deps), { prefix: '/categories' });
+  await app.register((r) => productRoutes(r, deps), { prefix: '/products' });
+  await app.register((r) => tableRoutes(r, deps), { prefix: '/tables' });
+  await app.register((r) => printerRoutes(r, deps), { prefix: '/printers' });
+  await app.register((r) => userRoutes(r, deps), { prefix: '/users' });
+  await app.register((r) => settingsRoutes(r, deps), { prefix: '/settings' });
+}
