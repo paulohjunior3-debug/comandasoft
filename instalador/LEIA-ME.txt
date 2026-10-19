@@ -54,6 +54,8 @@ inicial de novo.
 PROBLEMAS
 ---------
 - Log do servidor: C:\SistemaBar\data\logs\servidor.log
+  (se o servidor nem chegou a abrir o log, veja servidor-erro.log na mesma pasta)
+- Registros da instalação/atualização: data\logs\instalacao.log e sistema-bar-atualizacao-*.log
 - Fila de impressão: no sistema, Administração > Fila de impressão
 - Servidor parado: Agendador de Tarefas > "Sistema Bar - Servidor" > Executar
 - Remover da inicialização (mantém os dados): desinstalar.ps1 como administrador

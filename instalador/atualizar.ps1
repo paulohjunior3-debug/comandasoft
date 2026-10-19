@@ -6,6 +6,9 @@ param([string]$Destino = 'C:\SistemaBar')
 . (Join-Path $PSScriptRoot 'comum.ps1')
 Exigir-Administrador
 
+$global:SistemaBarLog = Join-Path $env:TEMP "sistema-bar-atualizacao-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+try { Start-Transcript -Path $global:SistemaBarLog -Force | Out-Null } catch {}
+
 $origem = $PSScriptRoot
 $nova = (Get-Content (Join-Path $origem 'VERSAO.txt')).Trim()
 if (-not (Test-Path (Join-Path $Destino '.env'))) { Falhar "Não há instalação em $Destino. Use o INSTALAR.bat." }
@@ -45,3 +48,6 @@ Passo 'Iniciando o servidor'
 Start-ScheduledTask -TaskName $TarefaServidor
 if (-not (Aguardar-Servidor $porta)) { Falhar "O servidor não respondeu. Veja $Destino\data\logs\servidor.log" }
 Ok "Sistema Bar $nova no ar"
+
+try { Stop-Transcript | Out-Null } catch {}
+Copy-Item -Force $global:SistemaBarLog (Join-Path $Destino 'data\logs\') -ErrorAction SilentlyContinue

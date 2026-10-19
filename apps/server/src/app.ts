@@ -38,6 +38,8 @@ export interface AppDeps {
 export interface BuildAppOptions {
   db: Db;
   jwtSecret: string;
+  /** Nível do log de cada requisição. Instalado: 'warn' (só avisos e erros), para o log não encher. */
+  requestLogLevel?: 'debug' | 'info' | 'warn';
   cpfSecret: string;
   fastify?: FastifyServerOptions;
   /** Pasta do build da PWA. Padrão: apps/web/dist, se existir. `false` desliga. */
@@ -54,6 +56,7 @@ export const defaultEmulatorDir = paths.emulatorDir;
 export async function buildApp({
   db,
   jwtSecret,
+  requestLogLevel = 'info',
   cpfSecret,
   fastify,
   webDist = defaultWebDist,
@@ -114,13 +117,19 @@ export async function buildApp({
       await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
       await api.register((cashier) => cashierRoutes(cashier, deps), { prefix: '/cashier' });
     },
-    { prefix: '/api' },
+    { prefix: '/api', logLevel: requestLogLevel },
   );
 
   // Em produção o próprio Fastify serve a PWA buildada (SPA: rotas desconhecidas caem no index.html).
   const servesWeb = webDist !== false && existsSync(webDist);
   if (servesWeb) {
-    await app.register(fastifyStatic, { root: webDist, wildcard: false });
+    await app.register(fastifyStatic, { root: webDist, wildcard: false, logLevel: requestLogLevel });
+    // Rotas do app (/caixa, /garcom/mesa/…) devolvem o index.html, com o mesmo nível de log.
+    app.get('/*', { logLevel: requestLogLevel }, (request, reply) =>
+      request.url.startsWith('/api/')
+        ? reply.code(404).send({ error: 'NOT_FOUND', message: 'Rota não encontrada.' })
+        : reply.sendFile('index.html'),
+    );
   }
   app.setNotFoundHandler((request, reply) => {
     if (servesWeb && request.method === 'GET' && !request.url.startsWith('/api/')) {

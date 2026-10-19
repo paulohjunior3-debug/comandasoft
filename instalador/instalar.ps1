@@ -8,18 +8,36 @@
 #   4. Cria as tabelas e o usuário admin (a senha aparece uma única vez)
 #   5. Libera a porta no firewall (só para a rede local)
 #   6. Agenda o servidor para iniciar com o Windows e o backup diário
+#
+# Opções (todas opcionais):
+#   -Destino C:\SistemaBar     pasta da instalação
+#   -Porta 3000                porta HTTPS
+#   -Banco sistema_bar         nome do banco a criar
+#   -ConexaoArquivo arquivo    arquivo com a DATABASE_URL de um banco já preparado (PC onde o
+#                              PostgreSQL já existe e alguém criou o banco e o usuário antes);
+#                              com ele, o instalador não pede a senha do postgres
+#   -ModoImpressao windows     "windows" (impressoras reais) ou "emulador" (sem impressora)
 param(
   [string]$Destino = 'C:\SistemaBar',
-  [int]$Porta = 3000
+  [int]$Porta = 3000,
+  [string]$Banco = 'sistema_bar',
+  [string]$ConexaoArquivo = '',
+  [ValidateSet('windows', 'emulador')][string]$ModoImpressao = 'windows'
 )
 
 . (Join-Path $PSScriptRoot 'comum.ps1')
 Exigir-Administrador
 
+# Registro da instalação para suporte (a senha do admin não entra: o log para antes do resumo).
+# Nome com data/hora: uma tentativa anterior com a janela ainda aberta não trava o arquivo.
+$logInstalacao = Join-Path $env:TEMP "sistema-bar-instalacao-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+$global:SistemaBarLog = $logInstalacao
+try { Start-Transcript -Path $logInstalacao -Force | Out-Null } catch {}
+
 $origem = $PSScriptRoot
 $versao = (Get-Content (Join-Path $origem 'VERSAO.txt')).Trim()
 Write-Host "Sistema Bar $versao - instalação" -ForegroundColor White
-Write-Host "Pasta: $Destino   Porta: $Porta"
+Write-Host "Pasta: $Destino   Porta: $Porta   Impressão: $ModoImpressao"
 
 if (Test-Path (Join-Path $Destino '.env')) {
   Falhar "Já existe uma instalação em $Destino. Para atualizar, use o ATUALIZAR.bat."
@@ -48,7 +66,17 @@ Ok "Node.js $(& $node --version) em $node"
 # ---------- 3. PostgreSQL ----------
 Passo 'PostgreSQL'
 $pgBin = Pasta-PostgreSQL
-if ($pgBin) {
+$databaseUrl = $null
+if ($ConexaoArquivo) {
+  # Banco preparado antes: só confere se a conexão funciona.
+  if (-not (Test-Path $ConexaoArquivo)) { Falhar "Arquivo de conexão não encontrado: $ConexaoArquivo" }
+  $databaseUrl = (Get-Content $ConexaoArquivo -Raw).Trim()
+  if (-not $pgBin) { Falhar 'PostgreSQL não encontrado neste PC.' }
+  # No Windows o psql não aceita opções depois do endereço do banco: o endereço vai em -d, por último.
+  Rodar-Nativo { & (Join-Path $pgBin 'psql.exe') -tAc 'select 1' -d $databaseUrl 2>$null } | Out-Null
+  if ($LASTEXITCODE -ne 0) { Falhar 'Não consegui conectar no banco informado no arquivo de conexão.' }
+  Ok 'Conectado ao banco preparado'
+} elseif ($pgBin) {
   Aviso 'O PostgreSQL já está instalado neste PC.'
   $seguro = Read-Host 'Digite a senha do usuário "postgres" (definida na instalação dele)' -AsSecureString
   $senhaPg = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro))
@@ -61,16 +89,20 @@ if ($pgBin) {
   $pgBin = Pasta-PostgreSQL
   if (-not $pgBin) { Falhar 'PostgreSQL não foi encontrado depois da instalação.' }
 }
-$env:PGPASSWORD = $senhaPg
-& (Join-Path $pgBin 'psql.exe') -U postgres -h localhost -tAc 'select 1' 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { Falhar 'Não consegui entrar no PostgreSQL com essa senha.' }
-$existe = & (Join-Path $pgBin 'psql.exe') -U postgres -h localhost -tAc "select 1 from pg_database where datname = 'sistema_bar'"
-if ($existe -ne '1') {
-  & (Join-Path $pgBin 'createdb.exe') -U postgres -h localhost sistema_bar
-  if ($LASTEXITCODE -ne 0) { Falhar 'Não consegui criar o banco sistema_bar.' }
-  Ok 'Banco sistema_bar criado'
-} else {
-  Aviso 'O banco sistema_bar já existia: os dados serão mantidos.'
+if (-not $databaseUrl) {
+  $env:PGPASSWORD = $senhaPg
+  Rodar-Nativo { & (Join-Path $pgBin 'psql.exe') -U postgres -h localhost -tAc 'select 1' 2>$null } | Out-Null
+  if ($LASTEXITCODE -ne 0) { Falhar 'Não consegui entrar no PostgreSQL com essa senha.' }
+  $existe = & (Join-Path $pgBin 'psql.exe') -U postgres -h localhost -tAc "select 1 from pg_database where datname = '$Banco'"
+  if ($existe -ne '1') {
+    & (Join-Path $pgBin 'createdb.exe') -U postgres -h localhost $Banco
+    if ($LASTEXITCODE -ne 0) { Falhar "Não consegui criar o banco $Banco." }
+    Ok "Banco $Banco criado"
+  } else {
+    Aviso "O banco $Banco já existia: os dados serão mantidos."
+  }
+  Remove-Item Env:PGPASSWORD
+  $databaseUrl = "postgres://postgres:$([Uri]::EscapeDataString($senhaPg))@localhost:5432/$Banco"
 }
 
 # ---------- 4. Certificado HTTPS ----------
@@ -81,26 +113,24 @@ if (-not (Test-Path (Join-Path $Destino 'certs\servidor-cert.pem'))) { Falhar 'O
 
 # ---------- 5. Configuração (.env) ----------
 Passo 'Configuração'
-$senhaUrl = [Uri]::EscapeDataString($senhaPg)
 $envTexto = @"
 # Gerado pelo instalador em $(Get-Date -Format 'yyyy-MM-dd HH:mm'). GUARDE UMA CÓPIA EM LOCAL SEGURO.
 # Sem este arquivo (CPF_SECRET), os CPFs gravados ficam ilegíveis. Não troque os segredos depois de usar.
 NODE_ENV=production
-DATABASE_URL=postgres://postgres:$senhaUrl@localhost:5432/sistema_bar
+DATABASE_URL=$databaseUrl
 JWT_SECRET=$(Segredo)
 CPF_SECRET=$(Segredo)
 PORT=$Porta
 HOST=0.0.0.0
 HTTPS_CERT=certs/servidor-cert.pem
 HTTPS_KEY=certs/servidor-key.pem
-PRINT_MODE=windows
+PRINT_MODE=$ModoImpressao
 "@
 $envArquivo = Join-Path $Destino '.env'
 [IO.File]::WriteAllText($envArquivo, $envTexto, (New-Object Text.UTF8Encoding($false)))
 # Só administradores e o sistema leem o .env (tem a senha do banco e os segredos).
 & icacls $envArquivo /inheritance:r /grant:r '*S-1-5-32-544:F' '*S-1-5-18:F' | Out-Null
 Ok '.env criado e protegido'
-Remove-Item Env:PGPASSWORD
 
 # ---------- 6. Banco e admin ----------
 Passo 'Criando as tabelas e o usuário admin'
@@ -110,7 +140,8 @@ if ($LASTEXITCODE -ne 0) { Falhar 'Falha ao criar as tabelas.' }
 $saida = & $node 'app\cli.mjs' criar-admin
 if ($LASTEXITCODE -ne 0) { Falhar 'Falha ao criar o usuário admin.' }
 $senhaAdmin = $null
-if ($saida -match 'senha=(\S+)') { $senhaAdmin = $Matches[1] }
+$linhaAdmin = @($saida) | Where-Object { $_ -match 'senha=' } | Select-Object -First 1
+if ($linhaAdmin -match 'senha=(\S+)') { $senhaAdmin = $Matches[1] }
 
 $cardapios = Get-ChildItem (Join-Path $Destino 'cardapios') -Filter *.json -ErrorAction SilentlyContinue
 foreach ($c in $cardapios) {
@@ -151,6 +182,9 @@ if (-not (Aguardar-Servidor $Porta)) {
 Ok 'Servidor no ar'
 
 # ---------- Resumo ----------
+# Encerra o registro antes de mostrar a senha do admin, e guarda o log junto da instalação.
+try { Stop-Transcript | Out-Null } catch {}
+Copy-Item -Force $logInstalacao (Join-Path $Destino 'data\logs\instalacao.log') -ErrorAction SilentlyContinue
 $ips = @(IPs-Rede-Local)
 Write-Host ''
 Write-Host '==================== INSTALAÇÃO CONCLUÍDA ====================' -ForegroundColor Green

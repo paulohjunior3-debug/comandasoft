@@ -18,6 +18,8 @@ const configSchema = z.object({
   /** emulador = grava os cupons em data/impressoes (desenvolvimento); windows = impressoras reais. */
   PRINT_MODE: z.enum(['emulador', 'windows']).default('emulador'),
   PRINT_EMULATOR_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
+  /** Grava o log neste arquivo (instalado: data/logs/servidor.log). Vazio = saída padrão. */
+  LOG_FILE: z.preprocess(emptyToUndefined, z.string().optional()),
   SEED_ADMIN_PASSWORD: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
 });
 

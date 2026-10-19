@@ -17,9 +17,11 @@ function Ok([string]$texto) { Write-Host "    OK: $texto" -ForegroundColor Green
 function Aviso([string]$texto) { Write-Host "    ATENÇÃO: $texto" -ForegroundColor Yellow }
 
 function Falhar([string]$texto) {
+  try { Stop-Transcript | Out-Null } catch {}
   Write-Host ''
   Write-Host "ERRO: $texto" -ForegroundColor Red
   Write-Host 'A instalação foi interrompida. Nada do que já estava funcionando foi apagado.'
+  if ($global:SistemaBarLog) { Write-Host "Registro da instalação: $global:SistemaBarLog" }
   exit 1
 }
 
@@ -28,6 +30,14 @@ function Exigir-Administrador {
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Falhar 'Rode como administrador (use o arquivo .bat, que pede a permissão).'
   }
+}
+
+# Roda um programa externo (psql, curl…) sem que mensagens dele na saída de erros virem erro fatal.
+# No PowerShell 5.1, com ErrorActionPreference = 'Stop', redirecionar o stderr de um .exe (2>$null)
+# transforma qualquer aviso em exceção. Aqui vale 'Continue'; confira o resultado por $LASTEXITCODE.
+function Rodar-Nativo([scriptblock]$comando) {
+  $ErrorActionPreference = 'Continue'
+  & $comando
 }
 
 # Recarrega o PATH depois de instalar programas pelo winget, sem reabrir o terminal.
@@ -91,9 +101,9 @@ function Segredo([int]$bytes = 48) {
 function Aguardar-Servidor([int]$porta, [int]$segundos = 90) {
   $limite = (Get-Date).AddSeconds($segundos)
   while ((Get-Date) -lt $limite) {
-    $resposta = & curl.exe -sk --max-time 3 "https://localhost:$porta/api/health" 2>$null
+    $resposta = Rodar-Nativo { & curl.exe -sk --max-time 3 "https://localhost:$porta/api/health" 2>$null }
     if ($resposta -match '"status":"ok"') { return $true }
-    $resposta = & curl.exe -s --max-time 3 "http://localhost:$porta/api/health" 2>$null
+    $resposta = Rodar-Nativo { & curl.exe -s --max-time 3 "http://localhost:$porta/api/health" 2>$null }
     if ($resposta -match '"status":"ok"') { return $true }
     Start-Sleep -Seconds 2
   }
