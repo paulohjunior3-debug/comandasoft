@@ -80,11 +80,21 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
    ```
 2. Instale `certs\rootCA.crt` no celular (o script mostra o passo a passo para Android e iPhone).
 3. Rode `pnpm dev` de novo. Agora a PWA sobe em **https://IP-DO-PC:5173**.
-4. Libere a porta no firewall do Windows (PowerShell como administrador):
+4. Libere as portas no firewall do Windows (o script pede permissão de administrador):
    ```powershell
-   New-NetFirewallRule -DisplayName "Sistema Bar (dev)" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow -Profile Private
+   powershell -ExecutionPolicy Bypass -File scripts\liberar-firewall.ps1
    ```
+   As regras valem para rede Privada e Pública, mas **só aceitam aparelhos da mesma rede local**. Isso cobre o caso comum de o Windows marcar o Wi-Fi como "Público" e não deixar trocar.
 5. No celular, conectado ao mesmo Wi-Fi, abra `https://IP-DO-PC:5173`, faça login e use "Adicionar à tela inicial".
+
+## Problemas comuns
+
+| Sintoma | Solução |
+|---|---|
+| `pnpm` não é reconhecido / scripts desabilitados no PowerShell | Use `pnpm.cmd` no lugar de `pnpm` (a política de execução padrão do Windows bloqueia o `pnpm.ps1`). |
+| "Port 5173 is in use" e o Vite sobe em outra porta | Já existe um Vite rodando. Feche o terminal antigo ou encerre o processo `node` que usa a porta. |
+| Celular não abre o endereço | Celular e PC no mesmo Wi-Fi; rode `scripts\liberar-firewall.ps1`; confira o IP do PC com `ipconfig`. Se o IP mudou, gere o certificado de novo. |
+| Celular avisa "conexão não é particular" | O `certs\rootCA.crt` não foi instalado (ou, no iPhone, a confiança total não foi ativada). |
 
 ## Comandos úteis
 

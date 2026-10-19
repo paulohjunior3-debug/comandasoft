@@ -6,3 +6,4 @@ certs/*
 !certs/.gitkeep
 coverage/
 *.log
+dev-dist/

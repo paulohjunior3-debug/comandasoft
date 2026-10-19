@@ -50,7 +50,8 @@ export default defineConfig({
     port: 5173,
     https,
     proxy: {
-      '/api': { target: `http://localhost:${apiPort}`, changeOrigin: false },
+      // xfwd: repassa o IP real do celular (X-Forwarded-For) para a auditoria da API.
+      '/api': { target: `http://localhost:${apiPort}`, changeOrigin: false, xfwd: true },
     },
   },
   preview: { host: true, port: 4173, https },
