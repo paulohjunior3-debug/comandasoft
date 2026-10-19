@@ -18,7 +18,7 @@ import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError } from '../../lib/errors';
 import type { ProductionTicket } from '../../printing/tickets';
 
-export async function waiterOrderRoutes(app: FastifyInstance, { db }: AppDeps) {
+export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
   async function duplicateResponse(orderId: string): Promise<CreateOrderResponse> {
     const [{ n }] = (await db.select({ n: count() }).from(printJobs).where(eq(printJobs.referenceId, orderId))) as [{ n: number }];
     return { orderId, duplicate: true, printJobs: n, unroutedItems: 0 };
@@ -167,6 +167,7 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db }: AppDeps) {
       const [winner] = await db.select({ id: orders.id }).from(orders).where(eq(orders.clientUuid, input.clientUuid));
       return reply.code(200).send(await duplicateResponse(winner!.id));
     }
+    if (result.printJobs > 0) printWorker.kick(); // imprime já, sem esperar o próximo ciclo
     return reply.code(201).send(result);
   });
 }

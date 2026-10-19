@@ -2,7 +2,7 @@
 
 Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A especificação completa está em [SPEC.md](SPEC.md).
 
-**Status:** Fase 0 concluída. Fase 1 em andamento: cadastros, app do garçom (mapa, comandas, lançamento) e fila offline no celular prontos; falta o worker de impressão (os cupons já entram na fila `print_jobs`).
+**Status:** Fase 0 concluída. Fase 1 concluída no código: cadastros, app do garçom (mapa, comandas, lançamento), fila offline no celular e impressão roteada por setor (emulador + impressoras do Windows). Falta validar com as impressoras Elgin reais.
 
 ## Estrutura
 
@@ -10,6 +10,7 @@ Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A es
 apps/server      API Fastify + Drizzle + PostgreSQL (porta 3000)
 apps/web         PWA React + Vite + Tailwind (porta 5173 em desenvolvimento)
 packages/shared  Schemas Zod e utilitários (CPF, dinheiro) usados pelos dois lados
+packages/escpos  Cupons: comandos ESC/POS, acentuação (CP860/850/437) e prévia em texto
 scripts/         Certificado HTTPS de desenvolvimento, ícones
 ```
 
@@ -87,6 +88,23 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
    As regras valem para rede Privada e Pública, mas **só aceitam aparelhos da mesma rede local**. Isso cobre o caso comum de o Windows marcar o Wi-Fi como "Público" e não deixar trocar.
 5. No celular, conectado ao mesmo Wi-Fi, abra `https://IP-DO-PC:5173`, faça login e use "Adicionar à tela inicial".
 
+## 5. Impressoras
+
+O modo de impressão fica no `.env`:
+
+| `PRINT_MODE` | O que acontece |
+|---|---|
+| `emulador` (padrão) | Os cupons **não** vão para o papel: são gravados em `data/impressoes/<impressora>/` (.txt para ler, .bin com os bytes ESC/POS). Use para desenvolver sem impressora. |
+| `windows` | Os cupons vão para as impressoras instaladas no Windows, pelo nome, em modo RAW. Use no PC do caixa. |
+
+Para ligar uma impressora térmica (Elgin i7/i9 ou similar):
+1. Instale-a no Windows com o driver do fabricante (rede ou USB) e confira o nome em Configurações > Impressoras.
+2. No painel: **Administração > Impressoras > Nova impressora**, escolha-a na lista e marque as categorias que saem nela.
+3. Troque `PRINT_MODE=windows` no `.env` e reinicie o servidor.
+4. Abra a impressora no painel e toque em **Imprimir teste**. Se os acentos saírem trocados, mude a "Acentuação" (CP860 é o padrão das Elgin).
+
+A **Fila de impressão** (menu da administração) mostra cada cupom, a prévia exata do papel, erros por impressora (ex.: sem papel), e permite tentar de novo ou reimprimir. Cupons com erro são tentados de novo sozinhos (5 s, 10 s, 20 s… até a cada 1 min); os da mesma impressora saem sempre na ordem.
+
 ## Problemas comuns
 
 | Sintoma | Solução |
@@ -94,6 +112,7 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
 | `pnpm` não é reconhecido / scripts desabilitados no PowerShell | Use `pnpm.cmd` no lugar de `pnpm` (a política de execução padrão do Windows bloqueia o `pnpm.ps1`). |
 | "Port 5173 is in use" e o Vite sobe em outra porta | Já existe um Vite rodando. Feche o terminal antigo ou encerre o processo `node` que usa a porta. |
 | Celular não abre o endereço | Celular e PC no mesmo Wi-Fi; rode `scripts\liberar-firewall.ps1`; confira o IP do PC com `ipconfig`. Se o IP mudou, gere o certificado de novo. |
+| Impressora não imprime nada (modo `windows`) | Veja o erro na Fila de impressão. "Impressora não encontrada": o nome no cadastro precisa ser igual ao do Windows. Impressoras PDF/XPS não aceitam modo RAW. |
 | Celular avisa "conexão não é particular" | O `certs\rootCA.crt` não foi instalado (ou, no iPhone, a confiança total não foi ativada). |
 
 ## Comandos úteis

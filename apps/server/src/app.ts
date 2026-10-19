@@ -11,10 +11,19 @@ import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { HttpError, mapDbError } from './lib/errors';
+import { emulatorTransport, type PrintTransport } from './printing/transport';
+import { createPrintWorker, type PrintWorker } from './printing/worker';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { printRoutes } from './routes/print';
 import { waiterRoutes } from './routes/waiter';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    printWorker: AppDeps['printWorker'];
+  }
+}
 
 export interface AppDeps {
   db: Db;
@@ -22,6 +31,7 @@ export interface AppDeps {
   guards: Guards;
   listInstalledPrinters: ListInstalledPrinters;
   cpf: CpfVault;
+  printWorker: PrintWorker & { mode: PrintTransport['mode'] };
 }
 
 export interface BuildAppOptions {
@@ -31,11 +41,14 @@ export interface BuildAppOptions {
   fastify?: FastifyServerOptions;
   /** Pasta do build da PWA. Padrão: apps/web/dist, se existir. `false` desliga. */
   webDist?: string | false;
+  /** Para onde vão os cupons. Padrão: emulador em data/impressoes. */
+  printTransport?: PrintTransport;
   /** Substituível nos testes; padrão: impressoras do Windows. */
   listInstalledPrinters?: ListInstalledPrinters;
 }
 
 const defaultWebDist = fileURLToPath(new URL('../../web/dist', import.meta.url));
+export const defaultEmulatorDir = fileURLToPath(new URL('../../../data/impressoes', import.meta.url));
 
 export async function buildApp({
   db,
@@ -44,6 +57,7 @@ export async function buildApp({
   fastify,
   webDist = defaultWebDist,
   listInstalledPrinters = cachedLister(listWindowsPrinters),
+  printTransport = emulatorTransport(defaultEmulatorDir),
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
@@ -53,7 +67,10 @@ export async function buildApp({
     guards: createGuards(tokens, db),
     listInstalledPrinters,
     cpf: createCpfVault(cpfSecret),
+    printWorker: Object.assign(createPrintWorker({ db, transport: printTransport, log: app.log }), { mode: printTransport.mode }),
   };
+  app.decorate('printWorker', deps.printWorker);
+  app.addHook('onClose', () => deps.printWorker.stop());
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -93,6 +110,7 @@ export async function buildApp({
       await api.register((auth) => authRoutes(auth, deps), { prefix: '/auth' });
       await api.register((admin) => adminRoutes(admin, deps), { prefix: '/admin' });
       await api.register((waiter) => waiterRoutes(waiter, deps), { prefix: '/waiter' });
+      await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
     },
     { prefix: '/api' },
   );

@@ -279,7 +279,7 @@ export const orderItemShares = pgTable(
   (t) => [primaryKey({ columns: [t.orderItemId, t.comandaId] }), index().on(t.comandaId)],
 );
 
-/** Fila persistente de impressão (SPEC 5.5). O worker que imprime vem na próxima etapa. */
+/** Fila persistente de impressão (SPEC 5.5). O worker em src/printing/worker.ts consome. */
 export const printJobs = pgTable(
   'print_jobs',
   {
@@ -293,6 +293,10 @@ export const printJobs = pgTable(
     attempts: integer().notNull().default(0),
     lastError: text(),
     referenceId: uuid(),
+    /** Reimpressão: aponta para o cupom original. */
+    reprintOf: uuid(),
+    /** Depois de uma falha, só tenta de novo a partir deste momento (backoff). */
+    nextAttemptAt: timestamp({ withTimezone: true }),
     printedAt: timestamp({ withTimezone: true }),
     ...timestamps,
   },

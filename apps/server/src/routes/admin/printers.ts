@@ -2,12 +2,13 @@ import { printerInputSchema, type InstalledPrinter, type Printer } from '@sistem
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { categories, printerCategories, printers } from '../../db/schema';
+import { categories, printerCategories, printers, printJobs } from '../../db/schema';
+import type { TestTicket } from '../../printing/tickets';
 import { audit } from '../../lib/audit';
 import { HttpError, notFound } from '../../lib/errors';
 import { idParams } from './params';
 
-export async function printerRoutes(app: FastifyInstance, { db, listInstalledPrinters }: AppDeps) {
+export async function printerRoutes(app: FastifyInstance, { db, listInstalledPrinters, printWorker }: AppDeps) {
   async function installed(): Promise<InstalledPrinter[] | null> {
     try {
       return await listInstalledPrinters();
@@ -80,6 +81,24 @@ export async function printerRoutes(app: FastifyInstance, { db, listInstalledPri
     });
     const [after] = await load([id]);
     return after;
+  });
+
+  /** "Imprimir teste" (SPEC 5.1): confere conexão, papel e acentuação. */
+  app.post('/:id/test', async (request, reply) => {
+    const { id } = idParams.parse(request.params);
+    const [printer] = await db.select().from(printers).where(eq(printers.id, id));
+    if (!printer) throw notFound('Impressora');
+    const payload: TestTicket = {
+      kind: 'TESTE',
+      printerName: printer.name,
+      windowsName: printer.windowsName,
+      sector: printer.sectorLabel,
+      requestedBy: request.user!.name,
+      createdAt: new Date().toISOString(),
+    };
+    const [job] = await db.insert(printJobs).values({ printerId: id, type: 'TESTE', payload }).returning({ id: printJobs.id });
+    printWorker.kick();
+    return reply.code(201).send({ jobId: job!.id, active: printer.active, mode: printWorker.mode });
   });
 
   app.delete('/:id', async (request, reply) => {

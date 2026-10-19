@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
-import { buildApp } from './app';
+import { buildApp, defaultEmulatorDir } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { emulatorTransport, windowsTransport } from './printing/transport';
 
 const config = loadConfig();
 const conn = createDb(config.DATABASE_URL);
@@ -16,6 +17,8 @@ const app = await buildApp({
   db: conn.db,
   jwtSecret: config.JWT_SECRET,
   cpfSecret: config.CPF_SECRET,
+  printTransport:
+    config.PRINT_MODE === 'windows' ? windowsTransport() : emulatorTransport(config.PRINT_EMULATOR_DIR ?? defaultEmulatorDir),
   fastify: {
     logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' },
     ...(https ? { https } : {}),
@@ -31,3 +34,5 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 await app.listen({ port: config.PORT, host: config.HOST });
+await app.printWorker.start();
+app.log.info(`Impressão: modo ${config.PRINT_MODE}`);

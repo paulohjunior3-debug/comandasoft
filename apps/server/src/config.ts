@@ -16,6 +16,9 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   HTTPS_CERT: z.preprocess(emptyToUndefined, z.string().optional()),
   HTTPS_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+  /** emulador = grava os cupons em data/impressoes (desenvolvimento); windows = impressoras reais. */
+  PRINT_MODE: z.enum(['emulador', 'windows']).default('emulador'),
+  PRINT_EMULATOR_DIR: z.preprocess(emptyToUndefined, z.string().optional()),
   SEED_ADMIN_PASSWORD: z.preprocess(emptyToUndefined, z.string().min(8).optional()),
 });
 

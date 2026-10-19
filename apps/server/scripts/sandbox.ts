@@ -7,7 +7,9 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/app';
+import { emulatorTransport } from '../src/printing/transport';
 import { hashPassword } from '../src/auth/password';
 import { migrationsFolder, type Db } from '../src/db/client';
 import * as schema from '../src/db/schema';
@@ -64,6 +66,9 @@ const app = await buildApp({
   jwtSecret: randomBytes(48).toString('base64url'),
   cpfSecret: randomBytes(48).toString('base64url'),
   webDist: false,
+  // Cupons do sandbox vão para data/impressoes-sandbox (nunca para impressora real).
+  printTransport: emulatorTransport(fileURLToPath(new URL('../../../data/impressoes-sandbox', import.meta.url))),
 });
 await app.listen({ port, host: '127.0.0.1' });
+await app.printWorker.start();
 console.log(`Sandbox (banco em memória) em http://127.0.0.1:${port} — usuário: teste`);

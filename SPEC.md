@@ -188,6 +188,8 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
   - Itens: quantidade + nome em destaque, adicionais e **observações em negrito**
   - Marcação "REIMPRESSÃO" ou "CANCELAMENTO" quando aplicável
   - Corte de papel
+> **Implementado (fase 1):** `packages/escpos` (comandos, acentuação, prévia) e `apps/server/src/printing` (layouts, worker, transportes `emulador` e `windows` via `scripts/raw-print.ps1`). Uma fila por impressora, em ordem; falha → `ERRO` com nova tentativa automática (5 s → 60 s); ao reiniciar o servidor, cupons "imprimindo" voltam para a fila. Reimpressão sai marcada "REIMPRESSÃO" e fica na auditoria. Impressora **desativada no cadastro** não recebe cupons novos (o garçom é avisado de itens sem impressora). O redirecionamento para outra impressora fica para depois.
+
 - **Cupom de cancelamento** impresso automaticamente no setor quando um item é cancelado.
 - **Pré-conta / conferência** (impressora do caixa): itens, subtotal, taxa de serviço, couvert, descontos, **pagamentos parciais já realizados (quem pagou, quanto, forma)** e **valor restante**. Rodapé: "NÃO É DOCUMENTO FISCAL".
 - **Acentuação**: configurar página de código (testar CP860/CP850 nas Elgin) e remover acentos como fallback.

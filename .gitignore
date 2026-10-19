@@ -7,3 +7,4 @@ certs/*
 coverage/
 *.log
 dev-dist/
+data/

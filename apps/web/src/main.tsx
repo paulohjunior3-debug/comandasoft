@@ -9,6 +9,7 @@ import { outbox } from './lib/offline/outbox';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { PrintersPage } from './pages/admin/PrintersPage';
+import { PrintQueuePage } from './pages/admin/PrintQueuePage';
 import { ProductsPage } from './pages/admin/ProductsPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { TablesPage } from './pages/admin/TablesPage';
@@ -132,6 +133,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="produtos" element={<ProductsPage />} />
               <Route path="mesas" element={<TablesPage />} />
               <Route path="impressoras" element={<PrintersPage />} />
+              <Route path="fila-impressao" element={<PrintQueuePage />} />
               <Route path="usuarios" element={<UsersPage />} />
               <Route path="configuracoes" element={<SettingsPage />} />
             </Route>

@@ -6,6 +6,7 @@ import {
   type PrinterInput,
 } from '@sistema-bar/shared';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import {
   Badge,
   Button,
@@ -93,6 +94,7 @@ export function PrintersPage() {
 function PrinterModal({ printer, categories, onClose }: { printer: Printer | null; categories: Category[]; onClose: () => void }) {
   const installed = useApiQuery<InstalledPrinter[]>(`${PATH}/installed`);
   const save = useApiMutation([PATH, '/admin/categories']);
+  const test = useApiMutation<unknown, { mode: 'emulador' | 'windows'; active: boolean }>(['/print/queue']);
   const [form, setForm] = useState<Form>(() => ({
     name: printer?.name ?? '',
     windowsName: printer?.windowsName ?? '',
@@ -193,7 +195,25 @@ function PrinterModal({ printer, categories, onClose }: { printer: Printer | nul
       </div>
       <Toggle label="Cortar papel (guilhotina)" checked={form.cut} onChange={(v) => set('cut', v)} />
       <Toggle label="Ativa" checked={form.active} onChange={(v) => set('active', v)} />
-      <p className="text-xs text-slate-500">O botão "Imprimir teste" chega junto com a fila de impressão, na próxima etapa.</p>
+      {printer && (
+        <div className="rounded-lg border border-slate-800 p-3">
+          <Button onClick={() => test.mutate({ method: 'POST', path: `${PATH}/${printer.id}/test` })} disabled={test.isPending}>
+            Imprimir teste
+          </Button>
+          {test.data && (
+            <p className="mt-2 text-sm text-emerald-300">
+              {!test.data.active
+                ? 'Página de teste na fila, mas a impressora está desativada: ative para imprimir.'
+                : test.data.mode === 'emulador'
+                  ? 'Modo emulador: a página foi gravada em arquivo. '
+                  : 'Página de teste enviada. '}
+              <Link to="/admin/fila-impressao" className="underline">Ver na fila</Link>
+            </p>
+          )}
+          <ErrorBanner message={errorMessage(test.error)} />
+          <p className="mt-2 text-xs text-slate-500">Salve as alterações antes de testar. A página confere conexão, papel e acentos.</p>
+        </div>
+      )}
     </Modal>
   );
 }

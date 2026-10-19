@@ -7,6 +7,7 @@ import { buildApp } from '../src/app';
 import { hashPassword } from '../src/auth/password';
 import { migrationsFolder, type Db } from '../src/db/client';
 import * as schema from '../src/db/schema';
+import type { PrintTransport } from '../src/printing/transport';
 
 export const PASSWORD = 'senha-certa';
 
@@ -17,6 +18,10 @@ export interface TestContext {
   /** Faz login e devolve uma função `inject` já autenticada. */
   as: (login: string) => Promise<(opts: InjectOptions) => Promise<LightMyRequestResponse>>;
   installedPrinters: InstalledPrinter[];
+  /** O que o transporte falso "imprimiu", em ordem. */
+  printed: { printer: string; jobId: string; preview: string; bytes: Uint8Array }[];
+  /** Impressoras (pelo windowsName) que devem falhar, com a mensagem de erro. */
+  failing: Map<string, string>;
 }
 
 /** App completo sobre um PostgreSQL em memória (PGlite), com um usuário por perfil. */
@@ -35,18 +40,31 @@ export async function createTestContext(): Promise<TestContext> {
   await db.insert(schema.users).values(roles.map(([login, role]) => ({ name: login, login, passwordHash, role })));
 
   const installedPrinters: InstalledPrinter[] = [];
+  const printed: TestContext['printed'] = [];
+  const failing = new Map<string, string>();
+  const printTransport: PrintTransport = {
+    mode: 'emulador',
+    async send(printer, job) {
+      const error = failing.get(printer.windowsName);
+      if (error) throw new Error(error);
+      printed.push({ printer: printer.name, jobId: job.id, preview: job.preview, bytes: job.bytes });
+    },
+  };
   const app = await buildApp({
     db,
     jwtSecret: 'x'.repeat(32),
     cpfSecret: 'c'.repeat(32),
     webDist: false,
     listInstalledPrinters: async () => installedPrinters,
+    printTransport,
   });
 
   return {
     app,
     db,
     installedPrinters,
+    printed,
+    failing,
     close: async () => {
       await app.close();
       await pg.close();
