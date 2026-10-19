@@ -104,7 +104,11 @@ const SIZE_BYTE: Record<Size, number> = { normal: 0x00, tall: 0x01, wide: 0x10, 
 const ALIGN_BYTE: Record<Align, number> = { left: 0, center: 1, right: 2 };
 
 /** Bytes ESC/POS para a impressora térmica. */
-export function renderEscPos(blocks: Block[], profile: PrinterProfile, options: { openDrawer?: boolean } = {}): Uint8Array {
+export function renderEscPos(
+  blocks: Block[],
+  profile: PrinterProfile,
+  options: { openDrawer?: boolean; /** Só abre a gaveta: sem avanço de papel nem corte. */ drawerOnly?: boolean } = {},
+): Uint8Array {
   const cols = columnsFor(profile.widthMm);
   const bytes: number[] = [ESC, 0x40, ESC, 0x74, ESC_T_TABLE[profile.codepage]];
   const style = (s: LineStyle) => {
@@ -130,7 +134,8 @@ export function renderEscPos(blocks: Block[], profile: PrinterProfile, options: 
   }
 
   style({});
-  if (options.openDrawer) bytes.push(ESC, 0x70, 0x00, 0x19, 0xfa); // pulso na gaveta (SPEC 5.5)
+  if (options.openDrawer || options.drawerOnly) bytes.push(ESC, 0x70, 0x00, 0x19, 0xfa); // pulso na gaveta (SPEC 5.5)
+  if (options.drawerOnly) return Uint8Array.from(bytes);
   if (profile.cut) bytes.push(GS, 0x56, 0x42, 0x03); // avança e corta (corte parcial)
   else bytes.push(ESC, 0x64, 4);
   return Uint8Array.from(bytes);

@@ -18,7 +18,11 @@ export function renderJob(payload: TicketPayload, printer: Pick<PrinterRow, 'wid
   const widthMm = printer.widthMm === 58 ? 58 : 80;
   return {
     preview: renderText(blocks, widthMm),
-    bytes: renderEscPos(blocks, { widthMm, codepage: printer.codepage as Codepage, cut: printer.cut }),
+    bytes: renderEscPos(
+      blocks,
+      { widthMm, codepage: printer.codepage as Codepage, cut: printer.cut },
+      { openDrawer: payload.kind === 'CONTA' && payload.openDrawer === true, drawerOnly: payload.kind === 'GAVETA' },
+    ),
   };
 }
 

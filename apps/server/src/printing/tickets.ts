@@ -29,4 +29,67 @@ export interface TestTicket {
   reprint?: boolean;
 }
 
-export type TicketPayload = ProductionTicket | TestTicket;
+export interface CompanyHeader {
+  name: string;
+  document: string;
+  address: string;
+  phone: string;
+  footer: string;
+}
+
+/**
+ * Pré-conta (conferência) ou cupom final da conta (SPEC 5.5/5.7). Não é documento fiscal.
+ * Os valores vêm prontos do servidor: o layout só formata.
+ */
+export interface BillTicket {
+  kind: 'CONTA';
+  variant: 'PRE_CONTA' | 'CUPOM';
+  company: CompanyHeader;
+  tableNumber: number;
+  createdAt: string;
+  operator: string;
+  comandas: {
+    name: string;
+    items: { qty: number; name: string; amountCents: number; shared: boolean }[];
+    itemsCents: number;
+    serviceFeeCents: number;
+    couvertCents: number;
+    discountCents: number;
+    totalCents: number;
+  }[];
+  totals: { itemsCents: number; serviceFeeCents: number; couvertCents: number; discountCents: number; totalCents: number; paidCents: number; remainingCents: number };
+  payments: { payerName: string; method: string; amountCents: number; changeCents: number }[];
+  openDrawer?: boolean;
+  reprint?: boolean;
+}
+
+/** Comprovantes do caixa: abertura, sangria/suprimento e relatório de fechamento. */
+export interface CashTicket {
+  kind: 'CAIXA';
+  variant: 'ABERTURA' | 'SANGRIA' | 'SUPRIMENTO' | 'FECHAMENTO';
+  company: CompanyHeader;
+  operator: string;
+  createdAt: string;
+  amountCents?: number;
+  reason?: string;
+  /** Fechamento: esperado, contado e diferença por forma. */
+  report?: {
+    openedAt: string;
+    openingFloatCents: number;
+    rows: { method: string; expectedCents: number; countedCents: number | null; differenceCents: number | null }[];
+    sangriasCents: number;
+    suprimentosCents: number;
+    differenceCents: number;
+    openComandas: number;
+    notes?: string;
+  };
+  reprint?: boolean;
+}
+
+/** Só o pulso da gaveta de dinheiro, sem papel. */
+export interface DrawerTicket {
+  kind: 'GAVETA';
+  reprint?: boolean;
+}
+
+export type TicketPayload = ProductionTicket | TestTicket | BillTicket | CashTicket | DrawerTicket;

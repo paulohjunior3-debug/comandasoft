@@ -3,7 +3,7 @@
 export const PRINT_JOB_STATUSES = ['PENDENTE', 'IMPRIMINDO', 'OK', 'ERRO'] as const;
 export type PrintJobStatus = (typeof PRINT_JOB_STATUSES)[number];
 
-export type PrintJobType = 'PRODUCAO' | 'CANCELAMENTO' | 'PRE_CONTA' | 'CUPOM' | 'DANFE' | 'CAIXA' | 'TESTE';
+export type PrintJobType = 'PRODUCAO' | 'CANCELAMENTO' | 'PRE_CONTA' | 'CUPOM' | 'DANFE' | 'CAIXA' | 'TESTE' | 'GAVETA';
 
 export interface PrintJobSummary {
   id: string;

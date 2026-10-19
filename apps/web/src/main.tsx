@@ -2,7 +2,7 @@ import type { Role } from '@sistema-bar/shared';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { StrictMode, useEffect, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router';
 import { ApiRequestError } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { outbox } from './lib/offline/outbox';
@@ -14,6 +14,7 @@ import { ProductsPage } from './pages/admin/ProductsPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { TablesPage } from './pages/admin/TablesPage';
 import { UsersPage } from './pages/admin/UsersPage';
+import { CashierPage } from './pages/cashier/CashierPage';
 import { HomePage } from './pages/Home';
 import { ComandaPage } from './pages/waiter/ComandaPage';
 import { OrderPage } from './pages/waiter/OrderPage';
@@ -34,6 +35,7 @@ const queryClient = new QueryClient({
 });
 
 const WAITER_ROLES: Role[] = ['GARCOM', 'GERENTE'];
+const CASHIER_ROLES: Role[] = ['CAIXA', 'GERENTE'];
 
 /** Liga a fila offline enquanto há alguém logado e atualiza as telas a cada envio confirmado. */
 function OutboxRunner() {
@@ -117,6 +119,25 @@ createRoot(document.getElementById('root')!).render(
               element={
                 <RequireAuth roles={WAITER_ROLES}>
                   <PendingPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/caixa"
+              element={
+                <RequireAuth roles={CASHIER_ROLES}>
+                  <CashierPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/caixa/impressao"
+              element={
+                <RequireAuth roles={CASHIER_ROLES}>
+                  <div className="mx-auto max-w-5xl px-4 py-6">
+                    <Link to="/caixa" className="mb-4 inline-block text-sm text-slate-400">‹ Voltar ao caixa</Link>
+                    <PrintQueuePage />
+                  </div>
                 </RequireAuth>
               }
             />

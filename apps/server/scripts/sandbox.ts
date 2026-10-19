@@ -9,6 +9,8 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/app';
+import { DEFAULT_SETTINGS } from '@sistema-bar/shared';
+import { saveSettings } from '../src/lib/settings';
 import { emulatorTransport } from '../src/printing/transport';
 import { hashPassword } from '../src/auth/password';
 import { migrationsFolder, type Db } from '../src/db/client';
@@ -51,6 +53,16 @@ if (process.env.SANDBOX_DEMO === '1') {
     await db.insert(schema.printerCategories).values({ printerId, categoryId: cat!.id });
     await db.insert(schema.products).values(items.map(([n, priceCents]) => ({ categoryId: cat!.id, name: n, priceCents })));
   }
+  const [caixa] = await db
+    .insert(schema.printers)
+    .values({ name: 'Caixa', windowsName: 'Demo Caixa', sectorLabel: 'CAIXA' })
+    .returning();
+  await saveSettings(db, {
+    ...DEFAULT_SETTINGS,
+    serviceFeeEnabled: true,
+    companyName: 'Bar Demonstração',
+    cashierPrinterId: caixa!.id,
+  });
   await db.insert(schema.diningTables).values(
     Array.from({ length: 12 }, (_, i) => ({
       number: i + 1,

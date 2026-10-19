@@ -230,6 +230,8 @@ export const settingsSchema = z.object({
   companyAddress: z.string().trim().max(200),
   companyPhone: z.string().trim().max(20),
   receiptFooter: z.string().trim().max(200),
+  /** Impressora do caixa: pré-conta, cupom final, gaveta e relatórios (SPEC 5.5). */
+  cashierPrinterId: z.string().uuid().nullable(),
 }).refine((s) => s.alertRedMinutes > s.alertYellowMinutes, {
   message: 'O tempo do vermelho deve ser maior que o do amarelo',
   path: ['alertRedMinutes'],
@@ -246,4 +248,5 @@ export const DEFAULT_SETTINGS: Settings = {
   companyAddress: '',
   companyPhone: '',
   receiptFooter: 'Obrigado pela preferência!',
+  cashierPrinterId: null,
 };

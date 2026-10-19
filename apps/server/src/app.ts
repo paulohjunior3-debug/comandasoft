@@ -16,6 +16,7 @@ import { createPrintWorker, type PrintWorker } from './printing/worker';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { cashierRoutes } from './routes/cashier';
 import { printRoutes } from './routes/print';
 import { waiterRoutes } from './routes/waiter';
 
@@ -111,6 +112,7 @@ export async function buildApp({
       await api.register((admin) => adminRoutes(admin, deps), { prefix: '/admin' });
       await api.register((waiter) => waiterRoutes(waiter, deps), { prefix: '/waiter' });
       await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
+      await api.register((cashier) => cashierRoutes(cashier, deps), { prefix: '/cashier' });
     },
     { prefix: '/api' },
   );

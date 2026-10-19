@@ -1,6 +1,6 @@
-import { centsToInput, parseBRL, type Settings } from '@sistema-bar/shared';
+import { centsToInput, parseBRL, type Printer, type Settings } from '@sistema-bar/shared';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, ErrorBanner, Loading, PageHeader, TextField, Toggle } from '../../components/ui';
+import { Button, ErrorBanner, Loading, PageHeader, SelectField, TextField, Toggle } from '../../components/ui';
 import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
 
 const PATH = '/admin/settings';
@@ -8,6 +8,7 @@ const PATH = '/admin/settings';
 export function SettingsPage() {
   const settings = useApiQuery<Settings>(PATH);
   const save = useApiMutation<Settings>([PATH]);
+  const printers = useApiQuery<Printer[]>('/admin/printers');
   const [form, setForm] = useState<Settings | null>(null);
   const [couvert, setCouvert] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -55,6 +56,22 @@ export function SettingsPage() {
             }}
             hint="0,00 = sem couvert"
           />
+        </Section>
+
+        <Section title="Caixa">
+          <SelectField
+            label="Impressora do caixa"
+            value={form.cashierPrinterId ?? ''}
+            onChange={(e) => set('cashierPrinterId', e.target.value || null)}
+            hint="Pré-conta, cupom final, comprovantes de sangria/suprimento, relatório de fechamento e abertura da gaveta."
+          >
+            <option value="">Nenhuma (não imprime)</option>
+            {printers.data?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.sectorLabel}){p.active ? '' : ' — desativada'}
+              </option>
+            ))}
+          </SelectField>
         </Section>
 
         <Section title="Mapa de mesas">

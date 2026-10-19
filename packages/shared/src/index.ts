@@ -5,3 +5,5 @@ export * from './cpf';
 export * from './admin';
 export * from './waiter';
 export * from './print';
+export * from './billing';
+export * from './cashier';

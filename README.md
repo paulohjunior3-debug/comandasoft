@@ -2,7 +2,7 @@
 
 Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A especificação completa está em [SPEC.md](SPEC.md).
 
-**Status:** Fase 0 concluída. Fase 1 concluída no código: cadastros, app do garçom (mapa, comandas, lançamento), fila offline no celular e impressão roteada por setor (emulador + impressoras do Windows). Falta validar com as impressoras Elgin reais.
+**Status:** Fases 0 e 1 concluídas no código. Fase 2 (caixa) pronta: abertura/fechamento com diferença, sangria/suprimento, busca por mesa ou CPF, pagamentos parciais (valor, item/fração, dividir por N), troco, descontos e estorno com PIN de gerente, pré-conta e cupom. Falta validar com impressoras Elgin reais.
 
 ## Estrutura
 
@@ -88,7 +88,18 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
    As regras valem para rede Privada e Pública, mas **só aceitam aparelhos da mesma rede local**. Isso cobre o caso comum de o Windows marcar o Wi-Fi como "Público" e não deixar trocar.
 5. No celular, conectado ao mesmo Wi-Fi, abra `https://IP-DO-PC:5173`, faça login e use "Adicionar à tela inicial".
 
-## 5. Impressoras
+## 5. Caixa
+
+Em **Caixa** (perfis Caixa, Gerente e Admin):
+1. Abra o caixa com o fundo de troco.
+2. Busque pela **mesa** (ex.: `10`) ou pelo **CPF** do cliente; a lista ao lado mostra as mesas abertas, com as que pediram a conta em azul.
+3. Escolha quem paga (uma, várias comandas ou a mesa inteira) e receba **por valor**, **dividido por N** ou **por item/fração** (ex.: 1/3 da pizza), em crédito, débito, Pix ou dinheiro (com troco).
+4. Desconto, retirada da taxa de serviço/couvert e estorno pedem o **PIN de um gerente** quando quem está no caixa não é gerente. Cadastre o PIN em Administração > Usuários.
+5. No fim do expediente, **Fechar caixa**: informe o dinheiro contado (e, se quiser, os totais de cartão/Pix) e veja a sobra ou falta.
+
+Escolha a **impressora do caixa** em Administração > Configurações: nela saem a pré-conta, o cupom final, os comprovantes de sangria/suprimento, o relatório de fechamento e o comando da gaveta.
+
+## 6. Impressoras
 
 O modo de impressão fica no `.env`:
 

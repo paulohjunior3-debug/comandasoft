@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEffect, useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 
 // Componentes básicos do painel. Tema escuro, alvos de toque grandes (uso também no celular).
@@ -156,7 +157,9 @@ export function Modal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  // Portal no <body>: um ancestral com backdrop-filter/transform (ex.: cabeçalho com blur)
+  // faria o "fixed" se posicionar em relação a ele, e não à tela.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4" onClick={onClose}>
       <div
         role="dialog"
@@ -178,7 +181,8 @@ export function Modal({
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

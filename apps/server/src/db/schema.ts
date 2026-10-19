@@ -1,4 +1,4 @@
-import { COMANDA_STATUSES, ROLES } from '@sistema-bar/shared';
+import { ADJUSTMENT_TYPES, CASH_MOVEMENT_TYPES, COMANDA_STATUSES, PAYMENT_METHODS, ROLES } from '@sistema-bar/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -158,7 +158,7 @@ export const settings = pgTable('settings', {
 
 export const comandaStatusEnum = pgEnum('comanda_status', COMANDA_STATUSES);
 export const orderItemStatusEnum = pgEnum('order_item_status', ['ATIVO', 'CANCELADO']);
-export const printJobTypeEnum = pgEnum('print_job_type', ['PRODUCAO', 'CANCELAMENTO', 'PRE_CONTA', 'CUPOM', 'DANFE', 'CAIXA', 'TESTE']);
+export const printJobTypeEnum = pgEnum('print_job_type', ['PRODUCAO', 'CANCELAMENTO', 'PRE_CONTA', 'CUPOM', 'DANFE', 'CAIXA', 'TESTE', 'GAVETA']);
 export const printJobStatusEnum = pgEnum('print_job_status', ['PENDENTE', 'IMPRIMINDO', 'OK', 'ERRO']);
 
 const OPEN_COMANDA = sql`status in ('ABERTA', 'EM_FECHAMENTO')`;
@@ -190,6 +190,8 @@ export const comandas = pgTable(
     closedAt: timestamp({ withTimezone: true }),
     notes: text(),
     qrLockedUntil: timestamp({ withTimezone: true }),
+    /** Totais congelados no fechamento: mudar a taxa ou o couvert depois não altera contas fechadas. */
+    finalTotals: jsonb(),
     ...timestamps,
   },
   (t) => [
@@ -301,4 +303,137 @@ export const printJobs = pgTable(
     ...timestamps,
   },
   (t) => [index().on(t.status, t.createdAt), index().on(t.referenceId)],
+);
+
+// ---------- Caixa (SPEC 5.7) ----------
+
+export const paymentMethodEnum = pgEnum('payment_method', PAYMENT_METHODS);
+export const paymentStatusEnum = pgEnum('payment_status', ['OK', 'ESTORNADO']);
+export const cashMovementTypeEnum = pgEnum('cash_movement_type', CASH_MOVEMENT_TYPES);
+export const adjustmentTypeEnum = pgEnum('adjustment_type', ADJUSTMENT_TYPES);
+
+export const cashSessions = pgTable(
+  'cash_sessions',
+  {
+    id,
+    openedBy: uuid()
+      .notNull()
+      .references(() => users.id),
+    openedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    /** Fundo de troco (suprimento inicial). */
+    openingFloatCents: integer().notNull(),
+    closedBy: uuid().references(() => users.id),
+    closedAt: timestamp({ withTimezone: true }),
+    expectedJson: jsonb(),
+    countedJson: jsonb(),
+    differenceCents: integer(),
+    notes: text(),
+    ...timestamps,
+  },
+  // Só um caixa aberto por vez.
+  (t) => [uniqueIndex('cash_sessions_one_open').on(sql`(1)`).where(sql`${t.closedAt} is null`)],
+);
+
+export const cashMovements = pgTable(
+  'cash_movements',
+  {
+    id,
+    cashSessionId: uuid()
+      .notNull()
+      .references(() => cashSessions.id),
+    type: cashMovementTypeEnum().notNull(),
+    amountCents: integer().notNull(),
+    reason: text().notNull(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.cashSessionId), check('cash_movements_positive', sql`${t.amountCents} > 0`)],
+);
+
+export const payments = pgTable(
+  'payments',
+  {
+    id,
+    /** Gerado na tela do caixa: clique duplo ou reenvio não cobram duas vezes. */
+    clientUuid: uuid().notNull().unique(),
+    cashSessionId: uuid()
+      .notNull()
+      .references(() => cashSessions.id),
+    method: paymentMethodEnum().notNull(),
+    /** Valor cobrado (abate a conta). */
+    amountCents: integer().notNull(),
+    /** Dinheiro entregue pelo cliente e troco devolvido. */
+    tenderedCents: integer(),
+    changeCents: integer().notNull().default(0),
+    payerName: text().notNull(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    status: paymentStatusEnum().notNull().default('OK'),
+    refundedBy: uuid().references(() => users.id),
+    refundReason: text(),
+    refundedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.cashSessionId), check('payments_positive', sql`${t.amountCents} > 0`)],
+);
+
+/** Quanto de cada pagamento foi para cada comanda (um pagamento pode quitar várias). */
+export const paymentComandas = pgTable(
+  'payment_comandas',
+  {
+    paymentId: uuid()
+      .notNull()
+      .references(() => payments.id, { onDelete: 'cascade' }),
+    comandaId: uuid()
+      .notNull()
+      .references(() => comandas.id),
+    amountCents: integer().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.paymentId, t.comandaId] }), index().on(t.comandaId)],
+);
+
+/** Pagamento por item ou fração de item (ex.: 1/3 da pizza). */
+export const paymentItems = pgTable(
+  'payment_items',
+  {
+    paymentId: uuid()
+      .notNull()
+      .references(() => payments.id, { onDelete: 'cascade' }),
+    orderItemId: uuid()
+      .notNull()
+      .references(() => orderItems.id),
+    comandaId: uuid()
+      .notNull()
+      .references(() => comandas.id),
+    fractionNum: integer().notNull(),
+    fractionDen: integer().notNull(),
+    /** Parte do item paga (sem a taxa de serviço). */
+    itemAmountCents: integer().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.paymentId, t.orderItemId, t.comandaId] }), index().on(t.orderItemId)],
+);
+
+export const adjustments = pgTable(
+  'adjustments',
+  {
+    id,
+    comandaId: uuid()
+      .notNull()
+      .references(() => comandas.id),
+    type: adjustmentTypeEnum().notNull(),
+    amountCents: integer(),
+    percentBps: integer(),
+    reason: text().notNull(),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    /** Gerente que autorizou com PIN, quando quem fez não tinha permissão. */
+    authorizedBy: uuid().references(() => users.id),
+    active: boolean().notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index().on(t.comandaId)],
 );

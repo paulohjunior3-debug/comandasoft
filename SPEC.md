@@ -246,6 +246,15 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
 - Ao zerar o restante: comanda `FECHADA`, mesa liberada, cupom final impresso.
 - **Estorno de pagamento**: gerente, com motivo, registrado em auditoria.
 
+> **Implementado (fase 2):** regras adotadas no código (`packages/shared/src/billing.ts`):
+> - Total da comanda = itens + taxa (10% dos itens, antes do desconto) + couvert (1 por comanda) − descontos; nunca negativo.
+> - Um pagamento que cobre várias comandas quita na ordem escolhida pelo caixa.
+> - Pagamento por item/fração inclui a taxa de serviço proporcional daquela comanda; frações somam exatamente o valor do item (o último pedaço leva os centavos que sobram).
+> - Comanda quitada fecha com os totais congelados (`final_totals`); a mesa fica livre quando todas fecham.
+> - Desconto, retirada de taxa/couvert e estorno: gerente logado ou PIN de gerente, com motivo e auditoria. Estorno só de pagamentos do caixa aberto; reabre as comandas que tinha fechado.
+> - Sangria não pode passar do dinheiro esperado na gaveta. Só um caixa aberto por vez.
+> - Pagamento é idempotente por `clientUuid` (clique duplo não cobra duas vezes).
+
 ### 5.8 Fiscal: NFC-e (fase 5)
 
 - Interpretação: "gerar receita" = emissão de **NFC-e** (Nota Fiscal de Consumidor Eletrônica, modelo 65).
