@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { StrictMode, useEffect, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router';
+import { UpdateBanner } from './components/UpdateBanner';
 import { ApiRequestError } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { outbox } from './lib/offline/outbox';
@@ -72,6 +73,7 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <OutboxRunner />
+        <UpdateBanner />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />

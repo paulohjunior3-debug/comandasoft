@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -30,3 +31,14 @@ export const paths = {
   /** Caminho do .env (ex.: certs/dev-cert.pem) relativo à raiz. */
   fromHome: (p: string) => resolve(HOME, p),
 };
+
+/** Versão do sistema: VERSAO.txt na instalação, package.json da raiz no repositório. */
+export function appVersion(): string {
+  try {
+    const file = join(HOME, 'VERSAO.txt');
+    if (existsSync(file)) return readFileSync(file, 'utf8').trim();
+    return (JSON.parse(readFileSync(join(HOME, 'package.json'), 'utf8')) as { version?: string }).version ?? 'dev';
+  } catch {
+    return 'dev';
+  }
+}

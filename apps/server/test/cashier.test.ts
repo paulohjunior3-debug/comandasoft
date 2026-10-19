@@ -94,6 +94,17 @@ describe('abertura do caixa (regras do dia)', () => {
     expect(res.json().error).toBe('NO_OPEN_SESSION');
   });
 
+  it('app de versão antiga (sem o caixa) recebe mensagem em português pedindo para recarregar', async () => {
+    const res = await caixa({ method: 'POST', url: '/api/cashier/session/open', payload: { openingFloatCents: 0 } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message).toMatch(/Faltou um dado obrigatório \(registerId\).*recarregue a página/);
+    expect(res.headers['x-sistema-bar-versao']).toBeTruthy();
+    const wrong = await caixa({ method: 'POST', url: '/api/cashier/session/open', payload: { registerId: ids.carlos, openingFloatCents: 'abc' } });
+    expect(wrong.json().message).not.toMatch(/expected|received|Invalid/);
+    const broken = await caixa({ method: 'POST', url: '/api/cashier/session/open', headers: { 'content-type': 'application/json' }, payload: '{' });
+    expect(broken.json().message).toBe('Os dados enviados estão em formato inválido.');
+  });
+
   it('o primeiro caixa define turno (passando da meia-noite), mesas e couvert', async () => {
     const res = await caixa({
       method: 'POST',

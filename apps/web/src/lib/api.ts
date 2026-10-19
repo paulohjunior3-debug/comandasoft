@@ -40,6 +40,31 @@ export const connection = {
   get: () => serverReachable,
 };
 
+// ---------- Versão nova no servidor ----------
+
+declare const __APP_VERSION__: string;
+
+/** Versão deste app (build). O servidor manda a dele em cada resposta. */
+export const APP_VERSION = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev';
+let newerVersion: string | null = null;
+const versionListeners = new Set<() => void>();
+
+export const serverVersion = {
+  subscribe(listener: () => void) {
+    versionListeners.add(listener);
+    return () => versionListeners.delete(listener);
+  },
+  /** Versão do servidor quando é diferente da deste app (precisa recarregar), senão null. */
+  get: () => newerVersion,
+};
+
+function checkVersion(res: Response) {
+  const v = res.headers.get('x-sistema-bar-versao');
+  if (!v || v === 'dev' || APP_VERSION === 'dev' || v === APP_VERSION || v === newerVersion) return;
+  newerVersion = v;
+  for (const l of versionListeners) l();
+}
+
 // ---------- Sessão ----------
 
 // O access token fica só em memória; o refresh token fica num cookie httpOnly que o JS não lê.
@@ -69,6 +94,7 @@ async function send(input: string, init: RequestInit): Promise<Response> {
   }
   // 502/503/504 = proxy ou servidor fora do ar; 500 do proxy do Vite também (API desligada).
   setReachable(res.status < 500 || res.status === 501);
+  checkVersion(res);
   return res;
 }
 

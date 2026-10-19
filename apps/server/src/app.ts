@@ -8,9 +8,9 @@ import { ZodError } from 'zod';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
-import { paths } from './paths';
+import { appVersion, paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
-import { HttpError, mapDbError } from './lib/errors';
+import { frameworkMessage, HttpError, mapDbError, validationMessage } from './lib/errors';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
 import { createPrintWorker, type PrintWorker } from './printing/worker';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
@@ -80,7 +80,7 @@ export async function buildApp({
     if (error instanceof ZodError) {
       return reply.code(400).send({
         error: 'VALIDATION',
-        message: error.issues[0]?.message ?? 'Dados inválidos.',
+        message: validationMessage(error.issues),
         issues: error.issues,
       });
     }
@@ -96,10 +96,16 @@ export async function buildApp({
       return reply.code(429).send({ error: 'RATE_LIMIT', message: 'Muitas tentativas. Aguarde um minuto.' });
     }
     if (err.statusCode && err.statusCode < 500) {
-      return reply.code(err.statusCode).send({ error: err.code ?? 'ERROR', message: err.message });
+      return reply.code(err.statusCode).send({ error: err.code ?? 'ERROR', message: frameworkMessage(err.code, err.statusCode) });
     }
     request.log.error(error);
     return reply.code(500).send({ error: 'INTERNAL', message: 'Erro interno no servidor.' });
+  });
+
+  // O app aberto no navegador compara com a sua versão e oferece recarregar depois de uma atualização.
+  const version = appVersion();
+  app.addHook('onSend', async (_request, reply) => {
+    reply.header('x-sistema-bar-versao', version);
   });
 
   await app.register(cookie);
