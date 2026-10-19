@@ -1,41 +1,84 @@
-import { formatBRL, type ComandaDetail } from '@sistema-bar/shared';
+import { formatBRL, type ComandaDetail, type CreateOrderInput, type OpenComandaInput } from '@sistema-bar/shared';
 import { useNavigate, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Loading } from '../../components/ui';
 import { formatTime } from '../../lib/format';
-import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
+import { useCachedQuery } from '../../lib/offline/cache';
+import { useOutboxEntries } from '../../lib/offline/hooks';
+import { pendingOrdersFor } from '../../lib/offline/local';
+import { errorMessage, useApiMutation } from '../../lib/queries';
 import { WaiterHeader } from './WaiterHeader';
 
 export function ComandaPage() {
+  // Pode ser o id do servidor ou o clientUuid (links do app usam o clientUuid, que funciona offline).
   const { comandaId } = useParams<{ comandaId: string }>();
   const navigate = useNavigate();
   const path = `/waiter/comandas/${comandaId}`;
-  const detail = useApiQuery<ComandaDetail>(path);
+  const entries = useOutboxEntries();
+  const localOpen = entries.find((e) => e.kind === 'comanda' && e.id === comandaId);
+  const detail = useCachedQuery<ComandaDetail>(path, { enabled: !localOpen });
   const requestClose = useApiMutation([path, '/waiter/tables']);
+
   const c = detail.data;
-  const open = c && (c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO');
+  const local = localOpen ? (localOpen.body as OpenComandaInput) : null;
+  const ref = c ? { id: c.id, clientUuid: c.clientUuid } : { id: comandaId!, clientUuid: comandaId! };
+  const queuedOrders = pendingOrdersFor(entries, ref);
+  const tableId = c?.tableId ?? localOpen?.tableId;
+  const name = c?.customerName ?? local?.customerName ?? 'Comanda';
+  const canOrder = local ? localOpen!.status === 'PENDENTE' : c && (c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO');
 
   const askClose = () =>
-    confirm(`Pedir o fechamento da comanda de ${c!.customerName}? O caixa será avisado.`) &&
+    confirm(`Pedir o fechamento da comanda de ${name}? O caixa será avisado.`) &&
     requestClose.mutate({ method: 'POST', path: `${path}/request-close` });
 
   return (
     <div className="min-h-dvh pb-28">
-      <WaiterHeader title={c ? c.customerName : 'Comanda'} back={c ? `/garcom/mesa/${c.tableId}` : '/garcom'} />
+      <WaiterHeader title={name} back={tableId ? `/garcom/mesa/${tableId}` : '/garcom'} />
       <main className="mx-auto max-w-3xl space-y-4 px-4 pt-4">
-        <ErrorBanner message={errorMessage(detail.error ?? requestClose.error)} />
+        <ErrorBanner message={!c && !local ? errorMessage(detail.error) : errorMessage(requestClose.error)} />
+
+        {localOpen && (
+          <p className={`rounded-lg px-3 py-2 text-sm ${localOpen.status === 'CONFLITO' ? 'bg-red-950 text-red-300' : 'bg-amber-950 text-amber-200'}`}>
+            {localOpen.status === 'CONFLITO'
+              ? `O servidor recusou esta abertura: ${localOpen.error?.message} Veja em Pendências.`
+              : 'Comanda aberta neste aparelho, aguardando envio ao servidor. Já dá para lançar pedidos.'}
+          </p>
+        )}
+
+        {c && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+            <span>Mesa {c.tableNumber}</span>
+            <span>·</span>
+            <span>Comanda nº {c.number}</span>
+            <span>·</span>
+            <span>aberta às {formatTime(c.openedAt)}</span>
+            {c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
+          </div>
+        )}
+
+        {queuedOrders.length > 0 && (
+          <section className="rounded-xl border border-amber-900 bg-amber-950/40 p-3">
+            <h2 className="mb-2 text-sm font-semibold text-amber-200">⏳ Aguardando envio</h2>
+            <ul className="space-y-1 text-sm">
+              {queuedOrders.flatMap((e) =>
+                (e.body as CreateOrderInput).items.map((i, idx) => (
+                  <li key={`${e.id}-${idx}`} className="flex gap-2">
+                    <span className="font-semibold">{i.qty}×</span>
+                    <span className="flex-1">
+                      {(i as QueuedItem).productName ?? 'Item'}
+                      {i.notes && <span className="block text-amber-300">{i.notes}</span>}
+                    </span>
+                    {e.status === 'CONFLITO' && <Badge tone="bad">Recusado</Badge>}
+                  </li>
+                )),
+              )}
+            </ul>
+          </section>
+        )}
+
         {!c ? (
           detail.isLoading && <Loading />
         ) : (
           <>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
-              <span>Mesa {c.tableNumber}</span>
-              <span>·</span>
-              <span>Comanda nº {c.number}</span>
-              <span>·</span>
-              <span>aberta às {formatTime(c.openedAt)}</span>
-              {c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
-            </div>
-
             {c.items.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">Nenhum item lançado ainda.</p>
             ) : (
@@ -65,7 +108,9 @@ export function ComandaPage() {
               {c.serviceFeeCents > 0 && <Row label="Taxa de serviço (10%)" value={formatBRL(c.serviceFeeCents)} />}
               <Row label="Total" value={formatBRL(c.totalWithFeeCents)} strong />
             </dl>
-            <p className="text-xs text-slate-500">Pagamentos, descontos e couvert são feitos no caixa.</p>
+            <p className="text-xs text-slate-500">
+              Pagamentos, descontos e couvert são feitos no caixa.{queuedOrders.length > 0 && ' Os itens aguardando envio ainda não entram no total.'}
+            </p>
 
             {c.status === 'ABERTA' && (
               <Button onClick={askClose} disabled={requestClose.isPending} className="w-full py-3">
@@ -76,20 +121,23 @@ export function ComandaPage() {
         )}
       </main>
 
-      {open && (
+      {canOrder && tableId && (
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-800 bg-slate-950/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <Button
             variant="primary"
             className="mx-auto block w-full max-w-3xl py-3.5 text-base"
-            onClick={() => navigate(`/garcom/mesa/${c.tableId}/pedido?comanda=${c.id}`)}
+            onClick={() => navigate(`/garcom/mesa/${tableId}/pedido?comanda=${ref.clientUuid}`)}
           >
-            Lançar para {c.customerName}
+            Lançar para {name}
           </Button>
         </div>
       )}
     </div>
   );
 }
+
+/** Itens na fila levam também o nome do produto, só para exibição (o servidor ignora). */
+type QueuedItem = CreateOrderInput['items'][number] & { productName?: string };
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
   return (

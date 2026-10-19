@@ -6,7 +6,7 @@ import {
   type ComandaDetail,
   type ComandaItem,
 } from '@sistema-bar/shared';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { comandas, diningTables, orderItems, orderItemShares, orders, users } from '../../db/schema';
@@ -113,7 +113,14 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
 
   /** Detalhe da comanda: itens (com a parte desta comanda nos rateados), subtotal e taxa prevista. */
   app.get('/:id', async (request): Promise<ComandaDetail> => {
-    const { id } = idParams.parse(request.params);
+    const { id: ref } = idParams.parse(request.params);
+    // Aceita o clientUuid: o app pode ter aberto a comanda offline e ainda só conhecer esse id.
+    const [found] = await db
+      .select({ id: comandas.id })
+      .from(comandas)
+      .where(or(eq(comandas.id, ref), eq(comandas.clientUuid, ref)));
+    if (!found) throw notFound('Comanda');
+    const id = found.id;
     const summary = await summaryOf(id);
     const [extra] = await db
       .select({ phone: comandas.phone, cpfLast3: comandas.cpfLast3 })

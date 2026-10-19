@@ -2,7 +2,7 @@
 
 Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A especificação completa está em [SPEC.md](SPEC.md).
 
-**Status:** Fase 0 concluída. Fase 1 em andamento: cadastros e app do garçom (mapa de mesas, comandas e lançamento de pedidos) prontos; faltam a fila offline no celular e a impressão (os cupons já entram na fila `print_jobs`).
+**Status:** Fase 0 concluída. Fase 1 em andamento: cadastros, app do garçom (mapa, comandas, lançamento) e fila offline no celular prontos; falta o worker de impressão (os cupons já entram na fila `print_jobs`).
 
 ## Estrutura
 
@@ -101,7 +101,7 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
 | Comando | O que faz |
 |---|---|
 | `pnpm dev` | API + PWA em modo desenvolvimento |
-| `pnpm test` | Testes (Vitest; a API é testada com PGlite, sem precisar do PostgreSQL) |
+| `pnpm test` | Testes (Vitest; a API é testada com PGlite e a fila offline com IndexedDB simulado, sem precisar do PostgreSQL) |
 | `pnpm typecheck` | Checagem de tipos em todos os pacotes |
 | `pnpm build` | Build da PWA (a API passa a servi-la em `pnpm start`) |
 | `pnpm db:generate` | Gera migration após alterar `apps/server/src/db/schema.ts` |

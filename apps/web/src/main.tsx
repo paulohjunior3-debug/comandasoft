@@ -1,10 +1,11 @@
 import type { Role } from '@sistema-bar/shared';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode, type ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { StrictMode, useEffect, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { ApiRequestError } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
+import { outbox } from './lib/offline/outbox';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { PrintersPage } from './pages/admin/PrintersPage';
@@ -15,6 +16,7 @@ import { UsersPage } from './pages/admin/UsersPage';
 import { HomePage } from './pages/Home';
 import { ComandaPage } from './pages/waiter/ComandaPage';
 import { OrderPage } from './pages/waiter/OrderPage';
+import { PendingPage } from './pages/waiter/PendingPage';
 import { TableMapPage } from './pages/waiter/TableMapPage';
 import { TablePage } from './pages/waiter/TablePage';
 import { LoginPage } from './pages/Login';
@@ -32,6 +34,25 @@ const queryClient = new QueryClient({
 
 const WAITER_ROLES: Role[] = ['GARCOM', 'GERENTE'];
 
+/** Liga a fila offline enquanto há alguém logado e atualiza as telas a cada envio confirmado. */
+function OutboxRunner() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!user) return;
+    const offSynced = outbox.onSynced(() => {
+      // refetchType 'all': recarrega também telas fechadas, para o cache offline não ficar velho.
+      void qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith('/waiter'), refetchType: 'all' });
+    });
+    const stop = outbox.start();
+    return () => {
+      offSynced();
+      stop();
+    };
+  }, [user, qc]);
+  return null;
+}
+
 function RequireAuth({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { user, loading } = useAuth();
   if (loading) {
@@ -46,6 +67,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <OutboxRunner />
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
@@ -86,6 +108,14 @@ createRoot(document.getElementById('root')!).render(
               element={
                 <RequireAuth roles={WAITER_ROLES}>
                   <ComandaPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom/pendencias"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <PendingPage />
                 </RequireAuth>
               }
             />

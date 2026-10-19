@@ -29,6 +29,7 @@ export async function loadComandaSummaries(db: Db, where: SQL | undefined): Prom
   const totals = await comandaTotals(db, rows.map((r) => r.comanda.id));
   return rows.map(({ comanda: c, tableNumber }) => ({
     id: c.id,
+    clientUuid: c.clientUuid,
     number: c.number,
     tableId: c.tableId,
     tableNumber,

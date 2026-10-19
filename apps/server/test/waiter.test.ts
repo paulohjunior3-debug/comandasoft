@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { comandas, orderItems, orders, printJobs } from '../src/db/schema';
+import { auditLogs, comandas, orderItems, orders, printJobs } from '../src/db/schema';
 import { createCpfVault } from '../src/lib/cpf-vault';
 import { createTestContext, type TestContext } from './helpers';
 
@@ -10,7 +10,7 @@ type Inject = Awaited<ReturnType<TestContext['as']>>;
 let ctx: TestContext;
 let admin: Inject;
 let garcom: Inject;
-type Key = 'bar' | 'cozinha' | 'cervejas' | 'porcoes' | 'sobremesas' | 'heineken' | 'fritas' | 'pudim' | 'mesa10' | 'mesa11' | 'paulo' | 'ana' | 'pauloMesa11';
+type Key = 'bar' | 'cozinha' | 'cervejas' | 'porcoes' | 'sobremesas' | 'heineken' | 'fritas' | 'pudim' | 'mesa10' | 'mesa11' | 'mesa12' | 'paulo' | 'ana' | 'pauloMesa11';
 const ids = {} as Record<Key, string>;
 
 // CPFs válidos de teste (gerados, não pertencem a ninguém).
@@ -19,7 +19,7 @@ const CPF = ['529.982.247-25', '111.444.777-35', '935.411.347-80', '286.255.878-
 const open = (tableId: string, customerName: string, cpf: string, clientUuid = randomUUID()) =>
   garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid, tableId, customerName, cpf } });
 
-const order = (payload: { comandaIds: string[]; items: { productId: string; qty: number; notes?: string }[]; tableId?: string; clientUuid?: string }) =>
+const order = (payload: { comandaIds: string[]; items: { productId: string; qty: number; notes?: string; expectedUnitPriceCents?: number }[]; tableId?: string; clientUuid?: string }) =>
   garcom({
     method: 'POST',
     url: '/api/waiter/orders',
@@ -40,9 +40,10 @@ beforeAll(async () => {
   ids.heineken = (await post('/api/admin/products', { categoryId: ids.cervejas, name: 'Heineken', priceCents: 1890 })).id;
   ids.fritas = (await post('/api/admin/products', { categoryId: ids.porcoes, name: 'Fritas', priceCents: 1000 })).id;
   ids.pudim = (await post('/api/admin/products', { categoryId: ids.sobremesas, name: 'Pudim', priceCents: 1200 })).id;
-  const tables = (await post('/api/admin/tables/bulk', { from: 10, to: 12 })).created as { id: string; number: number }[];
+  const tables = (await post('/api/admin/tables/bulk', { from: 10, to: 13 })).created as { id: string; number: number }[];
   ids.mesa10 = tables.find((t) => t.number === 10)!.id;
   ids.mesa11 = tables.find((t) => t.number === 11)!.id;
+  ids.mesa12 = tables.find((t) => t.number === 12)!.id;
 });
 afterAll(() => ctx.close());
 
@@ -173,15 +174,45 @@ describe('lançamento de pedidos', () => {
   });
 });
 
+describe('fila offline (SPEC 5.4)', () => {
+  it('pedido pode referenciar a comanda pelo clientUuid da abertura feita offline', async () => {
+    const comandaUuid = randomUUID();
+    // No celular: abertura e pedido entram na fila; a abertura é enviada primeiro.
+    expect((await open(ids.mesa12, 'Carla', '390.533.447-05', comandaUuid)).statusCode).toBe(201);
+    const res = await order({ tableId: ids.mesa12, comandaIds: [comandaUuid], items: [{ productId: ids.fritas, qty: 2 }] });
+    expect(res.statusCode).toBe(201);
+
+    const detail = await garcom({ method: 'GET', url: `/api/waiter/comandas/${comandaUuid}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({ customerName: 'Carla', clientUuid: comandaUuid, subtotalCents: 2000 });
+  });
+
+  it('comanda que não existe no servidor vira conflito (409), não erro de validação', async () => {
+    const res = await order({ comandaIds: [randomUUID()], items: [{ productId: ids.fritas, qty: 1 }] });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toBe('COMANDA_NOT_FOUND');
+  });
+
+  it('preço desatualizado no celular: vale o do servidor e a divergência fica registrada', async () => {
+    const res = await order({
+      comandaIds: [ids.paulo],
+      items: [{ productId: ids.fritas, qty: 1, expectedUnitPriceCents: 900 }],
+    });
+    expect(res.statusCode).toBe(201);
+    const [log] = await ctx.db.select().from(auditLogs).where(eq(auditLogs.entityId, res.json().orderId));
+    expect(log).toMatchObject({ action: 'PEDIDO_PRECO_DIVERGENTE', afterJson: [{ product: 'Fritas', deviceCents: 900, serverCents: 1000 }] });
+  });
+});
+
 describe('mapa de mesas e fechamento', () => {
   it('mostra status, quantidade de comandas e total por mesa', async () => {
     const map = (await garcom({ method: 'GET', url: '/api/waiter/tables' })).json();
     const m10 = map.tables.find((t: { number: number }) => t.number === 10);
-    const m12 = map.tables.find((t: { number: number }) => t.number === 12);
+    const m13 = map.tables.find((t: { number: number }) => t.number === 13);
     expect(m10).toMatchObject({ status: 'OCUPADA', comandaCount: 4 });
     expect(m10.totalCents).toBeGreaterThan(0);
     expect(m10.lastAttendedAt).not.toBeNull();
-    expect(m12).toMatchObject({ status: 'LIVRE', comandaCount: 0, lastAttendedAt: null });
+    expect(m13).toMatchObject({ status: 'LIVRE', comandaCount: 0, lastAttendedAt: null });
     expect(map).toMatchObject({ alertYellowMinutes: 15, alertRedMinutes: 30 });
   });
 

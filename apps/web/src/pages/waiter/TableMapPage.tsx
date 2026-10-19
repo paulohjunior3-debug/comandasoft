@@ -1,9 +1,10 @@
 import { formatBRL, type TableMapEntry, type TableMapResponse } from '@sistema-bar/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { ErrorBanner, Loading } from '../../components/ui';
-import { api } from '../../lib/api';
+import { cachedGet } from '../../lib/offline/cache';
+import { useOutboxEntries } from '../../lib/offline/hooks';
 import { useAuth } from '../../lib/auth';
 import { formatElapsed } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
@@ -33,12 +34,21 @@ export function TableMapPage() {
   const map = useQuery({
     queryKey: ['/waiter/tables'],
     queryFn: async () => {
-      const data = await api<TableMapResponse>('/waiter/tables');
+      const data = await cachedGet<TableMapResponse>('/waiter/tables');
       // Corrige diferença de relógio entre o celular e o servidor.
       return { ...data, clockOffset: new Date(data.serverTime).getTime() - Date.now() };
     },
     refetchInterval: 10_000,
+    retry: false,
   });
+  const queuedByTable = new Map<string, number>();
+  for (const e of useOutboxEntries()) queuedByTable.set(e.tableId, (queuedByTable.get(e.tableId) ?? 0) + 1);
+
+  // Deixa o cardápio guardado no aparelho desde já, para lançar pedidos mesmo se a rede cair depois.
+  const qc = useQueryClient();
+  useEffect(() => {
+    void qc.prefetchQuery({ queryKey: ['/waiter/menu'], queryFn: () => cachedGet('/waiter/menu') });
+  }, [qc]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -81,7 +91,9 @@ export function TableMapPage() {
                       const minutes = t.lastAttendedAt
                         ? Math.max(0, Math.floor((now + data.clockOffset - new Date(t.lastAttendedAt).getTime()) / 60_000))
                         : null;
-                      const tone = TONES[toneOf(t, minutes, data)];
+                      const queued = queuedByTable.get(t.id) ?? 0;
+                      // Comanda aberta offline: a mesa já conta como ocupada no aparelho.
+                      const tone = TONES[t.status === 'LIVRE' && queued > 0 ? 'green' : toneOf(t, minutes, data)];
                       return (
                         <Link
                           key={t.id}
@@ -91,6 +103,11 @@ export function TableMapPage() {
                         >
                           <div className="flex items-start justify-between">
                             <span className="text-3xl leading-none font-bold">{t.number}</span>
+                            {queued > 0 && (
+                              <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-xs font-bold text-slate-950" title="Aguardando envio">
+                                ⏳{queued}
+                              </span>
+                            )}
                             {t.comandaCount > 0 && (
                               <span className="rounded-full bg-black/30 px-1.5 py-0.5 text-xs font-semibold" title="Comandas">
                                 👤{t.comandaCount}

@@ -1,16 +1,23 @@
 import {
+  createOrderSchema,
   formatBRL,
-  type CreateOrderInput,
   type CreateOrderResponse,
   type MenuCategory,
   type MenuProduct,
   type TableDetail,
 } from '@sistema-bar/shared';
+import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { Button, ErrorBanner, Loading, Modal } from '../../components/ui';
-import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
-import { NewComandaModal } from './TablePage';
+import { ApiRequestError } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
+import { useCachedQuery } from '../../lib/offline/cache';
+import { useOutboxEntries } from '../../lib/offline/hooks';
+import { isPending, mergeComandas, pendingComandas } from '../../lib/offline/local';
+import { outbox } from '../../lib/offline/outbox';
+import { errorMessage } from '../../lib/queries';
+import { NewComandaModal, type SentState } from './TablePage';
 import { WaiterHeader } from './WaiterHeader';
 
 interface CartLine {
@@ -29,8 +36,9 @@ export function OrderPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const tablePath = `/waiter/tables/${tableId}`;
-  const table = useApiQuery<TableDetail>(tablePath);
-  const menu = useApiQuery<MenuCategory[]>('/waiter/menu');
+  const table = useCachedQuery<TableDetail>(tablePath);
+  const menu = useCachedQuery<MenuCategory[]>('/waiter/menu');
+  const entries = useOutboxEntries(tableId);
 
   const [selected, setSelected] = useState<string[]>(() => {
     const pre = params.get('comanda');
@@ -42,7 +50,12 @@ export function OrderPage() {
   const [reviewing, setReviewing] = useState(false);
   const [newComanda, setNewComanda] = useState(false);
 
-  const comandas = table.data?.comandas ?? [];
+  // Comandas do servidor + abertas offline. A seleção usa o clientUuid, que o servidor também aceita.
+  const comandas = (
+    table.data ? mergeComandas(table.data.comandas, pendingComandas(entries, table.data.table.id, table.data.table.number)) : []
+  )
+    .filter((c) => !(isPending(c) && c.conflict))
+    .map((c) => ({ ...c, id: c.clientUuid }));
   // Com uma única comanda na mesa, ela já vem marcada.
   const effectiveSelected = selected.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : selected;
 
@@ -209,11 +222,11 @@ export function OrderPage() {
         <NewComandaModal
           tableId={table.data.table.id}
           tableNumber={table.data.table.number}
-          invalidate={[tablePath]}
+          existingNames={comandas.map((c) => c.customerName)}
           onClose={() => setNewComanda(false)}
           onCreated={(c) => {
             setNewComanda(false);
-            setSelected((s) => [...(s.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : s), c.id]);
+            setSelected((s) => [...(s.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : s), c.clientUuid]);
           }}
         />
       )}
@@ -236,32 +249,49 @@ function ReviewModal({
   comandaIds: string[];
   comandaNames: string[];
   onClose: () => void;
-  onSent: (result: CreateOrderResponse) => void;
+  onSent: (state: SentState) => void;
 }) {
+  const { user } = useAuth();
   // Um clientUuid por pedido: se a rede falhar e o garçom tocar em Enviar de novo, não duplica.
   const [clientUuid] = useState(() => crypto.randomUUID());
   const [createdAtDevice] = useState(() => new Date().toISOString());
-  const send = useApiMutation<CreateOrderInput, CreateOrderResponse>([`/waiter/tables/${tableId}`, '/waiter/tables']);
+  const send = useMutation({
+    mutationFn: async () => {
+      const body = {
+        clientUuid,
+        tableId,
+        comandaIds,
+        createdAtDevice,
+        items: cart.map((l) => ({
+          productId: l.product.id,
+          qty: l.qty,
+          notes: l.notes,
+          expectedUnitPriceCents: l.product.priceCents,
+          productName: l.product.name, // só para exibir na fila; o servidor ignora
+        })),
+      };
+      const parsed = createOrderSchema.safeParse(body);
+      if (!parsed.success) throw new ApiRequestError(400, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Pedido inválido.');
+      const itemCount = cart.reduce((s, l) => s + l.qty, 0);
+      return outbox.submit<CreateOrderResponse>({
+        id: clientUuid,
+        kind: 'order',
+        method: 'POST',
+        path: '/waiter/orders',
+        body,
+        tableId,
+        label: `${itemCount} item(ns) para ${comandaNames.join(', ')}`,
+        userId: user!.id,
+      });
+    },
+    onSuccess: (r) => onSent(r.sent ? { result: r.result } : { queued: true }),
+  });
   const total = cart.reduce((s, l) => s + l.qty * l.product.priceCents, 0);
 
   const update = (key: string, patch: Partial<CartLine>) =>
     setCart((c) => c.map((l) => (l.key === key ? { ...l, ...patch } : l)).filter((l) => l.qty > 0));
 
-  const submit = () =>
-    send.mutate(
-      {
-        method: 'POST',
-        path: '/waiter/orders',
-        body: {
-          clientUuid,
-          tableId,
-          comandaIds,
-          createdAtDevice,
-          items: cart.map((l) => ({ productId: l.product.id, qty: l.qty, notes: l.notes })),
-        },
-      },
-      { onSuccess: onSent },
-    );
+  const submit = () => send.mutate();
 
   return (
     <Modal

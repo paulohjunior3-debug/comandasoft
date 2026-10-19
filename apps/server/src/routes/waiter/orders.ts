@@ -1,5 +1,5 @@
 import { createOrderSchema, splitCents, WAITER_ERRORS, type CreateOrderResponse } from '@sistema-bar/shared';
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import {
@@ -13,6 +13,7 @@ import {
   printJobs,
   products,
 } from '../../db/schema';
+import { audit } from '../../lib/audit';
 import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError } from '../../lib/errors';
 import type { ProductionTicket } from '../../printing/tickets';
@@ -39,8 +40,15 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db }: AppDeps) {
     const [table] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
     if (!table) throw new HttpError(400, 'VALIDATION', 'Mesa inválida.');
 
-    const targets = await db.select().from(comandas).where(inArray(comandas.id, comandaIds));
-    if (targets.length !== comandaIds.length || targets.some((c) => c.tableId !== table.id)) {
+    const targets = await db
+      .select()
+      .from(comandas)
+      .where(or(inArray(comandas.id, comandaIds), inArray(comandas.clientUuid, comandaIds)));
+    const resolve = (ref: string) => targets.find((c) => c.id === ref || c.clientUuid === ref);
+    if (comandaIds.some((ref) => !resolve(ref))) {
+      throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_FOUND, 'Comanda não encontrada. Lance em outra comanda ou descarte o pedido.');
+    }
+    if (targets.some((c) => c.tableId !== table.id)) {
       throw new HttpError(400, 'VALIDATION', 'Comanda inválida para esta mesa.');
     }
     const closed = targets.filter((c) => !(OPEN_STATUSES as readonly string[]).includes(c.status));
@@ -52,7 +60,7 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db }: AppDeps) {
       );
     }
     // Mantém a ordem escolhida pelo garçom (o 1º recebe os centavos que sobram no rateio).
-    const ordered = comandaIds.map((id) => targets.find((c) => c.id === id)!);
+    const ordered = [...new Map(comandaIds.map((ref) => resolve(ref)!).map((c) => [c.id, c])).values()];
 
     const productIds = [...new Set(input.items.map((i) => i.productId))];
     const found = await db.select().from(products).where(inArray(products.id, productIds));
@@ -128,6 +136,23 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db }: AppDeps) {
           }
           ticket.items.push({ qty: item.qty, name: product.name, notes: item.notes });
         }
+      }
+
+      // Pedido feito com cardápio desatualizado no celular: vale o preço do servidor, mas registra (SPEC 5.4 item 10).
+      const divergent = input.items
+        .map((i) => ({ item: i, product: found.find((p) => p.id === i.productId)! }))
+        .filter(({ item, product }) => item.expectedUnitPriceCents !== undefined && item.expectedUnitPriceCents !== product.priceCents);
+      if (divergent.length) {
+        await audit(tx, request, {
+          action: 'PEDIDO_PRECO_DIVERGENTE',
+          entity: 'order',
+          entityId: order.id,
+          after: divergent.map(({ item, product }) => ({
+            product: product.name,
+            deviceCents: item.expectedUnitPriceCents,
+            serverCents: product.priceCents,
+          })),
+        });
       }
 
       if (tickets.size) {

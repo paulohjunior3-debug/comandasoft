@@ -171,6 +171,8 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
 6. Ao confirmar, o servidor grava o pedido **e** cria os `print_jobs` na mesma transação. A impressão sai nesse momento.
 7. Abertura de comanda offline também passa pela outbox (com `client_uuid`); o número definitivo é atribuído pelo servidor e o app atualiza a referência local.
 8. **Conflitos**: se a comanda foi fechada/cancelada enquanto o pedido estava pendente, o servidor rejeita com código específico e o app mostra alerta ao garçom para decidir (lançar em outra comanda ou descartar).
+> **Implementado (fase 1):** `apps/web/src/lib/offline`. Online e com a fila vazia, o app envia na hora (erros como nome repetido aparecem no formulário); sem conexão, ou com algo já na fila, guarda e envia em ordem. Recusas do servidor (4xx) viram "conflito" na tela **Pendências**, onde o garçom lança em outra comanda, tenta de novo ou descarta. Pedidos podem referenciar a comanda pelo `clientUuid` da abertura offline. O app reabre sem rede com o último usuário e as telas em cache. Validações (CPF, nome repetido na mesa) rodam também no aparelho.
+
 9. Atenção ao **iOS**: não há Background Sync API; o envio só acontece com o app aberto. Orientar o garçom a manter o app em primeiro plano e mostrar contador de pendências bem visível.
 10. Preços no pedido offline são os do cache; o servidor grava o **preço vigente na hora do recebimento** e registra divergência em log (configurável: aceitar preço do celular ou do servidor).
 

@@ -1,45 +1,66 @@
-import { formatBRL, WAITER_ERRORS, type ComandaSummary, type CreateOrderResponse, type TableDetail } from '@sistema-bar/shared';
+import {
+  formatBRL,
+  openComandaSchema,
+  WAITER_ERRORS,
+  type ComandaSummary,
+  type CreateOrderResponse,
+  type TableDetail,
+} from '@sistema-bar/shared';
+import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Loading, Modal, TextField } from '../../components/ui';
 import { ApiRequestError } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
 import { maskCpf, maskPhone } from '../../lib/format';
-import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
+import { useCachedQuery } from '../../lib/offline/cache';
+import { useOutboxEntries } from '../../lib/offline/hooks';
+import { isPending, mergeComandas, pendingComandas, type PendingComanda } from '../../lib/offline/local';
+import { outbox, type SubmitResult } from '../../lib/offline/outbox';
+import { errorMessage } from '../../lib/queries';
 import { WaiterHeader } from './WaiterHeader';
+
+export type SentState = { result: CreateOrderResponse } | { queued: true };
 
 export function TablePage() {
   const { tableId } = useParams<{ tableId: string }>();
+  const { user } = useAuth();
   const navigate = useNavigate();
-  const sent = (useLocation().state as { sent?: CreateOrderResponse } | null)?.sent;
-  const path = `/waiter/tables/${tableId}`;
-  const detail = useApiQuery<TableDetail>(path);
-  const visit = useApiMutation(['/waiter/tables']);
+  const sent = (useLocation().state as { sent?: SentState } | null)?.sent;
+  const detail = useCachedQuery<TableDetail>(`/waiter/tables/${tableId}`);
+  const entries = useOutboxEntries(tableId);
   const [newComanda, setNewComanda] = useState(false);
   const [visited, setVisited] = useState(false);
 
   const t = detail.data;
-  const total = t?.comandas.reduce((sum, c) => sum + c.totalCents, 0) ?? 0;
+  const list = t ? mergeComandas(t.comandas, pendingComandas(entries, t.table.id, t.table.number)) : [];
+  const total = list.reduce((sum, c) => sum + c.totalCents, 0);
+  const pendingOrders = entries.filter((e) => e.kind === 'order').length;
 
-  const registerVisit = () =>
-    visit.mutate(
-      { method: 'POST', path: `${path}/visit`, body: { clientUuid: crypto.randomUUID() } },
-      { onSuccess: () => setVisited(true) },
-    );
+  const registerVisit = async () => {
+    await outbox.submit({
+      id: crypto.randomUUID(),
+      kind: 'visit',
+      method: 'POST',
+      path: `/waiter/tables/${tableId}/visit`,
+      body: {},
+      tableId: tableId!,
+      label: `Atendi a mesa ${t?.table.number ?? ''}`,
+      userId: user!.id,
+    }).catch(() => {});
+    setVisited(true);
+  };
 
   return (
     <div className="min-h-dvh pb-28">
       <WaiterHeader title={t ? `Mesa ${t.table.number}` : 'Mesa'} back="/garcom" />
       <main className="mx-auto max-w-3xl space-y-4 px-4 pt-4">
-        <ErrorBanner message={errorMessage(detail.error ?? visit.error)} />
-        {sent && (
-          <p role="status" className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
-            Pedido enviado.{' '}
-            {sent.unroutedItems > 0
-              ? `Atenção: ${sent.unroutedItems} item(ns) de categoria sem impressora não sairão em papel.`
-              : sent.printJobs > 0
-                ? `${sent.printJobs} cupom(ns) na fila de impressão.`
-                : ''}
-          </p>
+        <ErrorBanner message={!t ? errorMessage(detail.error) : null} />
+        <SentBanner sent={sent} stillQueued={pendingOrders > 0} />
+        {pendingOrders > 0 && (
+          <Link to="/garcom/pendencias" className="block rounded-lg bg-amber-950 px-3 py-2 text-sm text-amber-200">
+            ⏳ {pendingOrders} pedido(s) desta mesa aguardando envio. Mantenha o app aberto.
+          </Link>
         )}
         {!t ? (
           detail.isLoading && <Loading />
@@ -47,26 +68,26 @@ export function TablePage() {
           <>
             <div className="flex items-baseline justify-between">
               <p className="text-sm text-slate-400">
-                {t.comandas.length} comanda(s){t.table.area ? ` · ${t.table.area}` : ''}
+                {list.length} comanda(s){t.table.area ? ` · ${t.table.area}` : ''}
               </p>
-              {t.comandas.length > 0 && <p className="font-semibold">{formatBRL(total)}</p>}
+              {list.length > 0 && <p className="font-semibold">{formatBRL(total)}</p>}
             </div>
 
-            {t.comandas.length === 0 ? (
+            {list.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">
                 Mesa livre. Abra uma comanda para cada pessoa.
               </p>
             ) : (
               <ul className="divide-y divide-slate-800 overflow-hidden rounded-xl bg-slate-900">
-                {t.comandas.map((c) => (
-                  <ComandaRow key={c.id} comanda={c} />
+                {list.map((c) => (
+                  <ComandaRow key={c.clientUuid} comanda={c} />
                 ))}
               </ul>
             )}
 
             <div className="grid grid-cols-2 gap-2">
               <Button onClick={() => setNewComanda(true)} className="py-3">+ Nova comanda</Button>
-              <Button onClick={registerVisit} disabled={visit.isPending || t.comandas.length === 0} className="py-3">
+              <Button onClick={registerVisit} disabled={list.length === 0} className="py-3">
                 {visited ? '✓ Atendida' : 'Atendi a mesa'}
               </Button>
             </div>
@@ -74,7 +95,7 @@ export function TablePage() {
         )}
       </main>
 
-      {t && t.comandas.length > 0 && (
+      {t && list.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 border-t border-slate-800 bg-slate-950/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <Button variant="primary" className="mx-auto block w-full max-w-3xl py-3.5 text-base" onClick={() => navigate(`/garcom/mesa/${tableId}/pedido`)}>
             Lançar pedido
@@ -86,27 +107,58 @@ export function TablePage() {
         <NewComandaModal
           tableId={t.table.id}
           tableNumber={t.table.number}
+          existingNames={list.map((c) => c.customerName)}
           onClose={() => setNewComanda(false)}
           onCreated={() => setNewComanda(false)}
-          invalidate={[path]}
         />
       )}
     </div>
   );
 }
 
-function ComandaRow({ comanda: c }: { comanda: ComandaSummary }) {
+function SentBanner({ sent, stillQueued }: { sent?: SentState; stillQueued: boolean }) {
+  if (!sent) return null;
+  if ('queued' in sent && !stillQueued) {
+    return (
+      <p role="status" className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
+        Conexão de volta: os pedidos guardados foram enviados.
+      </p>
+    );
+  }
+  if ('queued' in sent) {
+    return (
+      <p role="status" className="rounded-lg bg-amber-950 px-3 py-2 text-sm text-amber-200">
+        Sem conexão: pedido guardado no aparelho. Ele será enviado e impresso assim que a conexão voltar.
+      </p>
+    );
+  }
+  const r = sent.result;
+  return (
+    <p role="status" className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300">
+      Pedido enviado.{' '}
+      {r.unroutedItems > 0
+        ? `Atenção: ${r.unroutedItems} item(ns) de categoria sem impressora não sairão em papel.`
+        : r.printJobs > 0
+          ? `${r.printJobs} cupom(ns) na fila de impressão.`
+          : ''}
+    </p>
+  );
+}
+
+function ComandaRow({ comanda: c }: { comanda: ComandaSummary | PendingComanda }) {
+  const pending = isPending(c);
   return (
     <li>
-      <Link to={`/garcom/comanda/${c.id}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-slate-800">
+      <Link to={`/garcom/comanda/${c.clientUuid}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-slate-800">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-800 font-semibold">
           {c.customerName.slice(0, 1).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-base font-medium">{c.customerName}</span>
-          {c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
+          {pending && (c.conflict ? <Badge tone="bad">Recusada · ver pendências</Badge> : <Badge tone="warn">Aguardando envio</Badge>)}
+          {!pending && c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
         </span>
-        <span className="font-medium">{formatBRL(c.totalCents)}</span>
+        {!pending && <span className="font-medium">{formatBRL(c.totalCents)}</span>}
         <span className="text-slate-500">›</span>
       </Link>
     </li>
@@ -116,29 +168,51 @@ function ComandaRow({ comanda: c }: { comanda: ComandaSummary }) {
 export function NewComandaModal({
   tableId,
   tableNumber,
+  existingNames,
   onClose,
   onCreated,
-  invalidate,
 }: {
   tableId: string;
   tableNumber: number;
+  /** Nomes já na mesa (inclusive pendentes): checados no aparelho, para funcionar offline. */
+  existingNames: string[];
   onClose: () => void;
-  onCreated: (c: ComandaSummary) => void;
-  invalidate: string[];
+  /** Recebe o clientUuid, que serve de id da comanda mesmo antes de chegar ao servidor. */
+  onCreated: (comanda: { clientUuid: string; customerName: string }) => void;
 }) {
+  const { user } = useAuth();
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
   const [phone, setPhone] = useState('');
   // Mesmo clientUuid em todas as tentativas desta abertura: reenviar não duplica.
   const [clientUuid] = useState(() => crypto.randomUUID());
-  const save = useApiMutation<unknown, ComandaSummary>([...invalidate, '/waiter/tables']);
+  const save = useMutation({
+    mutationFn: async () => {
+      const body = { clientUuid, tableId, customerName: name.trim(), cpf, phone };
+      // Mesmas regras do servidor, checadas aqui para o garçom saber na hora mesmo sem rede.
+      const parsed = openComandaSchema.safeParse(body);
+      if (!parsed.success) throw new ApiRequestError(400, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Dados inválidos.');
+      if (existingNames.some((n) => n.toLowerCase() === body.customerName.toLowerCase())) {
+        throw new ApiRequestError(
+          409,
+          WAITER_ERRORS.DUPLICATE_NAME,
+          `Já existe "${body.customerName}" na mesa ${tableNumber}. Acrescente o sobrenome ou uma inicial.`,
+        );
+      }
+      return outbox.submit<ComandaSummary>({
+        id: clientUuid,
+        kind: 'comanda',
+        method: 'POST',
+        path: '/waiter/comandas',
+        body,
+        tableId,
+        label: `Abrir comanda de ${body.customerName} (mesa ${tableNumber})`,
+        userId: user!.id,
+      });
+    },
+    onSuccess: (_r: SubmitResult<ComandaSummary>) => onCreated({ clientUuid, customerName: name.trim() }),
+  });
   const duplicateName = save.error instanceof ApiRequestError && save.error.code === WAITER_ERRORS.DUPLICATE_NAME;
-
-  const submit = () =>
-    save.mutate(
-      { method: 'POST', path: '/waiter/comandas', body: { clientUuid, tableId, customerName: name, cpf, phone } },
-      { onSuccess: onCreated },
-    );
 
   return (
     <Modal
@@ -147,7 +221,7 @@ export function NewComandaModal({
       footer={
         <>
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={submit} disabled={save.isPending}>Abrir comanda</Button>
+          <Button variant="primary" onClick={() => save.mutate()} disabled={save.isPending}>Abrir comanda</Button>
         </>
       }
     >
@@ -176,7 +250,8 @@ export function NewComandaModal({
         onChange={(e) => setPhone(maskPhone(e.target.value))}
       />
       <p className="text-xs text-slate-500">
-        O CPF identifica o cliente no caixa e na nota fiscal, e fica guardado de forma protegida (LGPD).
+        O CPF identifica o cliente no caixa e na nota fiscal, e fica guardado de forma protegida (LGPD). Sem conexão, a
+        comanda é aberta no aparelho e enviada quando a rede voltar.
       </p>
     </Modal>
   );

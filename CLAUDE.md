@@ -22,4 +22,6 @@ Monorepo pnpm (Node 22+, TypeScript estrito):
 - CPF nunca em texto puro no banco nem na URL (ver SPEC seção 6).
 - Interface e mensagens de erro em pt-BR; fuso `America/Sao_Paulo`.
 - Testes da API usam PGlite em memória (`apps/server/test`); não dependem de PostgreSQL instalado.
+- Fila offline do celular: `apps/web/src/lib/offline` (Dexie). Escrita nova do garçom deve passar por `outbox.submit` com `clientUuid`, e a leitura por `useCachedQuery`. Testes com `fake-indexeddb`.
+- Para testar telas sem mexer no banco real: `SANDBOX_PASSWORD=... SANDBOX_DEMO=1 PORT=3100 pnpm --filter @sistema-bar/server sandbox` + `PORT=3100 npx vite --port 5175` em `apps/web`.
 - Dependências: as versões foram fixadas em majors estáveis (TS 5, Vite 7, Vitest 3, React Router 7). Não suba major sem pedir.

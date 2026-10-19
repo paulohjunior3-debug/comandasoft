@@ -34,6 +34,8 @@ export type OpenComandaInput = z.input<typeof openComandaSchema>;
 
 export interface ComandaSummary {
   id: string;
+  /** Gerado no aparelho na abertura; o app usa como id provisório enquanto offline. */
+  clientUuid: string;
   number: number;
   tableId: string;
   tableNumber: number;
@@ -99,13 +101,18 @@ export const orderItemInputSchema = z.object({
     .transform((v) => v || null)
     .nullish()
     .transform((v) => v ?? null),
+  /** Preço que o aparelho mostrou (cache). Se diferir do vigente, o servidor registra a divergência. */
+  expectedUnitPriceCents: z.number().int().min(0).optional(),
 });
 export type OrderItemInput = z.input<typeof orderItemInputSchema>;
 
 export const createOrderSchema = z.object({
   clientUuid,
   tableId: z.string().uuid(),
-  /** Uma comanda, ou várias para ratear os itens igualmente entre elas. */
+  /**
+   * Uma comanda, ou várias para ratear os itens igualmente entre elas. Aceita o id da comanda
+   * ou o clientUuid da abertura (comanda aberta offline que acabou de ser sincronizada).
+   */
   comandaIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma comanda').max(30),
   items: z.array(orderItemInputSchema).min(1, 'O pedido está vazio').max(100),
   /** Quando o garçom tocou em Enviar (pode ser bem antes, se estava offline). */
@@ -154,6 +161,8 @@ export const WAITER_ERRORS = {
   CPF_HAS_OPEN_COMANDA: 'CPF_HAS_OPEN_COMANDA',
   /** Comanda fechada/cancelada enquanto o pedido estava pendente (SPEC 5.4 item 8). */
   COMANDA_NOT_OPEN: 'COMANDA_NOT_OPEN',
+  /** A comanda não existe no servidor (ex.: abertura offline recusada). */
+  COMANDA_NOT_FOUND: 'COMANDA_NOT_FOUND',
   SOLD_OUT: 'SOLD_OUT',
   PRODUCT_UNAVAILABLE: 'PRODUCT_UNAVAILABLE',
 } as const;
