@@ -1,0 +1,81 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
+import { sql } from 'drizzle-orm';
+import Fastify, { type FastifyServerOptions } from 'fastify';
+import { ZodError } from 'zod';
+import { createGuards, type Guards } from './auth/guard';
+import { createTokenService, type TokenService } from './auth/tokens';
+import type { Db } from './db/client';
+import { authRoutes } from './routes/auth';
+
+export interface AppDeps {
+  db: Db;
+  tokens: TokenService;
+  guards: Guards;
+}
+
+export interface BuildAppOptions {
+  db: Db;
+  jwtSecret: string;
+  fastify?: FastifyServerOptions;
+  /** Pasta do build da PWA. Padrão: apps/web/dist, se existir. `false` desliga. */
+  webDist?: string | false;
+}
+
+const defaultWebDist = fileURLToPath(new URL('../../web/dist', import.meta.url));
+
+export async function buildApp({ db, jwtSecret, fastify, webDist = defaultWebDist }: BuildAppOptions) {
+  const app = Fastify({ trustProxy: true, ...fastify });
+  const tokens = createTokenService(jwtSecret);
+  const deps: AppDeps = { db, tokens, guards: createGuards(tokens) };
+
+  app.setErrorHandler((error, request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        error: 'VALIDATION',
+        message: error.issues[0]?.message ?? 'Dados inválidos.',
+        issues: error.issues,
+      });
+    }
+    const err = error as { statusCode?: number; code?: string; message: string };
+    if (err.statusCode === 429) {
+      return reply.code(429).send({ error: 'RATE_LIMIT', message: 'Muitas tentativas. Aguarde um minuto.' });
+    }
+    if (err.statusCode && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: err.code ?? 'ERROR', message: err.message });
+    }
+    request.log.error(error);
+    return reply.code(500).send({ error: 'INTERNAL', message: 'Erro interno no servidor.' });
+  });
+
+  await app.register(cookie);
+  await app.register(rateLimit, { global: false });
+
+  await app.register(
+    async (api) => {
+      api.get('/health', async () => {
+        await db.execute(sql`select 1`);
+        return { status: 'ok', db: 'ok', time: new Date().toISOString() };
+      });
+      await api.register((auth) => authRoutes(auth, deps), { prefix: '/auth' });
+    },
+    { prefix: '/api' },
+  );
+
+  // Em produção o próprio Fastify serve a PWA buildada (SPA: rotas desconhecidas caem no index.html).
+  const servesWeb = webDist !== false && existsSync(webDist);
+  if (servesWeb) {
+    await app.register(fastifyStatic, { root: webDist, wildcard: false });
+  }
+  app.setNotFoundHandler((request, reply) => {
+    if (servesWeb && request.method === 'GET' && !request.url.startsWith('/api/')) {
+      return reply.sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'NOT_FOUND', message: 'Rota não encontrada.' });
+  });
+
+  return app;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "sistema-bar",
+  "private": true,
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sistema-bar/server --filter @sistema-bar/web dev",
+    "dev:server": "pnpm --filter @sistema-bar/server dev",
+    "dev:web": "pnpm --filter @sistema-bar/web dev",
+    "build": "pnpm --filter @sistema-bar/web build",
+    "start": "pnpm --filter @sistema-bar/server start",
+    "db:generate": "pnpm --filter @sistema-bar/server db:generate",
+    "db:migrate": "pnpm --filter @sistema-bar/server db:migrate",
+    "db:seed": "pnpm --filter @sistema-bar/server db:seed",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}
