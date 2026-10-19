@@ -11,3 +11,11 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Impressão (relatórios): fundo branco e texto escuro, sem gastar tinta. */
+@media print {
+  body {
+    background: #fff;
+    color: #0f172a;
+  }
+}

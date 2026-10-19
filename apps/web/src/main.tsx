@@ -13,6 +13,7 @@ import { PrintersPage } from './pages/admin/PrintersPage';
 import { PrintQueuePage } from './pages/admin/PrintQueuePage';
 import { ProductsPage } from './pages/admin/ProductsPage';
 import { RegistersPage } from './pages/admin/RegistersPage';
+import { ReportsPage } from './pages/admin/ReportsPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
 import { TablesPage } from './pages/admin/TablesPage';
 import { UsersPage } from './pages/admin/UsersPage';
@@ -160,6 +161,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="fila-impressao" element={<PrintQueuePage />} />
               <Route path="usuarios" element={<UsersPage />} />
               <Route path="caixas" element={<RegistersPage />} />
+              <Route path="relatorios" element={<ReportsPage />} />
               <Route path="configuracoes" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

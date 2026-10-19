@@ -10,3 +10,4 @@ export * from './billing';
 export * from './cashier';
 export * from './time';
 export * from './text';
+export * from './reports';

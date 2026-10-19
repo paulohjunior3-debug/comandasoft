@@ -2,6 +2,7 @@ import { NavLink, Outlet, Link } from 'react-router';
 import { useAuth } from '../../lib/auth';
 
 export const ADMIN_SECTIONS = [
+  { to: '/admin/relatorios', label: 'Relatórios' },
   { to: '/admin/categorias', label: 'Categorias' },
   { to: '/admin/produtos', label: 'Produtos' },
   { to: '/admin/mesas', label: 'Mesas' },
@@ -17,7 +18,7 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-dvh lg:flex">
-      <aside className="border-b border-slate-800 bg-slate-900/60 lg:sticky lg:top-0 lg:h-dvh lg:w-60 lg:shrink-0 lg:border-r lg:border-b-0">
+      <aside className="print:hidden border-b border-slate-800 bg-slate-900/60 lg:sticky lg:top-0 lg:h-dvh lg:w-60 lg:shrink-0 lg:border-r lg:border-b-0">
         <div className="flex items-center justify-between px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 lg:block lg:pt-5">
           <Link to="/" className="flex items-center gap-2 font-semibold">
             <img src="/favicon.svg" alt="" className="size-7" />
@@ -44,7 +45,7 @@ export function AdminLayout() {
           ))}
         </nav>
       </aside>
-      <main className="mx-auto w-full max-w-5xl px-4 py-6 lg:px-8">
+      <main className="mx-auto w-full max-w-5xl min-w-0 px-4 py-6 lg:px-8">
         <Outlet />
       </main>
     </div>

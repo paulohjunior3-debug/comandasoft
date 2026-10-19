@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cashSessions, comandas, fiscalRequests, printJobs } from '../src/db/schema';
+import { localDate, type SalesReport } from '@sistema-bar/shared';
+import { cashSessions, comandas, fiscalRequests, payments, printJobs } from '../src/db/schema';
 import { createTestContext, type TestContext } from './helpers';
 
 type Inject = Awaited<ReturnType<TestContext['as']>>;
@@ -378,5 +379,62 @@ describe('sangria, suprimento e fechamento por caixa', () => {
   it('comprovantes saíram na impressora do caixa', async () => {
     const jobs = await ctx.db.select().from(printJobs).where(and(eq(printJobs.printerId, ids.caixaPrinter), eq(printJobs.type, 'CAIXA')));
     expect(jobs.length).toBeGreaterThanOrEqual(5); // 2 aberturas, suprimento, sangria, 2 fechamentos
+  });
+});
+
+describe('relatório de vendas e entradas', () => {
+  const today = localDate(new Date());
+  const report = async (qs: string, as: Inject = admin) => as({ method: 'GET', url: `/api/admin/reports/sales?${qs}` });
+
+  it('soma as entradas por forma (cartão = crédito + débito), por caixa e por dia, sem os estornos', async () => {
+    const r: SalesReport = (await report(`from=${today}&to=${today}`)).json();
+    const all = await ctx.db.select().from(payments);
+    const ok = all.filter((p) => p.status === 'OK');
+    const sum = (m: string) => ok.filter((p) => p.method === m).reduce((s, p) => s + p.amountCents, 0);
+    expect(r.received.byMethod).toEqual({ CREDITO: sum('CREDITO'), DEBITO: sum('DEBITO'), PIX: sum('PIX'), DINHEIRO: sum('DINHEIRO') });
+    expect(r.received.cardCents).toBe(sum('CREDITO') + sum('DEBITO'));
+    expect(r.received.totalCents).toBe(ok.reduce((s, p) => s + p.amountCents, 0));
+    expect(r.refunds.count).toBe(all.length - ok.length);
+    expect(r.refunds.count).toBeGreaterThan(0);
+
+    expect(r.days).toHaveLength(1);
+    expect(r.days[0]!.date).toBe(today);
+    expect(r.days[0]!.totalCents).toBe(r.received.totalCents);
+    expect(r.registers.map((x) => x.name)).toEqual(['Caixa Carlos', 'Caixa Paulo']);
+    expect(r.registers.reduce((s, x) => s + x.totalCents, 0)).toBe(r.received.totalCents);
+    expect(r.cash).toMatchObject({ sessions: 2, openSessions: 0, suprimentoCents: 5_000, sangriaCents: 3_000 });
+    expect(r.sessions.find((x) => x.registerName === 'Caixa Carlos')!.differenceCents).toBe(-500);
+  });
+
+  it('vendas das comandas fechadas, ticket médio, produtos e o valor pedido em cupom fiscal', async () => {
+    const r: SalesReport = (await report(`from=${today}&to=${today}`)).json();
+    const closed = (await ctx.db.select().from(comandas)).filter((c) => c.status === 'FECHADA');
+    expect(r.sales.comandas).toBe(closed.length);
+    expect(r.sales.totalCents).toBe(closed.reduce((s, c) => s + (c.finalTotals as { totalCents: number }).totalCents, 0));
+    expect(r.sales.averageTicketCents).toBe(Math.round(r.sales.totalCents / r.sales.comandas));
+    expect(r.products.length).toBeGreaterThan(0);
+    expect(r.products[0]!.totalCents).toBeGreaterThanOrEqual(r.products.at(-1)!.totalCents);
+
+    const requests = await ctx.db.select().from(fiscalRequests);
+    expect(r.fiscal.requests).toBe(requests.length);
+    expect(r.fiscal.automatic).toBe(requests.filter((f) => f.automatic).length);
+    expect(r.fiscal.comandas).toBe(new Set(requests.flatMap((f) => f.comandaIds)).size);
+    expect(r.fiscal.requestedCents).toBeGreaterThan(0);
+    expect(r.fiscal.withoutNoteCents).toBe(Math.max(0, r.received.totalCents - r.fiscal.requestedCents));
+  });
+
+  it('filtra por caixa e por período; dia sem movimento vem zerado', async () => {
+    const paulo: SalesReport = (await report(`from=${today}&to=${today}&registerId=${ids.paulo}`)).json();
+    expect(paulo.registers.map((x) => x.name)).toEqual(['Caixa Paulo']);
+    expect(paulo.cash.sessions).toBe(1);
+    const empty: SalesReport = (await report('from=2020-01-01&to=2020-01-31')).json();
+    expect(empty.received.totalCents).toBe(0);
+    expect(empty.days).toEqual([]);
+  });
+
+  it('valida as datas em português e é só do admin', async () => {
+    expect((await report('from=2026-02-10&to=2026-02-01')).json().message).toBe('A data inicial é depois da final.');
+    expect((await report('from=10/02/2026&to=2026-02-01')).json().message).toBe('Data inválida (use AAAA-MM-DD).');
+    expect((await report(`from=${today}&to=${today}`, caixa)).statusCode).toBe(403);
   });
 });

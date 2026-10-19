@@ -4,6 +4,7 @@ import { categoryRoutes } from './categories';
 import { printerRoutes } from './printers';
 import { productRoutes } from './products';
 import { registerRoutes } from './registers';
+import { reportRoutes } from './reports';
 import { settingsRoutes } from './settings';
 import { tableRoutes } from './tables';
 import { userRoutes } from './users';
@@ -19,4 +20,5 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps) {
   await app.register((r) => userRoutes(r, deps), { prefix: '/users' });
   await app.register((r) => registerRoutes(r, deps), { prefix: '/registers' });
   await app.register((r) => settingsRoutes(r, deps), { prefix: '/settings' });
+  await app.register((r) => reportRoutes(r, deps), { prefix: '/reports' });
 }

@@ -57,3 +57,15 @@ describe('busca sem acento', () => {
     expect(matchesSearch('Coca-Cola', 'guarana')).toBe(false);
   });
 });
+
+describe('dias de operação', () => {
+  it('a data é a de Brasília: 01:30 de 20/10 em Brasília (04:30 UTC) ainda é dia 20, 23:30 de 19/10 é dia 19', async () => {
+    const { localDate, localDayRange, daysBetween } = await import('./time');
+    expect(localDate(new Date('2026-10-20T04:30:00Z'))).toBe('2026-10-20');
+    expect(localDate(new Date('2026-10-20T02:30:00Z'))).toBe('2026-10-19');
+    const { start, end } = localDayRange('2026-10-19', '2026-10-20');
+    expect(start.toISOString()).toBe('2026-10-19T03:00:00.000Z');
+    expect(end.toISOString()).toBe('2026-10-21T03:00:00.000Z');
+    expect(daysBetween('2026-10-01', '2026-10-31')).toBe(31);
+  });
+});

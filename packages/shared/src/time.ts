@@ -35,3 +35,21 @@ export function formatLocalTime(date: Date | string): string {
   const d = new Date(new Date(date).getTime() + OFFSET_MS);
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
+
+/** Data de Brasília "AAAA-MM-DD" de um instante. */
+export function localDate(date: Date | string): string {
+  const d = new Date(new Date(date).getTime() + OFFSET_MS);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Início (00:00 de Brasília do primeiro dia) e fim exclusivo (00:00 do dia seguinte ao último). */
+export function localDayRange(from: string, to: string): { start: Date; end: Date } {
+  const start = new Date(Date.parse(`${from}T00:00:00Z`) - OFFSET_MS);
+  const end = new Date(Date.parse(`${to}T00:00:00Z`) - OFFSET_MS + DAY);
+  return { start, end };
+}
+
+/** Dias corridos entre duas datas "AAAA-MM-DD" (inclusive nas duas pontas). */
+export function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY) + 1;
+}
