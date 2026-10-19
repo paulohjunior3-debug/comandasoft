@@ -24,5 +24,7 @@ Monorepo pnpm (Node 22+, TypeScript estrito):
 - Testes da API usam PGlite em memória (`apps/server/test`); não dependem de PostgreSQL instalado.
 - Fila offline do celular: `apps/web/src/lib/offline` (Dexie). Escrita nova do garçom deve passar por `outbox.submit` com `clientUuid`, e a leitura por `useCachedQuery`. Testes com `fake-indexeddb`.
 - Impressão: layouts em `apps/server/src/printing/layouts.ts`; testes usam um transporte falso (`ctx.printed`, `ctx.failing`). Nunca rode com `PRINT_MODE=windows` contra impressoras PDF/XPS.
+- Caminhos de arquivos (migrations, PWA, .env, data, scripts) vêm de `apps/server/src/paths.ts`: funcionam no repositório e na instalação (`C:SistemaBar`). Não use `import.meta.url` direto.
+- Instalador: `instalador/*.ps1` (Windows PowerShell 5.1, sem `&&`/ternário); `pnpm empacotar` gera o zip (servidor em um arquivo via esbuild, `.ps1` com BOM). Teste mudanças extraindo o zip numa pasta de caminho curto.
 - Para testar telas sem mexer no banco real: `SANDBOX_PASSWORD=... SANDBOX_DEMO=1 PORT=3100 pnpm --filter @sistema-bar/server sandbox` + `PORT=3100 npx vite --port 5175` em `apps/web`.
 - Dependências: as versões foram fixadas em majors estáveis (TS 5, Vite 7, Vitest 3, React Router 7). Não suba major sem pedir.

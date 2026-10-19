@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { paths } from '../paths';
 
 const run = promisify(execFile);
 
@@ -45,7 +45,7 @@ export function emulatorTransport(dir: string): PrintTransport {
   };
 }
 
-const RAW_SCRIPT = fileURLToPath(new URL('../../scripts/raw-print.ps1', import.meta.url));
+const RAW_SCRIPT = paths.rawPrintScript;
 
 /**
  * Impressoras instaladas no Windows (rede ou USB), pelo nome da instalação (SPEC 12).

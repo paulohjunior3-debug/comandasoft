@@ -1,0 +1,68 @@
+SISTEMA BAR - INSTALAÇÃO NO PC DO CAIXA
+========================================
+
+Requisitos: Windows 10 ou 11 (64 bits), internet durante a instalação
+(para baixar Node.js e PostgreSQL), e o PC ligado na mesma rede (Wi-Fi ou
+cabo) que os celulares dos garçons.
+
+INSTALAR (primeira vez)
+-----------------------
+1. Extraia este .zip numa pasta qualquer (ex.: Downloads).
+2. Dê dois cliques em INSTALAR.bat e aceite o pedido de administrador.
+   O Windows pode pedir mais algumas confirmações (instalação do PostgreSQL
+   e do certificado): responda Sim.
+3. No final aparecem:
+   - o endereço para os celulares (ex.: https://192.168.0.25:3000);
+   - o usuário "admin" e a SENHA. Anote a senha: ela só aparece uma vez.
+4. Guarde uma cópia do arquivo C:\SistemaBar\.env num pendrive, em local
+   seguro. Sem ele, os CPFs gravados não podem ser lidos.
+
+O sistema fica em C:\SistemaBar e liga sozinho junto com o Windows.
+Todo dia às 3h é feito um backup do banco em C:\SistemaBar\data\backups
+(ficam os últimos 30 dias).
+
+CELULARES (uma vez em cada aparelho)
+------------------------------------
+1. Envie o arquivo C:\SistemaBar\certs\rootCA.crt para o celular.
+   Android: Configurações > Segurança > Criptografia e credenciais >
+            Instalar certificado > Certificado de CA.
+   iPhone:  instale o perfil em Ajustes e depois ATIVE em
+            Ajustes > Geral > Sobre > Ajustes de Confiança de Certificado.
+2. Abra o endereço mostrado no fim da instalação, entre com o usuário do
+   garçom e use "Adicionar à tela inicial".
+
+PRIMEIROS AJUSTES (como admin, no navegador do PC)
+--------------------------------------------------
+- Usuários: crie garçons, caixa e gerente (o gerente precisa de PIN).
+- Impressoras: instale as Elgin no Windows com o driver do fabricante,
+  depois cadastre no sistema, marque as categorias e use "Imprimir teste".
+- Configurações: escolha a impressora do caixa, taxa de serviço e dados do bar.
+
+ATUALIZAR PARA UMA VERSÃO NOVA
+------------------------------
+Extraia o novo .zip numa pasta (NÃO dentro de C:\SistemaBar) e dê dois
+cliques em ATUALIZAR.bat. Ele faz backup, troca o sistema e mantém os
+dados, a configuração e os certificados.
+
+SE O IP DO PC MUDAR
+-------------------
+O ideal é reservar o IP do PC no roteador. Se mudar, rode como
+administrador:  C:\SistemaBar\gerar-certificado.ps1
+e reinicie o PC. Nos celulares, abra o endereço novo e adicione à tela
+inicial de novo.
+
+PROBLEMAS
+---------
+- Log do servidor: C:\SistemaBar\data\logs\servidor.log
+- Fila de impressão: no sistema, Administração > Fila de impressão
+- Servidor parado: Agendador de Tarefas > "Sistema Bar - Servidor" > Executar
+- Remover da inicialização (mantém os dados): desinstalar.ps1 como administrador
+
+RESTAURAR UM BACKUP (com cuidado; apaga os dados atuais do banco)
+-----------------------------------------------------------------
+1. Pare o servidor (Agendador de Tarefas > Sistema Bar - Servidor > Finalizar).
+2. No PowerShell como administrador:
+   & "C:\Program Files\PostgreSQL\16\bin\pg_restore.exe" -U postgres -h localhost `
+     -d sistema_bar --clean --if-exists "C:\SistemaBar\data\backups\ARQUIVO.dump"
+   (a senha do postgres está no .env, em DATABASE_URL)
+3. Inicie o servidor de novo.

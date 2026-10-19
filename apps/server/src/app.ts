@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
@@ -9,6 +8,7 @@ import { ZodError } from 'zod';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
+import { paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { HttpError, mapDbError } from './lib/errors';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
@@ -48,8 +48,8 @@ export interface BuildAppOptions {
   listInstalledPrinters?: ListInstalledPrinters;
 }
 
-const defaultWebDist = fileURLToPath(new URL('../../web/dist', import.meta.url));
-export const defaultEmulatorDir = fileURLToPath(new URL('../../../data/impressoes', import.meta.url));
+const defaultWebDist = paths.webDist;
+export const defaultEmulatorDir = paths.emulatorDir;
 
 export async function buildApp({
   db,

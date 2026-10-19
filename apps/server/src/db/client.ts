@@ -1,15 +1,15 @@
-import { fileURLToPath } from 'node:url';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { paths } from '../paths';
 import * as schema from './schema';
 
 /** Tipo comum ao driver real (postgres-js) e ao PGlite usado nos testes. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Db = PgDatabase<any, typeof schema>;
 
-export const migrationsFolder = fileURLToPath(new URL('../../drizzle', import.meta.url));
+export const migrationsFolder = paths.migrations;
 
 export function createDb(databaseUrl: string) {
   const sql = postgres(databaseUrl, { max: 10, onnotice: () => {} });

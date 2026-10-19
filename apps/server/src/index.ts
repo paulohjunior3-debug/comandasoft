@@ -1,14 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { buildApp, defaultEmulatorDir } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { paths } from './paths';
 import { emulatorTransport, windowsTransport } from './printing/transport';
-
-// Caminhos relativos do .env (ex.: certs/dev-cert.pem) valem a partir da raiz do projeto.
-const root = fileURLToPath(new URL('../../../', import.meta.url));
-const fromRoot = (p: string) => resolve(root, p);
 
 const config = loadConfig();
 const conn = createDb(config.DATABASE_URL);
@@ -16,7 +11,7 @@ await conn.migrate();
 
 const https =
   config.HTTPS_CERT && config.HTTPS_KEY
-    ? { cert: readFileSync(fromRoot(config.HTTPS_CERT)), key: readFileSync(fromRoot(config.HTTPS_KEY)) }
+    ? { cert: readFileSync(paths.fromHome(config.HTTPS_CERT)), key: readFileSync(paths.fromHome(config.HTTPS_KEY)) }
     : null;
 
 const app = await buildApp({

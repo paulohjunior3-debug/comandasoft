@@ -8,7 +8,9 @@ Tempo estimado: 1h30 de preparação + 1h de testes. Faça fora do horário de m
 
 ## Parte A — Antes de sair (no seu PC, ~20 min)
 
-- [ ] **Decidir qual PC será o servidor.** Para este primeiro teste, o mais simples é levar **este PC** (já tem tudo instalado). Instalar no PC do bar fica para o instalador da Fase 3.
+- [ ] **Decidir qual PC será o servidor.**
+  - **PC do bar (recomendado):** gere o pacote (`pnpm.cmd empacotar`), leve `dist-instaladorSistemaBar-<versão>.zip` num pendrive, extraia no PC do caixa e rode **INSTALAR.bat** (precisa de internet durante a instalação). Ele já faz rede, certificado, firewall, banco, admin e cardápio; nesse caso pule a Parte B e use o endereço que aparece no fim da instalação. Instalado, o modo de impressão já é `windows`.
+  - **Levar este PC:** siga as Partes B a D como estão.
 - [ ] **Baixar o driver da Elgin** do site do fabricante, para o modelo exato (i7, i9…), e salvar no PC. No bar pode não ter internet boa.
 - [ ] **Cadastrar os dados reais**, que ficam no banco do PC:
   - [ ] Usuários (Administração > Usuários): 1 garçom, 1 caixa e 1 gerente **com PIN** de 4 a 6 números.

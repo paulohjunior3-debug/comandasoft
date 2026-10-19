@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
+import { paths } from './paths';
 
-const rootEnv = fileURLToPath(new URL('../../../.env', import.meta.url));
-if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
+if (existsSync(paths.envFile)) process.loadEnvFile(paths.envFile);
 
 const emptyToUndefined = (v: unknown) => (v === '' ? undefined : v);
 

@@ -88,6 +88,26 @@ PWA e Service Worker exigem HTTPS fora do `localhost`.
    As regras valem para rede Privada e Pública, mas **só aceitam aparelhos da mesma rede local**. Isso cobre o caso comum de o Windows marcar o Wi-Fi como "Público" e não deixar trocar.
 5. No celular, conectado ao mesmo Wi-Fi, abra `https://IP-DO-PC:5173`, faça login e use "Adicionar à tela inicial".
 
+## Instalar no PC do bar
+
+Gere o pacote neste PC de desenvolvimento:
+
+```powershell
+pnpm.cmd empacotar
+```
+
+Sai `dist-instaladorSistemaBar-<versão>.zip` (~1,3 MB). No PC do caixa (Windows 10/11, com internet na hora de instalar): extraia o zip e dê dois cliques em **INSTALAR.bat**. O instalador:
+
+- instala Node.js, PostgreSQL 16 e mkcert pelo `winget`, se faltarem;
+- cria o banco, o `.env` com segredos aleatórios (protegido só para administradores) e o certificado HTTPS para os IPs do PC;
+- cria as tabelas e o usuário `admin` (mostra a senha uma vez) e oferece importar o cardápio;
+- libera a porta 3000 no firewall só para a rede local;
+- agenda o servidor para iniciar com o Windows (reinicia sozinho se cair) e o backup diário às 3h (30 dias em `dataackups`).
+
+Para atualizar: gere um pacote novo, extraia no PC do bar e rode **ATUALIZAR.bat** (faz backup antes e mantém `.env`, certificados e dados). Detalhes para quem instala: `instalador/LEIA-ME.txt`.
+
+Comandos de manutenção (instalado: `node appcli.mjs <comando>`; desenvolvimento: `pnpm --filter @sistema-bar/server cli <comando>`): `migrate`, `criar-admin`, `backup [--manter 30]`, `importar-cardapio <arquivo.json>`.
+
 ## 5. Caixa
 
 Em **Caixa** (perfis Caixa, Gerente e Admin):

@@ -1,25 +1,15 @@
-import { randomBytes } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import { hashPassword } from '../auth/password';
 import { loadConfig } from '../config';
+import { ensureAdminUser } from '../lib/admin-user';
 import { createDb } from './client';
-import { users } from './schema';
 
 const config = loadConfig();
 const conn = createDb(config.DATABASE_URL);
 await conn.migrate();
 
-const existing = await conn.db.select({ id: users.id }).from(users).where(eq(users.login, 'admin'));
-if (existing.length > 0) {
+const password = await ensureAdminUser(conn.db, config.SEED_ADMIN_PASSWORD);
+if (password === null) {
   console.log('Usuário "admin" já existe. Nada a fazer.');
 } else {
-  const password = config.SEED_ADMIN_PASSWORD ?? randomBytes(9).toString('base64url');
-  await conn.db.insert(users).values({
-    name: 'Administrador',
-    login: 'admin',
-    passwordHash: await hashPassword(password),
-    role: 'ADMIN',
-  });
   console.log('Usuário admin criado.');
   console.log('  login: admin');
   if (!config.SEED_ADMIN_PASSWORD) {

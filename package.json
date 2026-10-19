@@ -1,5 +1,6 @@
 {
   "name": "sistema-bar",
+  "version": "0.3.0",
   "private": true,
   "packageManager": "pnpm@10.34.7",
   "engines": {
@@ -15,6 +16,10 @@
     "db:migrate": "pnpm --filter @sistema-bar/server db:migrate",
     "db:seed": "pnpm --filter @sistema-bar/server db:seed",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "empacotar": "node scripts/empacotar.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
   }
 }
