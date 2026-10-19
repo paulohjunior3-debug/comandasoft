@@ -12,6 +12,7 @@
 # Opções (todas opcionais):
 #   -Destino C:\SistemaBar     pasta da instalação
 #   -Porta 3000                porta HTTPS
+#   -PortaCliente 8080         porta HTTP do QR Code das mesas (cardápio e comanda do cliente)
 #   -Banco sistema_bar         nome do banco a criar
 #   -ConexaoArquivo arquivo    arquivo com a DATABASE_URL de um banco já preparado (PC onde o
 #                              PostgreSQL já existe e alguém criou o banco e o usuário antes);
@@ -20,6 +21,7 @@
 param(
   [string]$Destino = 'C:\SistemaBar',
   [int]$Porta = 3000,
+  [int]$PortaCliente = 8080,
   [string]$Banco = 'sistema_bar',
   [string]$ConexaoArquivo = '',
   [ValidateSet('windows', 'emulador')][string]$ModoImpressao = 'windows'
@@ -125,6 +127,8 @@ HOST=0.0.0.0
 HTTPS_CERT=certs/servidor-cert.pem
 HTTPS_KEY=certs/servidor-key.pem
 PRINT_MODE=$ModoImpressao
+# QR Code das mesas: porta HTTP do cardápio e da comanda do cliente (só rede local).
+PUBLIC_PORT=$PortaCliente
 "@
 $envArquivo = Join-Path $Destino '.env'
 [IO.File]::WriteAllText($envArquivo, $envTexto, (New-Object Text.UTF8Encoding($false)))
@@ -155,6 +159,8 @@ Get-NetFirewallRule -DisplayName $RegraFirewall -ErrorAction SilentlyContinue | 
 New-NetFirewallRule -DisplayName $RegraFirewall -Direction Inbound -Protocol TCP -LocalPort $Porta `
   -Action Allow -Profile Private, Public -RemoteAddress LocalSubnet | Out-Null
 Ok "Porta $Porta liberada só para aparelhos da rede local"
+Liberar-Porta-Cliente $PortaCliente
+Ok "Porta $PortaCliente (QR Code das mesas) liberada só para a rede local"
 
 # ---------- 8. Iniciar com o Windows + backup diário ----------
 Passo 'Agendando o servidor e o backup'
@@ -190,6 +196,7 @@ Write-Host ''
 Write-Host '==================== INSTALAÇÃO CONCLUÍDA ====================' -ForegroundColor Green
 Write-Host "Endereço para os celulares e o caixa:"
 foreach ($ip in $ips) { Write-Host "    https://${ip}:$Porta" -ForegroundColor White }
+Write-Host "QR Code das mesas: imprima em Administração > Mesas > Imprimir QR Codes (porta $PortaCliente)."
 if ($senhaAdmin) {
   Write-Host ''
   Write-Host 'Primeiro acesso (anote agora; a senha não será mostrada de novo):' -ForegroundColor Yellow

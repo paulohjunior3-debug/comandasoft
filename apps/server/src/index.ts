@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { buildApp, defaultEmulatorDir } from './app';
+import { buildPublicApp } from './public-app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { paths } from './paths';
@@ -21,6 +22,7 @@ const app = await buildApp({
   db: conn.db,
   jwtSecret: config.JWT_SECRET,
   cpfSecret: config.CPF_SECRET,
+  publicPort: config.PUBLIC_PORT ?? null,
   // Instalado, o log guarda só início, avisos e erros (cada requisição encheria o arquivo à toa).
   requestLogLevel: config.NODE_ENV === 'production' ? 'warn' : 'info',
   printTransport:
@@ -34,8 +36,14 @@ const app = await buildApp({
   },
 });
 
+// QR do cliente em HTTP, numa porta só dele (SPEC 5.6).
+const publicApp = config.PUBLIC_PORT
+  ? await buildPublicApp({ db: conn.db, jwtSecret: config.JWT_SECRET, fastify: { loggerInstance: app.log } })
+  : null;
+
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
+    await publicApp?.close();
     await app.close();
     await conn.close();
     process.exit(0);
@@ -44,4 +52,8 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 await app.listen({ port: config.PORT, host: config.HOST });
 await app.printWorker.start();
+if (publicApp && config.PUBLIC_PORT) {
+  await publicApp.listen({ port: config.PUBLIC_PORT, host: config.HOST });
+  app.log.info(`QR do cliente: http na porta ${config.PUBLIC_PORT}`);
+}
 app.log.info(`Impressão: modo ${config.PRINT_MODE}`);

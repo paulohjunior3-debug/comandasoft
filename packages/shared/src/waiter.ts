@@ -156,6 +156,8 @@ export interface ComandaDetail extends ComandaSummary {
   couvertCents: number;
   /** Total da comanda (itens + taxa + couvert − descontos). */
   totalWithFeeCents: number;
+  /** Consulta pelo QR bloqueada por PIN errado demais: o garçom libera. */
+  qrLocked: boolean;
 }
 
 // ---------- Erros com tratamento específico no app ----------

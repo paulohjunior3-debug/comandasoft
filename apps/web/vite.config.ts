@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Certificado gerado por scripts/gerar-certificado.ps1 (mkcert). Sem ele, o Vite sobe em HTTP.
@@ -14,9 +14,21 @@ const https = existsSync(cert) && existsSync(key) ? { cert: readFileSync(cert), 
 const apiPort = process.env.PORT ?? '3000';
 const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8')) as { version: string };
 
+/** Em desenvolvimento, /m/<token> (QR da mesa) abre a página do cliente, como no servidor instalado. */
+const clientPageInDev: Plugin = {
+  name: 'sistema-bar-pagina-do-cliente',
+  configureServer(server) {
+    server.middlewares.use((req, _res, next) => {
+      if (req.url?.startsWith('/m/')) req.url = '/cliente.html';
+      next();
+    });
+  },
+};
+
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [
+    clientPageInDev,
     react(),
     tailwindcss(),
     VitePWA({
@@ -41,12 +53,22 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        // /m/… é a página do cliente (QR da mesa), servida pelo servidor, fora do app.
+        navigateFallbackDenylist: [/^\/api\//, /^\/m\//],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
       devOptions: { enabled: true, type: 'module' },
     }),
   ],
+  build: {
+    rollupOptions: {
+      // Duas páginas: o sistema (index.html) e a do cliente pelo QR da mesa (cliente.html).
+      input: {
+        main: fileURLToPath(new URL('index.html', import.meta.url)),
+        cliente: fileURLToPath(new URL('cliente.html', import.meta.url)),
+      },
+    },
+  },
   server: {
     host: true,
     port: 5173,

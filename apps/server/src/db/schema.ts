@@ -182,6 +182,8 @@ export const comandas = pgTable(
     phone: text(),
     /** Pessoas nesta comanda (multiplica o couvert). */
     peopleCount: integer().notNull().default(1),
+    /** Consulta pelo QR bloqueada por PIN errado demais (SPEC 5.6); o garçom libera. */
+    qrLockedAt: timestamp({ withTimezone: true }),
     status: comandaStatusEnum().notNull().default('ABERTA'),
     clientUuid: uuid().notNull().unique(),
     openedBy: uuid()
@@ -477,4 +479,19 @@ export const adjustments = pgTable(
     ...timestamps,
   },
   (t) => [index().on(t.comandaId)],
+);
+
+/** Tentativas de PIN no QR da mesa: base do bloqueio por comanda (SPEC 5.6). */
+export const qrUnlockAttempts = pgTable(
+  'qr_unlock_attempts',
+  {
+    id,
+    comandaId: uuid()
+      .notNull()
+      .references(() => comandas.id, { onDelete: 'cascade' }),
+    ok: boolean().notNull(),
+    ip: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.comandaId, t.createdAt)],
 );

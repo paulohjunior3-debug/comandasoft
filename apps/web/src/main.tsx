@@ -15,6 +15,7 @@ import { ProductsPage } from './pages/admin/ProductsPage';
 import { RegistersPage } from './pages/admin/RegistersPage';
 import { ReportsPage } from './pages/admin/ReportsPage';
 import { SettingsPage } from './pages/admin/SettingsPage';
+import { TableQrPage } from './pages/admin/TableQrPage';
 import { TablesPage } from './pages/admin/TablesPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { CashierPage } from './pages/cashier/CashierPage';
@@ -157,6 +158,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="categorias" element={<CategoriesPage />} />
               <Route path="produtos" element={<ProductsPage />} />
               <Route path="mesas" element={<TablesPage />} />
+              <Route path="mesas/qr" element={<TableQrPage />} />
               <Route path="impressoras" element={<PrintersPage />} />
               <Route path="fila-impressao" element={<PrintQueuePage />} />
               <Route path="usuarios" element={<UsersPage />} />

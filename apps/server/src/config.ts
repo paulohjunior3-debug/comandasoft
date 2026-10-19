@@ -13,6 +13,8 @@ const configSchema = z.object({
   CPF_SECRET: z.string().min(32, 'CPF_SECRET precisa de pelo menos 32 caracteres'),
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
+  /** Porta HTTP do QR do cliente (cardápio e comanda). Vazio = desligado. Instalado: 8080. */
+  PUBLIC_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
   HTTPS_CERT: z.preprocess(emptyToUndefined, z.string().optional()),
   HTTPS_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
   /** emulador = grava os cupons em data/impressoes (desenvolvimento); windows = impressoras reais. */

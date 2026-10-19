@@ -11,3 +11,4 @@ export * from './cashier';
 export * from './time';
 export * from './text';
 export * from './reports';
+export * from './public';

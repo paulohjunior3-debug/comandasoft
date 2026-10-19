@@ -60,6 +60,18 @@ PROBLEMAS
 - Servidor parado: Agendador de Tarefas > "Sistema Bar - Servidor" > Executar
 - Remover da inicialização (mantém os dados): desinstalar.ps1 como administrador
 
+QR CODE DAS MESAS (cardápio e comanda do cliente)
+-------------------------------------------------
+- Administração > Mesas > Imprimir QR Codes: confira o endereço (IP deste PC, porta 8080),
+  salve e imprima. Recorte e deixe um cartão em cada mesa.
+- Fixe o IP deste PC no roteador (reserva de DHCP). Se o IP mudar, os QR impressos param
+  de funcionar e precisam ser impressos de novo.
+- O celular do cliente precisa estar num Wi-Fi que enxergue este PC. Rede de convidados
+  com "isolamento" bloqueia o acesso: libere este PC nela ou use a mesma rede.
+- O cliente escolhe o nome dele na lista e digita os 3 últimos números do CPF. Depois de 5
+  erros a consulta daquela comanda bloqueia; o garçom libera na tela da comanda (Liberar QR).
+- A consulta é só leitura: pedidos e pagamentos continuam com o garçom e o caixa.
+
 RESTAURAR UM BACKUP (com cuidado; apaga os dados atuais do banco)
 -----------------------------------------------------------------
 1. Pare o servidor (Agendador de Tarefas > Sistema Bar - Servidor > Finalizar).

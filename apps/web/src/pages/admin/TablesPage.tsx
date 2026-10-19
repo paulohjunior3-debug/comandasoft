@@ -1,5 +1,6 @@
 import type { DiningTable } from '@sistema-bar/shared';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { Button, EmptyState, ErrorBanner, Loading, Modal, PageHeader, TextField, Toggle } from '../../components/ui';
 import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
 
@@ -21,6 +22,9 @@ export function TablesPage() {
         description="Número da mesa = para onde o pedido vai. Cada mesa tem um QR próprio para o cliente."
         action={
           <div className="flex gap-2">
+            <Link to="/admin/mesas/qr" className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-800">
+              Imprimir QR Codes
+            </Link>
             <Button onClick={() => setBulk(true)}>Criar várias</Button>
             <Button variant="primary" onClick={() => setEditing('new')}>+ Nova mesa</Button>
           </div>
@@ -110,7 +114,9 @@ function TableModal({ table, onClose }: { table: DiningTable | null; onClose: ()
           <p className="text-slate-400">
             Código do QR: <code className="text-slate-200">{qrToken}</code>
           </p>
-          <p className="mt-1 text-xs text-slate-500">A impressão dos QR Codes chega junto com a área do cliente (fase 4).</p>
+          <p className="mt-1 text-xs text-slate-500">
+            Gerar um novo invalida o QR impresso desta mesa (imprima de novo em "Imprimir QR Codes").
+          </p>
           <Button className="mt-2" onClick={regenerate} disabled={save.isPending}>Gerar novo QR</Button>
         </div>
       )}

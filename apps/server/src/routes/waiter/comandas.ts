@@ -2,7 +2,7 @@ import { openComandaSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem,
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { comandas, diningTables, orderItems, orderItemShares, orders, users } from '../../db/schema';
+import { comandas, diningTables, orderItems, orderItemShares, orders, qrUnlockAttempts, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { loadBill } from '../../lib/billing';
 import { loadComandaSummaries, OPEN_STATUSES } from '../../lib/comandas';
@@ -118,7 +118,7 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
     const id = found.id;
     const summary = await summaryOf(id);
     const [extra] = await db
-      .select({ phone: comandas.phone, cpfLast3: comandas.cpfLast3 })
+      .select({ phone: comandas.phone, cpfLast3: comandas.cpfLast3, qrLockedAt: comandas.qrLockedAt })
       .from(comandas)
       .where(eq(comandas.id, id));
 
@@ -162,7 +162,21 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
       serviceFeeCents: totals.serviceFeeCents,
       couvertCents: totals.couvertCents,
       totalWithFeeCents: totals.totalCents,
+      qrLocked: extra!.qrLockedAt !== null,
     };
+  });
+
+  /** Libera a consulta pelo QR depois de PIN errado demais (SPEC 5.6): o garçom confere com o cliente. */
+  app.post('/:id/qr-release', async (request) => {
+    const { id } = idParams.parse(request.params);
+    const [row] = await db.select({ id: comandas.id, lockedAt: comandas.qrLockedAt }).from(comandas).where(eq(comandas.id, id));
+    if (!row) throw notFound('Comanda');
+    await db.transaction(async (tx) => {
+      await tx.update(comandas).set({ qrLockedAt: null }).where(eq(comandas.id, id));
+      await tx.delete(qrUnlockAttempts).where(and(eq(qrUnlockAttempts.comandaId, id), eq(qrUnlockAttempts.ok, false)));
+      if (row.lockedAt) await audit(tx, request, { action: 'QR_LIBERADO', entity: 'comanda', entityId: id });
+    });
+    return { qrLocked: false };
   });
 
   /** Garçom pede o fechamento: comanda fica EM_FECHAMENTO e avisa o caixa (SPEC 5.3). */

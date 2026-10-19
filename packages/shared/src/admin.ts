@@ -232,6 +232,18 @@ export const settingsSchema = z.object({
   receiptFooter: z.string().trim().max(200),
   /** Impressora do caixa: pré-conta, cupom final, gaveta e relatórios (SPEC 5.5). */
   cashierPrinterId: z.string().uuid().nullable(),
+  /**
+   * Endereço que vai no QR das mesas (ex.: http://192.168.0.10:8080). Vazio = o sistema sugere
+   * pelo IP deste PC. Se o IP mudar, os QR impressos param de funcionar: fixe o IP no roteador.
+   */
+  qrBaseUrl: z
+    .string()
+    .trim()
+    .max(200)
+    .refine((v) => v === '' || /^https?:\/\/[^\s/]+$/.test(v.replace(/\/$/, '')), 'Endereço do QR inválido (ex.: http://192.168.0.10:8080).')
+    .transform((v) => v.replace(/\/$/, '')),
+  /** Nome do Wi-Fi para os clientes, impresso no cartão do QR. */
+  guestWifiName: z.string().trim().max(60),
 }).refine((s) => s.alertRedMinutes > s.alertYellowMinutes, {
   message: 'O tempo do vermelho deve ser maior que o do amarelo',
   path: ['alertRedMinutes'],
@@ -249,4 +261,6 @@ export const DEFAULT_SETTINGS: Settings = {
   companyPhone: '',
   receiptFooter: 'Obrigado pela preferência!',
   cashierPrinterId: null,
+  qrBaseUrl: '',
+  guestWifiName: '',
 };

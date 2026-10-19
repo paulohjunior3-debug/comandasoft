@@ -17,6 +17,7 @@ export function ComandaPage() {
   const localOpen = entries.find((e) => e.kind === 'comanda' && e.id === comandaId);
   const detail = useCachedQuery<ComandaDetail>(path, { enabled: !localOpen });
   const requestClose = useApiMutation([path, '/waiter/tables']);
+  const releaseQr = useApiMutation([path]);
 
   const c = detail.data;
   const local = localOpen ? (localOpen.body as OpenComandaInput) : null;
@@ -34,7 +35,7 @@ export function ComandaPage() {
     <div className="min-h-dvh pb-28">
       <WaiterHeader title={name} back={tableId ? `/garcom/mesa/${tableId}` : '/garcom'} />
       <main className="mx-auto max-w-3xl space-y-4 px-4 pt-4">
-        <ErrorBanner message={!c && !local ? errorMessage(detail.error) : errorMessage(requestClose.error)} />
+        <ErrorBanner message={!c && !local ? errorMessage(detail.error) : errorMessage(requestClose.error ?? releaseQr.error)} />
 
         {localOpen && (
           <p className={`rounded-lg px-3 py-2 text-sm ${localOpen.status === 'CONFLITO' ? 'bg-red-950 text-red-300' : 'bg-amber-950 text-amber-200'}`}>
@@ -52,6 +53,17 @@ export function ComandaPage() {
             <span>·</span>
             <span>aberta às {formatTime(c.openedAt)}</span>
             {c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
+          </div>
+        )}
+
+        {c?.qrLocked && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg bg-red-950 px-3 py-2 text-sm text-red-200">
+            <span className="flex-1">
+              QR bloqueado: erraram o CPF várias vezes ao consultar esta comanda. Confira com {name} antes de liberar.
+            </span>
+            <Button onClick={() => releaseQr.mutate({ method: 'POST', path: `/waiter/comandas/${c.id}/qr-release` })} disabled={releaseQr.isPending}>
+              Liberar QR
+            </Button>
           </div>
         )}
 

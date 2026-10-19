@@ -37,6 +37,18 @@ if ((Resolve-Path $origem).Path.TrimEnd('\') -eq $Destino.TrimEnd('\')) {
 Copiar-Pacote $origem $Destino
 Ok "Arquivos da versão $nova copiados (.env, certs e data mantidos)"
 
+Passo 'QR Code das mesas (porta do cliente)'
+$envArquivo = Join-Path $Destino '.env'
+$portaCliente = [int]((Ler-Env $envArquivo)['PUBLIC_PORT'])
+if (-not $portaCliente) {
+  # Instalação anterior à 0.6: liga o servidor do QR na porta padrão.
+  $portaCliente = $PortaClientePadrao
+  $linha = "`r`n# QR Code das mesas: porta HTTP do cardápio e da comanda do cliente (só rede local).`r`nPUBLIC_PORT=$portaCliente`r`n"
+  [IO.File]::AppendAllText($envArquivo, $linha, (New-Object Text.UTF8Encoding($false)))
+}
+Liberar-Porta-Cliente $portaCliente
+Ok "Cliente pelo QR na porta $portaCliente (liberada só para a rede local)"
+
 Passo 'Atualizando o banco'
 & $node 'app\cli.mjs' migrate
 if ($LASTEXITCODE -ne 0) {

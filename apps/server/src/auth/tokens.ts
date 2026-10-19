@@ -3,6 +3,8 @@ import { roleSchema, type AuthUser } from '@sistema-bar/shared';
 import { jwtVerify, SignJWT } from 'jose';
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+/** Leitura da comanda pelo QR da mesa: curta, só daquela comanda (SPEC 5.6). */
+export const QR_TOKEN_TTL_SECONDS = 2 * 60 * 60;
 export const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createTokenService(secret: string) {
@@ -16,6 +18,22 @@ export function createTokenService(secret: string) {
         .setIssuedAt()
         .setExpirationTime(`${ACCESS_TOKEN_TTL_SECONDS}s`)
         .sign(key);
+    },
+
+    signQr(comandaId: string): Promise<string> {
+      return new SignJWT({})
+        .setProtectedHeader({ alg: 'HS256' })
+        .setAudience('qr')
+        .setSubject(comandaId)
+        .setIssuedAt()
+        .setExpirationTime(`${QR_TOKEN_TTL_SECONDS}s`)
+        .sign(key);
+    },
+
+    /** Devolve o id da comanda liberada pelo PIN. Token de funcionário não serve aqui (audience). */
+    async verifyQr(token: string): Promise<string> {
+      const { payload } = await jwtVerify(token, key, { algorithms: ['HS256'], audience: 'qr' });
+      return String(payload.sub);
     },
 
     async verifyAccess(token: string): Promise<AuthUser> {

@@ -7,6 +7,8 @@ $ErrorActionPreference = 'Stop'
 $TarefaServidor = 'Sistema Bar - Servidor'
 $TarefaBackup = 'Sistema Bar - Backup diario'
 $RegraFirewall = 'Sistema Bar - Servidor'
+$RegraFirewallCliente = 'Sistema Bar - Cliente (QR)'
+$PortaClientePadrao = 8080
 
 function Passo([string]$texto) {
   Write-Host ''
@@ -89,6 +91,13 @@ function Ler-Env([string]$arquivo) {
     }
   }
   return $valores
+}
+
+# Porta HTTP do QR do cliente (cardápio e comanda), liberada só para a rede local.
+function Liberar-Porta-Cliente([int]$porta) {
+  Get-NetFirewallRule -DisplayName $RegraFirewallCliente -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+  New-NetFirewallRule -DisplayName $RegraFirewallCliente -Direction Inbound -Protocol TCP -LocalPort $porta `
+    -Action Allow -Profile Private, Public -RemoteAddress LocalSubnet | Out-Null
 }
 
 function Segredo([int]$bytes = 48) {

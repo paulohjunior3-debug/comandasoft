@@ -4,13 +4,12 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyServerOptions } from 'fastify';
-import { ZodError } from 'zod';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
 import { appVersion, paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
-import { frameworkMessage, HttpError, mapDbError, validationMessage } from './lib/errors';
+import { installErrorHandler } from './lib/error-handler';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
 import { createPrintWorker, type PrintWorker } from './printing/worker';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
@@ -18,6 +17,7 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { cashierRoutes } from './routes/cashier';
 import { printRoutes } from './routes/print';
+import { publicRoutes } from './routes/public';
 import { waiterRoutes } from './routes/waiter';
 
 declare module 'fastify' {
@@ -33,6 +33,8 @@ export interface AppDeps {
   listInstalledPrinters: ListInstalledPrinters;
   cpf: CpfVault;
   printWorker: PrintWorker & { mode: PrintTransport['mode'] };
+  /** Porta HTTP do QR do cliente (null = desligado). */
+  publicPort: number | null;
 }
 
 export interface BuildAppOptions {
@@ -48,6 +50,8 @@ export interface BuildAppOptions {
   printTransport?: PrintTransport;
   /** Substituível nos testes; padrão: impressoras do Windows. */
   listInstalledPrinters?: ListInstalledPrinters;
+  /** Porta do servidor do QR do cliente, para sugerir o endereço impresso no QR. */
+  publicPort?: number | null;
 }
 
 const defaultWebDist = paths.webDist;
@@ -62,6 +66,7 @@ export async function buildApp({
   webDist = defaultWebDist,
   listInstalledPrinters = cachedLister(listWindowsPrinters),
   printTransport = emulatorTransport(defaultEmulatorDir),
+  publicPort = null,
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
@@ -72,35 +77,12 @@ export async function buildApp({
     listInstalledPrinters,
     cpf: createCpfVault(cpfSecret),
     printWorker: Object.assign(createPrintWorker({ db, transport: printTransport, log: app.log }), { mode: printTransport.mode }),
+    publicPort,
   };
   app.decorate('printWorker', deps.printWorker);
   app.addHook('onClose', () => deps.printWorker.stop());
 
-  app.setErrorHandler((error, request, reply) => {
-    if (error instanceof ZodError) {
-      return reply.code(400).send({
-        error: 'VALIDATION',
-        message: validationMessage(error.issues),
-        issues: error.issues,
-      });
-    }
-    if (error instanceof HttpError) {
-      return reply.code(error.statusCode).send({ error: error.code, message: error.message });
-    }
-    const dbError = mapDbError(error);
-    if (dbError) {
-      return reply.code(dbError.statusCode).send({ error: dbError.code, message: dbError.message });
-    }
-    const err = error as { statusCode?: number; code?: string; message: string };
-    if (err.statusCode === 429) {
-      return reply.code(429).send({ error: 'RATE_LIMIT', message: 'Muitas tentativas. Aguarde um minuto.' });
-    }
-    if (err.statusCode && err.statusCode < 500) {
-      return reply.code(err.statusCode).send({ error: err.code ?? 'ERROR', message: frameworkMessage(err.code, err.statusCode) });
-    }
-    request.log.error(error);
-    return reply.code(500).send({ error: 'INTERNAL', message: 'Erro interno no servidor.' });
-  });
+  installErrorHandler(app);
 
   // O app aberto no navegador compara com a sua versão e oferece recarregar depois de uma atualização.
   const version = appVersion();
@@ -122,6 +104,8 @@ export async function buildApp({
       await api.register((waiter) => waiterRoutes(waiter, deps), { prefix: '/waiter' });
       await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
       await api.register((cashier) => cashierRoutes(cashier, deps), { prefix: '/cashier' });
+      // QR do cliente também por aqui (testes e quem já está no HTTPS); o caminho normal é o servidor público.
+      await api.register((pub) => publicRoutes(pub, deps), { prefix: '/public' });
     },
     { prefix: '/api', logLevel: requestLogLevel },
   );
@@ -134,7 +118,7 @@ export async function buildApp({
     app.get('/*', { logLevel: requestLogLevel }, (request, reply) =>
       request.url.startsWith('/api/')
         ? reply.code(404).send({ error: 'NOT_FOUND', message: 'Rota não encontrada.' })
-        : reply.sendFile('index.html'),
+        : reply.sendFile(request.url.startsWith('/m/') ? 'cliente.html' : 'index.html'),
     );
   }
   app.setNotFoundHandler((request, reply) => {

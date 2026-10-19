@@ -9,6 +9,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from '../src/app';
+import { buildPublicApp } from '../src/public-app';
 import { DEFAULT_SETTINGS } from '@sistema-bar/shared';
 import { saveSettings } from '../src/lib/settings';
 import { emulatorTransport } from '../src/printing/transport';
@@ -78,9 +79,13 @@ if (process.env.SANDBOX_DEMO === '1') {
   );
 }
 
+const jwtSecret = randomBytes(48).toString('base64url');
+// PUBLIC_PORT: liga também o servidor do QR do cliente (precisa do build: pnpm --filter @sistema-bar/web build).
+const publicPort = process.env.PUBLIC_PORT ? Number(process.env.PUBLIC_PORT) : null;
 const app = await buildApp({
   db,
-  jwtSecret: randomBytes(48).toString('base64url'),
+  jwtSecret,
+  publicPort,
   cpfSecret: randomBytes(48).toString('base64url'),
   webDist: false,
   // Cupons do sandbox vão para data/impressoes-sandbox (nunca para impressora real).
@@ -89,3 +94,8 @@ const app = await buildApp({
 await app.listen({ port, host: '127.0.0.1' });
 await app.printWorker.start();
 console.log(`Sandbox (banco em memória) em http://127.0.0.1:${port} — usuário: teste`);
+if (publicPort) {
+  const pub = await buildPublicApp({ db, jwtSecret });
+  await pub.listen({ port: publicPort, host: '127.0.0.1' });
+  console.log(`QR do cliente em http://127.0.0.1:${publicPort}/m/<token da mesa>`);
+}

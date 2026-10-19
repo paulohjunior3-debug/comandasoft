@@ -14,6 +14,7 @@ foreach ($t in @($TarefaServidor, $TarefaBackup)) {
   if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $t -Confirm:$false }
 }
 Get-NetFirewallRule -DisplayName $RegraFirewall -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Get-NetFirewallRule -DisplayName $RegraFirewallCliente -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Ok 'Removido'
 
 Write-Host ''
