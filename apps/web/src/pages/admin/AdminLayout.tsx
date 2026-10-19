@@ -8,6 +8,7 @@ export const ADMIN_SECTIONS = [
   { to: '/admin/impressoras', label: 'Impressoras' },
   { to: '/admin/fila-impressao', label: 'Fila de impressão' },
   { to: '/admin/usuarios', label: 'Usuários' },
+  { to: '/admin/caixas', label: 'Caixas' },
   { to: '/admin/configuracoes', label: 'Configurações' },
 ] as const;
 

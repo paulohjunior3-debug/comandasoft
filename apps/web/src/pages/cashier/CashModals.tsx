@@ -1,55 +1,146 @@
 import {
+  centsToInput,
   formatBRL,
+  formatLocalTime,
   parseBRL,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
   type CashClosePreview,
   type CashCloseResult,
   type CashMovementType,
+  type DayRules,
+  type OpenCashSessionInput,
   type PaymentMethod,
 } from '@sistema-bar/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, ErrorBanner, Loading, Modal, TextField, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { errorMessage, useApiMutation } from '../../lib/queries';
 
-/** Abertura do caixa com o fundo de troco (SPEC 5.7). */
-export function OpenCashForm() {
-  const [value, setValue] = useState('');
+export interface DayRulesResponse {
+  rules: DayRules | null;
+  defaultCouvertCents: number;
+  activeTables: number;
+}
+
+/** Resumo das regras do dia: "Turno até 01:00 · 20 mesas · Couvert R$ 15,00 desde 14:00". */
+export function describeRules(rules: DayRules): string {
+  const parts: string[] = [];
+  if (rules.expectedCloseAt) parts.push(`turno até ${formatLocalTime(rules.expectedCloseAt)}`);
+  if (rules.tablesInService) parts.push(`${rules.tablesInService} mesas`);
+  parts.push(rules.couvertCents ? `couvert ${formatBRL(rules.couvertCents)}/pessoa desde ${formatLocalTime(rules.couvertStartAt!)}` : 'sem couvert');
+  return parts.join(' · ');
+}
+
+/**
+ * Abertura do caixa (SPEC 5.7 + decisões do dono): fundo de troco e, no primeiro caixa do dia,
+ * o turno (até que horas, pode passar da meia-noite), quantas mesas funcionam e o couvert do dia.
+ */
+export function OpenCashForm({ registerId, registerName }: { registerId: string; registerName: string }) {
+  const day = useQuery({ queryKey: ['/cashier/session/day-rules'], queryFn: () => api<DayRulesResponse>('/cashier/session/day-rules') });
+  const open = useApiMutation<OpenCashSessionInput>(['/cashier/session', '/cashier/session/day-rules', '/cashier/session/registers']);
+  const [float, setFloat] = useState('');
+  const [closeTime, setCloseTime] = useState('');
+  const [tables, setTables] = useState('');
+  const [hasCouvert, setHasCouvert] = useState(false);
+  const [couvert, setCouvert] = useState('');
+  const [couvertFrom, setCouvertFrom] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const open = useApiMutation(['/cashier/session']);
+
+  useEffect(() => {
+    if (!day.data) return;
+    if (day.data.activeTables && !tables) setTables(String(day.data.activeTables));
+    if (day.data.defaultCouvertCents && !couvert) setCouvert(centsToInput(day.data.defaultCouvertCents));
+  }, [day.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rules = day.data?.rules ?? null;
+  const firstOfDay = !rules;
+
   const submit = () => {
-    const cents = parseBRL(value || '0');
-    if (cents === null) return setError('Valor inválido. Exemplo: 150,00');
+    const floatCents = parseBRL(float || '0');
+    if (floatCents === null) return setError('Fundo de troco inválido. Exemplo: 150,00');
+    const body: OpenCashSessionInput = { registerId, openingFloatCents: floatCents };
+    if (closeTime) body.expectedCloseTime = closeTime;
+    if (firstOfDay) {
+      if (tables) {
+        const n = Number(tables);
+        if (!Number.isInteger(n) || n < 1) return setError('Número de mesas inválido.');
+        body.tablesInService = n;
+      }
+      if (hasCouvert) {
+        const c = parseBRL(couvert);
+        if (!c) return setError('Informe o valor do couvert por pessoa.');
+        if (!couvertFrom) return setError('Informe a partir de que horas o couvert é cobrado.');
+        body.couvert = { amountCents: c, startTime: couvertFrom };
+      }
+    }
     setError(null);
-    open.mutate({ method: 'POST', path: '/cashier/session/open', body: { openingFloatCents: cents } });
+    open.mutate({ method: 'POST', path: '/cashier/session/open', body });
   };
+
   return (
-    <div className="mx-auto mt-16 max-w-sm space-y-4 rounded-2xl bg-slate-900 p-6">
+    <div className="mx-auto mt-10 max-w-md space-y-4 rounded-2xl bg-slate-900 p-6">
       <div>
-        <h2 className="text-xl font-semibold">Abrir caixa</h2>
-        <p className="text-sm text-slate-400">Informe o dinheiro deixado na gaveta para troco.</p>
+        <h2 className="text-xl font-semibold">Abrir {registerName}</h2>
+        <p className="text-sm text-slate-400">
+          {firstOfDay ? 'Primeiro caixa do dia: defina o turno, as mesas e o couvert.' : 'As regras do dia já foram definidas.'}
+        </p>
       </div>
-      <ErrorBanner message={error ?? errorMessage(open.error)} />
-      <TextField
-        label="Fundo de troco (R$)"
-        inputMode="decimal"
-        placeholder="0,00"
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-      />
-      <Button variant="primary" className="w-full py-3" onClick={submit} disabled={open.isPending}>
-        Abrir caixa
-      </Button>
+      <ErrorBanner message={error ?? errorMessage(open.error ?? day.error)} />
+      {day.isLoading ? (
+        <Loading />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <TextField label="Fundo de troco (R$)" inputMode="decimal" placeholder="0,00" autoFocus value={float} onChange={(e) => setFloat(e.target.value)} />
+            <TextField
+              label="Fecha às"
+              type="time"
+              value={closeTime}
+              onChange={(e) => setCloseTime(e.target.value)}
+              hint="Pode passar da meia-noite (ex.: 01:00)"
+            />
+          </div>
+
+          {rules ? (
+            <p className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-300">
+              Definido pelo {rules.registerName}: {describeRules(rules)}.
+            </p>
+          ) : (
+            <>
+              <TextField
+                label="Mesas em funcionamento hoje"
+                inputMode="numeric"
+                value={tables}
+                onChange={(e) => setTables(e.target.value.replace(/\D/g, ''))}
+                hint={`O garçom vê só as primeiras mesas pela numeração. Cadastradas: ${day.data?.activeTables ?? '?'}.`}
+              />
+              <Toggle label="Terá couvert hoje" checked={hasCouvert} onChange={setHasCouvert} />
+              {hasCouvert && (
+                <div className="grid grid-cols-2 gap-3">
+                  <TextField label="Couvert por pessoa (R$)" inputMode="decimal" value={couvert} onChange={(e) => setCouvert(e.target.value)} />
+                  <TextField label="A partir de" type="time" value={couvertFrom} onChange={(e) => setCouvertFrom(e.target.value)} />
+                  <p className="col-span-2 text-xs text-slate-500">
+                    Comanda aberta depois desse horário já entra com couvert (× pessoas). Quem chegou antes paga se ainda estiver
+                    na mesa 15 minutos depois do início.
+                  </p>
+                </div>
+              )}
+            </>
+          )}
+
+          <Button variant="primary" className="w-full py-3" onClick={submit} disabled={open.isPending}>
+            Abrir caixa
+          </Button>
+        </>
+      )}
     </div>
   );
 }
 
 /** Sangria (retirada) ou suprimento (entrada), com motivo e comprovante impresso. */
-export function MovementModal({ type, onClose }: { type: CashMovementType; onClose: () => void }) {
+export function MovementModal({ registerId, type, onClose }: { registerId: string; type: CashMovementType; onClose: () => void }) {
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +149,7 @@ export function MovementModal({ type, onClose }: { type: CashMovementType; onClo
     const cents = parseBRL(amount);
     if (!cents) return setError('Informe o valor.');
     setError(null);
-    save.mutate({ method: 'POST', path: '/cashier/session/movements', body: { type, amountCents: cents, reason } }, { onSuccess: onClose });
+    save.mutate({ method: 'POST', path: '/cashier/session/movements', body: { registerId, type, amountCents: cents, reason } }, { onSuccess: onClose });
   };
   return (
     <Modal
@@ -85,9 +176,17 @@ export function MovementModal({ type, onClose }: { type: CashMovementType; onClo
 }
 
 /** Fechamento: o sistema calcula o esperado, o operador informa o contado e vê a diferença (SPEC 5.7). */
-export function CloseCashModal({ onClose }: { onClose: () => void }) {
-  const preview = useQuery({ queryKey: ['close-preview'], queryFn: () => api<CashClosePreview>('/cashier/session/close-preview') });
-  const close = useApiMutation<unknown, CashCloseResult & { printed: boolean }>(['/cashier/session', '/cashier/tables']);
+export function CloseCashModal({ registerId, onClose }: { registerId: string; onClose: () => void }) {
+  const preview = useQuery({
+    queryKey: ['close-preview', registerId],
+    queryFn: () => api<CashClosePreview>(`/cashier/session/close-preview?registerId=${registerId}`),
+  });
+  const close = useApiMutation<unknown, CashCloseResult & { printed: boolean }>([
+    '/cashier/session',
+    '/cashier/tables',
+    '/cashier/session/day-rules',
+    '/cashier/session/registers',
+  ]);
   const [counted, setCounted] = useState<Record<PaymentMethod, string>>({ DINHEIRO: '', CREDITO: '', DEBITO: '', PIX: '' });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [notes, setNotes] = useState('');
@@ -107,6 +206,7 @@ export function CloseCashModal({ onClose }: { onClose: () => void }) {
     if (p && p.openComandas > 0 && !confirmOpen) return setError('Confirme que deseja fechar com comandas abertas.');
     setError(null);
     const body = {
+      registerId,
       counted: Object.fromEntries(PAYMENT_METHODS.filter((m) => typeof parsed[m] === 'number').map((m) => [m, parsed[m]])),
       confirmOpenComandas: confirmOpen,
       notes: notes || undefined,
@@ -118,17 +218,21 @@ export function CloseCashModal({ onClose }: { onClose: () => void }) {
     const r = close.data;
     return (
       <Modal title="Caixa fechado" onClose={onClose} footer={<Button variant="primary" onClick={onClose}>Concluir</Button>}>
-        <p className={`rounded-xl p-4 text-center text-2xl font-semibold ${r.differenceCents === 0 ? 'bg-emerald-950 text-emerald-300' : r.differenceCents > 0 ? 'bg-sky-950 text-sky-200' : 'bg-red-950 text-red-300'}`}>
+        <p
+          className={`rounded-xl p-4 text-center text-2xl font-semibold ${r.differenceCents === 0 ? 'bg-emerald-950 text-emerald-300' : r.differenceCents > 0 ? 'bg-sky-950 text-sky-200' : 'bg-red-950 text-red-300'}`}
+        >
           {r.differenceCents === 0 ? 'Sem diferença' : `${r.differenceCents > 0 ? 'Sobra' : 'Falta'} de ${formatBRL(Math.abs(r.differenceCents))}`}
         </p>
-        <p className="text-sm text-slate-400">{r.printed ? 'O relatório de fechamento foi para a impressora do caixa.' : 'Sem impressora do caixa configurada: relatório não impresso.'}</p>
+        <p className="text-sm text-slate-400">
+          {r.printed ? 'O relatório de fechamento foi para a impressora do caixa.' : 'Sem impressora do caixa configurada: relatório não impresso.'}
+        </p>
       </Modal>
     );
   }
 
   return (
     <Modal
-      title="Fechar caixa"
+      title={p ? `Fechar ${p.session.registerName}` : 'Fechar caixa'}
       onClose={onClose}
       footer={
         <>
@@ -156,7 +260,10 @@ export function CloseCashModal({ onClose }: { onClose: () => void }) {
                 const d = diff(m);
                 return (
                   <tr key={m} className="border-t border-slate-800">
-                    <td className="py-2">{PAYMENT_METHOD_LABELS[m]}{m === 'DINHEIRO' && <span className="text-red-400"> *</span>}</td>
+                    <td className="py-2">
+                      {PAYMENT_METHOD_LABELS[m]}
+                      {m === 'DINHEIRO' && <span className="text-red-400"> *</span>}
+                    </td>
                     <td className="py-2 text-right">{formatBRL(p.expected[m])}</td>
                     <td className="py-2 pl-3">
                       <input
@@ -177,14 +284,14 @@ export function CloseCashModal({ onClose }: { onClose: () => void }) {
             </tbody>
           </table>
           <p className="text-xs text-slate-500">
-            Dinheiro esperado = fundo {formatBRL(p.session.openingFloatCents)} + suprimentos − sangrias + recebido em dinheiro.
+            Dinheiro esperado = fundo {formatBRL(p.session.openingFloatCents)} + suprimentos − sangrias + recebido em dinheiro neste caixa.
           </p>
           <p className="text-right font-semibold">
             Diferença total: <span className={totalDiff < 0 ? 'text-red-300' : totalDiff > 0 ? 'text-sky-300' : ''}>{formatBRL(totalDiff)}</span>
           </p>
           {p.openComandas > 0 && (
             <div className="rounded-lg bg-amber-950 p-3">
-              <p className="mb-2 text-sm text-amber-200">Atenção: {p.openComandas} comanda(s) ainda aberta(s).</p>
+              <p className="mb-2 text-sm text-amber-200">Atenção: {p.openComandas} comanda(s) ainda aberta(s) e este é o último caixa aberto.</p>
               <Toggle label="Fechar o caixa mesmo assim" checked={confirmOpen} onChange={setConfirmOpen} />
             </div>
           )}

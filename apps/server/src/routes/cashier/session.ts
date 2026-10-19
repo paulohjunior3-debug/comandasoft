@@ -2,41 +2,58 @@ import {
   CASHIER_ERRORS,
   cashMovementSchema,
   closeCashSessionSchema,
+  couvertStart,
+  formatBRL,
+  formatLocalTime,
+  nextLocalTime,
   openCashSessionSchema,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
   type CashClosePreview,
   type CashCloseResult,
+  type CashRegister,
   type CashSessionSummary,
   type PaymentMethod,
 } from '@sistema-bar/shared';
 import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import type { AppDeps } from '../../app';
-import { cashMovements, cashSessions, comandas, payments, users } from '../../db/schema';
+import { cashMovements, cashRegisters, cashSessions, comandas, diningTables, payments, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import type { Queryable } from '../../lib/billing';
 import { companyOf, enqueueCashierPrint } from '../../lib/cashier-print';
-import { HttpError } from '../../lib/errors';
+import { getDayRules } from '../../lib/day-rules';
+import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
 
 const zeroByMethod = () => Object.fromEntries(PAYMENT_METHODS.map((m) => [m, 0])) as Record<PaymentMethod, number>;
 
-export async function openSession(db: Queryable) {
-  const [session] = await db.select().from(cashSessions).where(isNull(cashSessions.closedAt));
+export async function getRegister(db: Queryable, registerId: string) {
+  const [register] = await db.select().from(cashRegisters).where(eq(cashRegisters.id, registerId));
+  if (!register) throw notFound('Caixa');
+  return register;
+}
+
+/** Sessão aberta de um caixa (ou null). */
+export async function openSessionOf(db: Queryable, registerId: string) {
+  const [session] = await db
+    .select()
+    .from(cashSessions)
+    .where(and(eq(cashSessions.registerId, registerId), isNull(cashSessions.closedAt)));
   return session ?? null;
 }
 
 /** Sem caixa aberto não se recebe pagamento (SPEC 5.7). */
-export async function requireOpenSession(db: Queryable) {
-  const session = await openSession(db);
-  if (!session) throw new HttpError(409, CASHIER_ERRORS.NO_OPEN_SESSION, 'Abra o caixa antes de receber pagamentos.');
+export async function requireOpenSession(db: Queryable, registerId: string) {
+  const session = await openSessionOf(db, registerId);
+  if (!session) throw new HttpError(409, CASHIER_ERRORS.NO_OPEN_SESSION, 'Abra este caixa antes de receber pagamentos.');
   return session;
 }
 
 /** Resumo da sessão: recebido por forma, movimentos e dinheiro esperado na gaveta. */
 export async function sessionSummary(db: Queryable, session: typeof cashSessions.$inferSelect): Promise<CashSessionSummary> {
-  const [received, movements, [opener]] = await Promise.all([
+  const [received, movements, [opener], register] = await Promise.all([
     db
       .select({ method: payments.method, total: sql<number>`coalesce(sum(${payments.amountCents}), 0)::int` })
       .from(payments)
@@ -49,12 +66,17 @@ export async function sessionSummary(db: Queryable, session: typeof cashSessions
       .where(eq(cashMovements.cashSessionId, session.id))
       .orderBy(asc(cashMovements.createdAt)),
     db.select({ name: users.name }).from(users).where(eq(users.id, session.openedBy)),
+    getRegister(db, session.registerId),
   ]);
   const receivedByMethod = zeroByMethod();
   for (const r of received) receivedByMethod[r.method] = Number(r.total);
   const sum = (type: 'SANGRIA' | 'SUPRIMENTO') => movements.filter((x) => x.m.type === type).reduce((s, x) => s + x.m.amountCents, 0);
   return {
     id: session.id,
+    registerId: register.id,
+    registerName: register.name,
+    fiscalMode: register.fiscalMode,
+    expectedCloseAt: session.expectedCloseAt?.toISOString() ?? null,
     openedAt: session.openedAt.toISOString(),
     openedBy: opener?.name ?? '',
     openingFloatCents: session.openingFloatCents,
@@ -71,39 +93,122 @@ export async function sessionSummary(db: Queryable, session: typeof cashSessions
   };
 }
 
+const registerQuery = z.object({ registerId: z.string().uuid('Escolha o caixa') });
+
 export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
-  app.get('/', async () => {
-    const session = await openSession(db);
-    return { session: session ? await sessionSummary(db, session) : null };
+  /** Caixas cadastrados e quem está com cada um aberto (para escolher em qual trabalhar). */
+  app.get('/registers', async (): Promise<CashRegister[]> => {
+    const rows = await db.select().from(cashRegisters).where(eq(cashRegisters.active, true)).orderBy(asc(cashRegisters.name));
+    const open = await db
+      .select({ s: cashSessions, userName: users.name })
+      .from(cashSessions)
+      .innerJoin(users, eq(users.id, cashSessions.openedBy))
+      .where(isNull(cashSessions.closedAt));
+    return rows.map((r) => {
+      const o = open.find((x) => x.s.registerId === r.id);
+      return {
+        id: r.id,
+        name: r.name,
+        fiscalMode: r.fiscalMode,
+        printerId: r.printerId,
+        active: r.active,
+        openSession: o ? { id: o.s.id, openedAt: o.s.openedAt.toISOString(), openedBy: o.userName } : null,
+      };
+    });
   });
 
-  /** Abertura com o fundo de troco. Um caixa aberto por vez. */
-  app.post('/open', async (request, reply) => {
-    const { openingFloatCents } = openCashSessionSchema.parse(request.body);
-    if (await openSession(db)) throw new HttpError(409, CASHIER_ERRORS.SESSION_ALREADY_OPEN, 'Já existe um caixa aberto.');
+  /**
+   * Regras do dia em vigor (turno, mesas, couvert), definidas pelo primeiro caixa aberto,
+   * e as sugestões para o formulário de abertura (couvert padrão, total de mesas ativas).
+   */
+  app.get('/day-rules', async () => {
     const settings = await getSettings(db);
+    const [{ n }] = (await db.select({ n: count() }).from(diningTables).where(eq(diningTables.active, true))) as [{ n: number }];
+    return { rules: await getDayRules(db), defaultCouvertCents: settings.couvertCents, activeTables: n };
+  });
+
+  app.get('/', async (request) => {
+    const { registerId } = registerQuery.parse(request.query);
+    await getRegister(db, registerId);
+    const session = await openSessionOf(db, registerId);
+    return { session: session ? await sessionSummary(db, session) : null, rules: await getDayRules(db) };
+  });
+
+  /**
+   * Abertura do caixa: fundo de troco e, no primeiro caixa do dia, o turno (previsão de
+   * fechamento, pode passar da meia-noite), as mesas em funcionamento e o couvert do dia.
+   * Os caixas abertos depois seguem as regras já definidas.
+   */
+  app.post('/open', async (request, reply) => {
+    const input = openCashSessionSchema.parse(request.body);
+    const register = await getRegister(db, input.registerId);
+    if (!register.active) throw new HttpError(409, 'REGISTER_INACTIVE', 'Este caixa está desativado.');
+    if (await openSessionOf(db, register.id)) {
+      throw new HttpError(409, CASHIER_ERRORS.SESSION_ALREADY_OPEN, `O ${register.name} já está aberto.`);
+    }
+    const existingRules = await getDayRules(db);
+    const now = new Date();
+    const dayRules = existingRules
+      ? null // outro caixa já definiu as regras do dia
+      : {
+          expectedCloseAt: input.expectedCloseTime ? nextLocalTime(now, input.expectedCloseTime) : null,
+          tablesInService: input.tablesInService ?? null,
+          couvertCents: input.couvert?.amountCents ?? 0,
+          couvertStartAt: input.couvert ? couvertStart(now, input.couvert.startTime) : null,
+        };
+    const settings = await getSettings(db);
+
     const session = await db.transaction(async (tx) => {
-      const [row] = await tx.insert(cashSessions).values({ openedBy: request.user!.id, openingFloatCents }).returning();
-      await audit(tx, request, { action: 'CAIXA_ABERTO', entity: 'cash_session', entityId: row!.id, after: { openingFloatCents } });
-      await enqueueCashierPrint(tx, settings, {
-        kind: 'CAIXA',
-        variant: 'ABERTURA',
-        company: companyOf(settings),
-        operator: request.user!.name,
-        createdAt: row!.openedAt.toISOString(),
-        amountCents: openingFloatCents,
-        reason: 'Fundo de troco',
+      const [row] = await tx
+        .insert(cashSessions)
+        .values({
+          registerId: register.id,
+          openedBy: request.user!.id,
+          openedAt: now,
+          openingFloatCents: input.openingFloatCents,
+          // Caixas abertos depois do primeiro guardam só a própria previsão de fechamento.
+          expectedCloseAt: dayRules?.expectedCloseAt ?? (input.expectedCloseTime ? nextLocalTime(now, input.expectedCloseTime) : null),
+          tablesInService: dayRules?.tablesInService ?? null,
+          couvertCents: dayRules?.couvertCents ?? 0,
+          couvertStartAt: dayRules?.couvertStartAt ?? null,
+        })
+        .returning();
+      await audit(tx, request, {
+        action: 'CAIXA_ABERTO',
+        entity: 'cash_session',
+        entityId: row!.id,
+        after: { register: register.name, openingFloatCents: input.openingFloatCents, dayRules },
       });
+      const lines = [`Fundo de troco`];
+      if (dayRules?.expectedCloseAt) lines.push(`Turno até ${formatLocalTime(dayRules.expectedCloseAt)}`);
+      if (dayRules?.tablesInService) lines.push(`${dayRules.tablesInService} mesas`);
+      if (dayRules?.couvertCents) lines.push(`Couvert ${formatBRL(dayRules.couvertCents)} desde ${formatLocalTime(dayRules.couvertStartAt!)}`);
+      await enqueueCashierPrint(
+        tx,
+        settings,
+        {
+          kind: 'CAIXA',
+          variant: 'ABERTURA',
+          company: companyOf(settings),
+          operator: `${request.user!.name} · ${register.name}`,
+          createdAt: row!.openedAt.toISOString(),
+          amountCents: input.openingFloatCents,
+          reason: lines.join(' · '),
+        },
+        undefined,
+        register.printerId,
+      );
       return row!;
     });
     printWorker.kick();
-    return reply.code(201).send({ session: await sessionSummary(db, session) });
+    return reply.code(201).send({ session: await sessionSummary(db, session), rules: await getDayRules(db) });
   });
 
   /** Sangria (retirada) e suprimento (entrada de dinheiro), com motivo e comprovante. */
   app.post('/movements', async (request, reply) => {
     const input = cashMovementSchema.parse(request.body);
-    const session = await requireOpenSession(db);
+    const register = await getRegister(db, input.registerId);
+    const session = await requireOpenSession(db, register.id);
     if (input.type === 'SANGRIA') {
       const { expectedCashCents } = await sessionSummary(db, session);
       if (input.amountCents > expectedCashCents) {
@@ -116,41 +221,53 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
         .insert(cashMovements)
         .values({ cashSessionId: session.id, type: input.type, amountCents: input.amountCents, reason: input.reason, userId: request.user!.id })
         .returning();
-      await audit(tx, request, { action: input.type, entity: 'cash_session', entityId: session.id, after: input });
-      return enqueueCashierPrint(tx, settings, {
-        kind: 'CAIXA',
-        variant: input.type,
-        company: companyOf(settings),
-        operator: request.user!.name,
-        createdAt: row!.createdAt.toISOString(),
-        amountCents: input.amountCents,
-        reason: input.reason,
-      });
+      await audit(tx, request, { action: input.type, entity: 'cash_session', entityId: session.id, after: { ...input, register: register.name } });
+      return enqueueCashierPrint(
+        tx,
+        settings,
+        {
+          kind: 'CAIXA',
+          variant: input.type,
+          company: companyOf(settings),
+          operator: `${request.user!.name} · ${register.name}`,
+          createdAt: row!.createdAt.toISOString(),
+          amountCents: input.amountCents,
+          reason: input.reason,
+        },
+        undefined,
+        register.printerId,
+      );
     });
     printWorker.kick();
     return reply.code(201).send({ session: await sessionSummary(db, session), printed });
   });
 
-  async function closePreview(): Promise<CashClosePreview> {
-    const session = await requireOpenSession(db);
+  async function closePreview(registerId: string): Promise<CashClosePreview> {
+    const session = await requireOpenSession(db, registerId);
     const summary = await sessionSummary(db, session);
     const [{ n }] = (await db
       .select({ n: count() })
       .from(comandas)
       .where(inArray(comandas.status, ['ABERTA', 'EM_FECHAMENTO']))) as [{ n: number }];
+    // Comandas abertas só importam se este é o último caixa aberto.
+    const [{ others }] = (await db
+      .select({ others: count() })
+      .from(cashSessions)
+      .where(and(isNull(cashSessions.closedAt), sql`${cashSessions.id} <> ${session.id}`))) as [{ others: number }];
     return {
       session: summary,
       expected: { ...summary.receivedByMethod, DINHEIRO: summary.expectedCashCents },
-      openComandas: n,
+      openComandas: others > 0 ? 0 : n,
     };
   }
 
-  app.get('/close-preview', async () => closePreview());
+  app.get('/close-preview', async (request) => closePreview(registerQuery.parse(request.query).registerId));
 
   /** Fechamento: esperado × contado, diferença (sobra/falta) e relatório impresso (SPEC 5.7). */
   app.post('/close', async (request): Promise<CashCloseResult & { printed: boolean }> => {
     const input = closeCashSessionSchema.parse(request.body);
-    const preview = await closePreview();
+    const register = await getRegister(db, input.registerId);
+    const preview = await closePreview(register.id);
     if (preview.openComandas > 0 && !input.confirmOpenComandas) {
       throw new HttpError(409, CASHIER_ERRORS.OPEN_COMANDAS, `Ainda há ${preview.openComandas} comanda(s) aberta(s). Confirme para fechar mesmo assim.`);
     }
@@ -182,30 +299,36 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
         action: 'CAIXA_FECHADO',
         entity: 'cash_session',
         entityId: preview.session.id,
-        after: { expected: preview.expected, counted: input.counted, differenceCents, openComandas: preview.openComandas },
+        after: { register: register.name, expected: preview.expected, counted: input.counted, differenceCents, openComandas: preview.openComandas },
       });
-      return enqueueCashierPrint(tx, settings, {
-        kind: 'CAIXA',
-        variant: 'FECHAMENTO',
-        company: companyOf(settings),
-        operator: request.user!.name,
-        createdAt: new Date().toISOString(),
-        report: {
-          openedAt: preview.session.openedAt,
-          openingFloatCents: preview.session.openingFloatCents,
-          rows: PAYMENT_METHODS.map((m) => ({
-            method: PAYMENT_METHOD_LABELS[m],
-            expectedCents: preview.expected[m],
-            countedCents: input.counted[m] ?? null,
-            differenceCents: differenceByMethod[m] ?? null,
-          })),
-          sangriasCents: sum('SANGRIA'),
-          suprimentosCents: sum('SUPRIMENTO'),
-          differenceCents,
-          openComandas: preview.openComandas,
-          notes: input.notes,
+      return enqueueCashierPrint(
+        tx,
+        settings,
+        {
+          kind: 'CAIXA',
+          variant: 'FECHAMENTO',
+          company: companyOf(settings),
+          operator: `${request.user!.name} · ${register.name}`,
+          createdAt: new Date().toISOString(),
+          report: {
+            openedAt: preview.session.openedAt,
+            openingFloatCents: preview.session.openingFloatCents,
+            rows: PAYMENT_METHODS.map((m) => ({
+              method: PAYMENT_METHOD_LABELS[m],
+              expectedCents: preview.expected[m],
+              countedCents: input.counted[m] ?? null,
+              differenceCents: differenceByMethod[m] ?? null,
+            })),
+            sangriasCents: sum('SANGRIA'),
+            suprimentosCents: sum('SUPRIMENTO'),
+            differenceCents,
+            openComandas: preview.openComandas,
+            notes: input.notes,
+          },
         },
-      });
+        undefined,
+        register.printerId,
+      );
     });
     printWorker.kick();
     return {

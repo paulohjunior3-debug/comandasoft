@@ -7,3 +7,5 @@ export * from './waiter';
 export * from './print';
 export * from './billing';
 export * from './cashier';
+export * from './time';
+export * from './text';

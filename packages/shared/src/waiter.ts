@@ -29,6 +29,8 @@ export const openComandaSchema = z.object({
     .transform((v) => v || null)
     .nullish()
     .transform((v) => v ?? null),
+  /** Pessoas que consomem nesta comanda (ex.: casal numa comanda só = 2). Multiplica o couvert. */
+  peopleCount: z.number().int().min(1, 'Ao menos 1 pessoa').max(30, 'Máximo de 30 pessoas').default(1),
 });
 export type OpenComandaInput = z.input<typeof openComandaSchema>;
 
@@ -40,6 +42,7 @@ export interface ComandaSummary {
   tableId: string;
   tableNumber: number;
   customerName: string;
+  peopleCount: number;
   status: ComandaStatus;
   openedAt: string;
   totalCents: number;
@@ -149,6 +152,9 @@ export interface ComandaDetail extends ComandaSummary {
   items: ComandaItem[];
   subtotalCents: number;
   serviceFeeCents: number;
+  /** Couvert do dia × pessoas, se aplicável (regra das 14h + 15 min de tolerância). */
+  couvertCents: number;
+  /** Total da comanda (itens + taxa + couvert − descontos). */
   totalWithFeeCents: number;
 }
 

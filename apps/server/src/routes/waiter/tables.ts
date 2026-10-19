@@ -5,13 +5,14 @@ import type { AppDeps } from '../../app';
 import { comandas, diningTables, orders, tableVisits } from '../../db/schema';
 import { comandaTotals, loadComandaSummaries, OPEN_STATUSES } from '../../lib/comandas';
 import { notFound } from '../../lib/errors';
+import { getDayRules } from '../../lib/day-rules';
 import { getSettings } from '../../lib/settings';
 import { idParams } from '../admin/params';
 
 export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
   /** Mapa de mesas: status, nº de comandas, total e último atendimento de cada mesa (SPEC 5.3). */
   app.get('/', async (): Promise<TableMapResponse> => {
-    const [tables, open, lastOrders, lastVisits, settings] = await Promise.all([
+    const [allTables, open, lastOrders, lastVisits, settings, rules] = await Promise.all([
       db.select().from(diningTables).where(eq(diningTables.active, true)).orderBy(asc(diningTables.number)),
       db
         .select({ id: comandas.id, tableId: comandas.tableId, status: comandas.status, openedAt: comandas.openedAt })
@@ -20,8 +21,14 @@ export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
       db.select({ tableId: orders.tableId, at: max(orders.receivedAt) }).from(orders).groupBy(orders.tableId),
       db.select({ tableId: tableVisits.tableId, at: max(tableVisits.visitedAt) }).from(tableVisits).groupBy(tableVisits.tableId),
       getSettings(db),
+      getDayRules(db),
     ]);
     const totals = await comandaTotals(db, open.map((c) => c.id));
+
+    // Mesas em funcionamento hoje (abertura do caixa): as N primeiras pelo número.
+    // Mesa com comanda aberta aparece sempre, mesmo fora das N.
+    const inService = rules?.tablesInService ? new Set(allTables.slice(0, rules.tablesInService).map((t) => t.id)) : null;
+    const tables = inService ? allTables.filter((t) => inService.has(t.id) || open.some((c) => c.tableId === t.id)) : allTables;
 
     const entries: TableMapEntry[] = tables.map((t) => {
       const mine = open.filter((c) => c.tableId === t.id);

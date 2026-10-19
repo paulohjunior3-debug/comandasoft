@@ -154,7 +154,10 @@ function ComandaRow({ comanda: c }: { comanda: ComandaSummary | PendingComanda }
           {c.customerName.slice(0, 1).toUpperCase()}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-medium">{c.customerName}</span>
+          <span className="block truncate text-base font-medium">
+            {c.customerName}
+            {c.peopleCount > 1 && <span className="text-sm font-normal text-slate-400"> · {c.peopleCount} pessoas</span>}
+          </span>
           {pending && (c.conflict ? <Badge tone="bad">Recusada · ver pendências</Badge> : <Badge tone="warn">Aguardando envio</Badge>)}
           {!pending && c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
         </span>
@@ -184,11 +187,12 @@ export function NewComandaModal({
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
   const [phone, setPhone] = useState('');
+  const [people, setPeople] = useState(1);
   // Mesmo clientUuid em todas as tentativas desta abertura: reenviar não duplica.
   const [clientUuid] = useState(() => crypto.randomUUID());
   const save = useMutation({
     mutationFn: async () => {
-      const body = { clientUuid, tableId, customerName: name.trim(), cpf, phone };
+      const body = { clientUuid, tableId, customerName: name.trim(), cpf, phone, peopleCount: people };
       // Mesmas regras do servidor, checadas aqui para o garçom saber na hora mesmo sem rede.
       const parsed = openComandaSchema.safeParse(body);
       if (!parsed.success) throw new ApiRequestError(400, 'VALIDATION', parsed.error.issues[0]?.message ?? 'Dados inválidos.');
@@ -242,6 +246,15 @@ export function NewComandaModal({
         onChange={(e) => setCpf(maskCpf(e.target.value))}
         hint="Obrigatório. Os 3 últimos dígitos serão o PIN do cliente no QR da mesa."
       />
+      <div>
+        <span className="mb-1 block text-sm text-slate-300">Pessoas nesta comanda</span>
+        <div className="flex items-center gap-3">
+          <Button aria-label="Menos uma pessoa" className="size-11 text-xl" onClick={() => setPeople((n) => Math.max(1, n - 1))}>−</Button>
+          <span className="w-10 text-center text-2xl font-semibold" aria-live="polite">{people}</span>
+          <Button aria-label="Mais uma pessoa" className="size-11 text-xl" onClick={() => setPeople((n) => Math.min(30, n + 1))}>+</Button>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">Ex.: casal numa comanda só = 2. Se tiver couvert, é cobrado por pessoa.</p>
+      </div>
       <TextField
         label="Telefone (opcional)"
         inputMode="tel"

@@ -64,6 +64,27 @@ export function computeTotals(input: TotalsInput): ComandaTotals {
   };
 }
 
+/**
+ * Couvert de uma comanda pelas regras do dia (SPEC, decisão do dono):
+ * - comanda aberta a partir do horário do couvert: cobra;
+ * - aberta antes, mas ainda na mesa depois de início + 15 min de tolerância: cobra;
+ * - fechada antes disso: não cobra.
+ * Valor = couvert por pessoa × pessoas da comanda.
+ */
+export function couvertFor(
+  rules: { couvertCents: number; couvertStartAt: string | Date | null } | null,
+  comanda: { openedAt: Date | string; closedAt: Date | string | null; peopleCount: number },
+  now: Date = new Date(),
+  toleranceMinutes = 15,
+): Cents {
+  if (!rules || rules.couvertCents <= 0 || !rules.couvertStartAt) return 0;
+  const start = new Date(rules.couvertStartAt).getTime();
+  const opened = new Date(comanda.openedAt).getTime();
+  const lastMoment = comanda.closedAt ? new Date(comanda.closedAt).getTime() : now.getTime();
+  const applies = opened >= start || lastMoment >= start + toleranceMinutes * 60 * 1000;
+  return applies ? rules.couvertCents * comanda.peopleCount : 0;
+}
+
 /** Soma totais de várias comandas (fechamento da mesa inteira). */
 export function sumTotals(list: ComandaTotals[]): ComandaTotals {
   const zero: ComandaTotals = {

@@ -1,4 +1,4 @@
-import { ADJUSTMENT_TYPES, CASH_MOVEMENT_TYPES, COMANDA_STATUSES, PAYMENT_METHODS, ROLES } from '@sistema-bar/shared';
+import { ADJUSTMENT_TYPES, CASH_MOVEMENT_TYPES, COMANDA_STATUSES, FISCAL_MODES, PAYMENT_METHODS, ROLES } from '@sistema-bar/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -180,6 +180,8 @@ export const comandas = pgTable(
     /** 3 últimos dígitos: PIN do QR do cliente (SPEC 5.6). */
     cpfLast3: text().notNull(),
     phone: text(),
+    /** Pessoas nesta comanda (multiplica o couvert). */
+    peopleCount: integer().notNull().default(1),
     status: comandaStatusEnum().notNull().default('ABERTA'),
     clientUuid: uuid().notNull().unique(),
     openedBy: uuid()
@@ -312,16 +314,36 @@ export const paymentStatusEnum = pgEnum('payment_status', ['OK', 'ESTORNADO']);
 export const cashMovementTypeEnum = pgEnum('cash_movement_type', CASH_MOVEMENT_TYPES);
 export const adjustmentTypeEnum = pgEnum('adjustment_type', ADJUSTMENT_TYPES);
 
+export const fiscalModeEnum = pgEnum('fiscal_mode', FISCAL_MODES);
+
+/** Pontos de cobrança (Caixa Carlos, Caixa Paulo…), cada um com sua sessão e sua impressora. */
+export const cashRegisters = pgTable('cash_registers', {
+  id,
+  name: text().notNull().unique(),
+  fiscalMode: fiscalModeEnum().notNull().default('PERGUNTAR'),
+  printerId: uuid().references(() => printers.id, { onDelete: 'set null' }),
+  active: boolean().notNull().default(true),
+  ...timestamps,
+});
+
 export const cashSessions = pgTable(
   'cash_sessions',
   {
     id,
+    registerId: uuid()
+      .notNull()
+      .references(() => cashRegisters.id),
     openedBy: uuid()
       .notNull()
       .references(() => users.id),
     openedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     /** Fundo de troco (suprimento inicial). */
     openingFloatCents: integer().notNull(),
+    /** Regras do dia, informadas na abertura: previsão de fechamento, mesas e couvert. */
+    expectedCloseAt: timestamp({ withTimezone: true }),
+    tablesInService: integer(),
+    couvertCents: integer().notNull().default(0),
+    couvertStartAt: timestamp({ withTimezone: true }),
     closedBy: uuid().references(() => users.id),
     closedAt: timestamp({ withTimezone: true }),
     expectedJson: jsonb(),
@@ -330,9 +352,28 @@ export const cashSessions = pgTable(
     notes: text(),
     ...timestamps,
   },
-  // Só um caixa aberto por vez.
-  (t) => [uniqueIndex('cash_sessions_one_open').on(sql`(1)`).where(sql`${t.closedAt} is null`)],
+  // Uma sessão aberta por caixa.
+  (t) => [uniqueIndex('cash_sessions_one_open_per_register').on(t.registerId).where(sql`${t.closedAt} is null`)],
 );
+
+/**
+ * Pedidos de cupom fiscal (NFC-e). A emissão é a fase 5; até lá o pedido fica registrado
+ * aqui (com as comandas e se vai CPF na nota) para ser emitido quando o módulo existir.
+ */
+export const fiscalRequests = pgTable('fiscal_requests', {
+  id,
+  cashSessionId: uuid()
+    .notNull()
+    .references(() => cashSessions.id),
+  comandaIds: jsonb().$type<string[]>().notNull(),
+  cpfOnNote: boolean().notNull().default(true),
+  automatic: boolean().notNull().default(false),
+  status: text().notNull().default('AGUARDANDO_MODULO_FISCAL'),
+  requestedBy: uuid()
+    .notNull()
+    .references(() => users.id),
+  ...timestamps,
+});
 
 export const cashMovements = pgTable(
   'cash_movements',

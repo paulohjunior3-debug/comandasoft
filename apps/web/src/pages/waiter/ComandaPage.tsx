@@ -106,10 +106,13 @@ export function ComandaPage() {
             <dl className="space-y-1 rounded-xl bg-slate-900 px-4 py-3">
               <Row label="Subtotal" value={formatBRL(c.subtotalCents)} />
               {c.serviceFeeCents > 0 && <Row label="Taxa de serviço (10%)" value={formatBRL(c.serviceFeeCents)} />}
+              {c.couvertCents > 0 && (
+                <Row label={`Couvert${c.peopleCount > 1 ? ` (${c.peopleCount} pessoas)` : ''}`} value={formatBRL(c.couvertCents)} />
+              )}
               <Row label="Total" value={formatBRL(c.totalWithFeeCents)} strong />
             </dl>
             <p className="text-xs text-slate-500">
-              Pagamentos, descontos e couvert são feitos no caixa.{queuedOrders.length > 0 && ' Os itens aguardando envio ainda não entram no total.'}
+              Pagamentos e descontos são feitos no caixa.{queuedOrders.length > 0 && ' Os itens aguardando envio ainda não entram no total.'}
             </p>
 
             {c.status === 'ABERTA' && (

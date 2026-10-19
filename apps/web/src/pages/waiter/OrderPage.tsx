@@ -1,6 +1,7 @@
 import {
   createOrderSchema,
   formatBRL,
+  matchesSearch,
   type CreateOrderResponse,
   type MenuCategory,
   type MenuProduct,
@@ -61,9 +62,10 @@ export function OrderPage() {
 
   const activeCategory = category ?? menu.data?.[0]?.id ?? null;
   const products = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     const all = menu.data ?? [];
-    if (q) return all.flatMap((c) => c.products).filter((p) => p.name.toLowerCase().includes(q));
+    // Ignora acentos: "file" acha "Filé", "acai" acha "Açaí".
+    if (q) return all.flatMap((c) => c.products).filter((p) => matchesSearch(p.name, q));
     return all.find((c) => c.id === activeCategory)?.products ?? [];
   }, [menu.data, activeCategory, search]);
 

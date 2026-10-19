@@ -1,16 +1,10 @@
-import {
-  openComandaSchema,
-  percentOf,
-  SERVICE_FEE_BASIS_POINTS,
-  WAITER_ERRORS,
-  type ComandaDetail,
-  type ComandaItem,
-} from '@sistema-bar/shared';
+import { openComandaSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem, type ComandaTotals } from '@sistema-bar/shared';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { comandas, diningTables, orderItems, orderItemShares, orders, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
+import { loadBill } from '../../lib/billing';
 import { loadComandaSummaries, OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound, pgError } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
@@ -83,6 +77,7 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
             cpfEncrypted: protectedCpf.encrypted,
             cpfLast3: protectedCpf.last3,
             phone: input.phone,
+            peopleCount: input.peopleCount,
             openedBy: request.user!.id,
           })
           .returning({ id: comandas.id, number: comandas.number });
@@ -91,7 +86,7 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
           action: 'COMANDA_ABERTA',
           entity: 'comanda',
           entityId: row!.id,
-          after: { number: row!.number, tableNumber: table.number, customerName: input.customerName },
+          after: { number: row!.number, tableNumber: table.number, customerName: input.customerName, peopleCount: input.peopleCount },
         });
         return row!.id;
       });
@@ -155,18 +150,18 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
       .orderBy(orders.receivedAt, orderItems.createdAt);
 
     const items: ComandaItem[] = rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() }));
-    const subtotalCents = summary.totalCents;
-    const settings = await getSettings(db);
-    const serviceFeeCents = settings.serviceFeeEnabled ? percentOf(subtotalCents, SERVICE_FEE_BASIS_POINTS) : 0;
+    // Mesma conta que o caixa vê: taxa, couvert do dia × pessoas e descontos já aplicados.
+    const totals: ComandaTotals = (await loadBill(db, [id], await getSettings(db))).comandas[0]!.totals;
 
     return {
       ...summary,
       phone: extra!.phone,
       cpfLast3: extra!.cpfLast3,
       items,
-      subtotalCents,
-      serviceFeeCents,
-      totalWithFeeCents: subtotalCents + serviceFeeCents,
+      subtotalCents: totals.itemsCents,
+      serviceFeeCents: totals.serviceFeeCents,
+      couvertCents: totals.couvertCents,
+      totalWithFeeCents: totals.totalCents,
     };
   });
 

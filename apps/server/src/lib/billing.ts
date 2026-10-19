@@ -1,6 +1,7 @@
 import {
   addFractions,
   computeTotals,
+  couvertFor,
   sumTotals,
   type Bill,
   type BillAdjustment,
@@ -25,6 +26,7 @@ import {
   payments,
   users,
 } from '../db/schema';
+import { getDayRules } from './day-rules';
 
 /** Conexão normal ou transação: as consultas são as mesmas. */
 export type Queryable = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -71,15 +73,19 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       .orderBy(orders.receivedAt, orderItems.createdAt),
     db
       .select({
+        paymentId: paymentItems.paymentId,
+        paymentStatus: payments.status,
         orderItemId: paymentItems.orderItemId,
         comandaId: paymentItems.comandaId,
         num: paymentItems.fractionNum,
         den: paymentItems.fractionDen,
         cents: paymentItems.itemAmountCents,
+        productName: orderItems.productNameSnapshot,
       })
       .from(paymentItems)
       .innerJoin(payments, eq(payments.id, paymentItems.paymentId))
-      .where(and(inArray(paymentItems.comandaId, comandaIds), eq(payments.status, 'OK'))),
+      .innerJoin(orderItems, eq(orderItems.id, paymentItems.orderItemId))
+      .where(inArray(paymentItems.comandaId, comandaIds)),
     db
       .select({ adj: adjustments, userName: users.name })
       .from(adjustments)
@@ -95,6 +101,7 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       .orderBy(payments.createdAt),
   ]);
 
+  const rules = await getDayRules(db);
   const authorizerIds = [...new Set(adjustmentRows.map((a) => a.adj.authorizedBy).filter((x): x is string => x !== null))];
   const authorizerNames = new Map(
     authorizerIds.length
@@ -103,7 +110,9 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
   );
 
   const items: BillItem[] = itemRows.map((r) => {
-    const paid = paidItemRows.filter((p) => p.orderItemId === r.orderItemId && p.comandaId === r.comandaId);
+    const paid = paidItemRows.filter(
+      (p) => p.paymentStatus === 'OK' && p.orderItemId === r.orderItemId && p.comandaId === r.comandaId,
+    );
     const paidFraction = paid.reduce<Fraction>((acc, p) => addFractions(acc, { num: p.num, den: p.den }), { num: 0, den: 1 });
     return {
       orderItemId: r.orderItemId,
@@ -145,6 +154,10 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
         createdAt: r.payment.createdAt.toISOString(),
         userName: r.userName,
         allocations: [],
+        // O que a pessoa pagou por item (ex.: R$ 15,00 do Filé, Água, Coca).
+        items: paidItemRows
+          .filter((i) => i.paymentId === r.payment.id)
+          .map((i) => ({ productName: i.productName, amountCents: i.cents, whole: i.num === i.den })),
       };
       paymentMap.set(p.id, p);
     }
@@ -166,7 +179,8 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
             itemsCents: items.filter((i) => i.comandaId === c.id).reduce((s, i) => s + i.amountCents, 0),
             serviceFeeEnabled: settings.serviceFeeEnabled,
             serviceFeeWaived,
-            couvertCents: settings.couvertCents,
+            // Couvert do dia × pessoas, pela regra do horário (+15 min de tolerância).
+            couvertCents: couvertFor(rules, c),
             couvertWaived,
             discounts: mine.filter((a) => a.type === 'DESCONTO'),
             paidCents,
@@ -178,6 +192,7 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       cpfLast3: c.cpfLast3,
       status: c.status,
       openedAt: c.openedAt.toISOString(),
+      peopleCount: c.peopleCount,
       totals,
       serviceFeeWaived,
       couvertWaived,

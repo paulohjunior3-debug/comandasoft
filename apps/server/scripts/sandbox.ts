@@ -45,7 +45,7 @@ if (process.env.SANDBOX_DEMO === '1') {
   const menu: [string, string, string, [string, number][]][] = [
     ['Cervejas', '#f59e0b', bar!.id, [['Heineken 600ml', 1890], ['Original 600ml', 1590], ['Chopp 300ml', 1100]]],
     ['Drinks', '#ec4899', bar!.id, [['Caipirinha de limão', 2200], ['Gin tônica', 2900]]],
-    ['Porções', '#22c55e', cozinha!.id, [['Batata frita', 3290], ['Calabresa acebolada', 3890], ['Frango a passarinho', 4290]]],
+    ['Porções', '#22c55e', cozinha!.id, [['Batata frita', 3290], ['Calabresa acebolada', 3890], ['Frango a passarinho', 4290], ['Filé à parmegiana', 10000]]],
     ['Sem álcool', '#3b82f6', bar!.id, [['Refrigerante lata', 700], ['Água sem gás', 500]]],
   ];
   for (const [i, [name, color, printerId, items]] of menu.entries()) {
@@ -62,7 +62,12 @@ if (process.env.SANDBOX_DEMO === '1') {
     serviceFeeEnabled: true,
     companyName: 'Bar Demonstração',
     cashierPrinterId: caixa!.id,
+    couvertCents: 1500,
   });
+  await db.insert(schema.cashRegisters).values([
+    { name: 'Caixa Carlos', fiscalMode: 'AUTOMATICO' },
+    { name: 'Caixa Paulo', fiscalMode: 'PERGUNTAR' },
+  ]);
   await db.insert(schema.diningTables).values(
     Array.from({ length: 12 }, (_, i) => ({
       number: i + 1,

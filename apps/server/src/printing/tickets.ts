@@ -58,7 +58,7 @@ export interface BillTicket {
     totalCents: number;
   }[];
   totals: { itemsCents: number; serviceFeeCents: number; couvertCents: number; discountCents: number; totalCents: number; paidCents: number; remainingCents: number };
-  payments: { payerName: string; method: string; amountCents: number; changeCents: number }[];
+  payments: { payerName: string; method: string; amountCents: number; changeCents: number; /** O que pagou, se foi por item. */ detail?: string }[];
   openDrawer?: boolean;
   reprint?: boolean;
 }

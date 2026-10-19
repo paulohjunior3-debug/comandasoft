@@ -19,7 +19,9 @@ import { billTicket, enqueueCashierPrint } from '../../lib/cashier-print';
 import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
+import { z } from 'zod';
 import { idParams } from '../admin/params';
+import { getRegister } from './session';
 
 export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWorker }: AppDeps) {
   /** Mesas com comandas abertas e seus totais; as que pediram a conta vêm primeiro. */
@@ -33,7 +35,7 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
           tableIds ? inArray(comandas.tableId, tableIds) : undefined,
         ),
       )
-      .orderBy(asc(comandas.openedAt));
+      .orderBy(asc(comandas.openedAt), asc(comandas.number));
     if (open.length === 0) return [];
     const settings = await getSettings(db);
     const bill = await loadBill(db, open.map((c) => c.id), settings);
@@ -100,11 +102,18 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
 
   /** Pré-conta / conferência na impressora do caixa (SPEC 5.5). */
   app.post('/bill/print', async (request) => {
-    const { comandaIds } = billRequestSchema.parse(request.body);
+    const { comandaIds, registerId } = billRequestSchema.extend({ registerId: z.string().uuid().optional() }).parse(request.body);
+    const register = registerId ? await getRegister(db, registerId) : null;
     const settings = await getSettings(db);
     const bill = await loadBill(db, [...new Set(comandaIds)], settings);
     if (bill.comandas.length === 0) throw notFound('Comanda');
-    const printed = await enqueueCashierPrint(db, settings, billTicket(bill, 'PRE_CONTA', settings, request.user!.name));
+    const printed = await enqueueCashierPrint(
+      db,
+      settings,
+      billTicket(bill, 'PRE_CONTA', settings, register ? `${request.user!.name} · ${register.name}` : request.user!.name),
+      undefined,
+      register?.printerId,
+    );
     if (!printed) {
       throw new HttpError(409, 'NO_CASHIER_PRINTER', 'Escolha a impressora do caixa em Administração > Configurações.');
     }

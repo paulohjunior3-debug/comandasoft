@@ -93,10 +93,12 @@ function bill(t: BillTicket): Block[] {
     blocks.push({ kind: 'rule' });
     for (const p of t.payments) {
       blocks.push({ kind: 'pair', left: `Pago por ${p.payerName} (${p.method})`, right: money(p.amountCents) });
+      if (p.detail) blocks.push({ kind: 'text', text: `  ${p.detail}` });
       if (p.changeCents) blocks.push({ kind: 'pair', left: '  Troco', right: money(p.changeCents) });
     }
   }
-  blocks.push({ kind: 'pair', left: tt.remainingCents ? 'RESTANTE' : 'PAGO', right: money(tt.remainingCents), bold: true, size: 'tall' });
+  if (tt.remainingCents) blocks.push({ kind: 'pair', left: 'RESTANTE', right: money(tt.remainingCents), bold: true, size: 'tall' });
+  else if (t.payments.length) blocks.push({ kind: 'text', text: 'CONTA PAGA', align: 'center', bold: true, size: 'tall' });
   blocks.push({ kind: 'rule' }, { kind: 'text', text: 'NÃO É DOCUMENTO FISCAL', align: 'center', bold: true });
   if (t.company.footer) blocks.push({ kind: 'text', text: t.company.footer, align: 'center' });
   blocks.push({ kind: 'feed', lines: 1 });

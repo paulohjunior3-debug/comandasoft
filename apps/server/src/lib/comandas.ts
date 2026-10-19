@@ -25,7 +25,7 @@ export async function loadComandaSummaries(db: Db, where: SQL | undefined): Prom
     .from(comandas)
     .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
     .where(where)
-    .orderBy(comandas.openedAt);
+    .orderBy(comandas.openedAt, comandas.number);
   const totals = await comandaTotals(db, rows.map((r) => r.comanda.id));
   return rows.map(({ comanda: c, tableNumber }) => ({
     id: c.id,
@@ -34,6 +34,7 @@ export async function loadComandaSummaries(db: Db, where: SQL | undefined): Prom
     tableId: c.tableId,
     tableNumber,
     customerName: c.customerName,
+    peopleCount: c.peopleCount,
     status: c.status,
     openedAt: c.openedAt.toISOString(),
     totalCents: totals.get(c.id) ?? 0,

@@ -27,13 +27,36 @@ const FRACTIONS = [
   { label: '1/4', num: 1, den: 4 },
 ];
 
-type ItemPick = { orderItemId: string; comandaId: string; num: number; den: number };
+/** Parte de um item que a pessoa paga: fração (1/3 da pizza) ou valor (R$ 15,00 do filé). */
+type ItemPick = { orderItemId: string; comandaId: string; num?: number; den?: number; amountCents?: number };
+
+/** Conta quitada, esperando a escolha de cupom (não fiscal, fiscal ou só finalizar). */
+export interface FinalizeInfo {
+  comandaIds: string[];
+  names: string[];
+  tableNumber: number;
+  changeCents: number;
+  fiscalMode: CreatePaymentResult['fiscalMode'];
+  fiscalRequested: boolean;
+}
 
 /**
  * Conta da mesa no caixa (SPEC 5.7): uma, várias ou todas as comandas; ajustes com PIN de
  * gerente; pagamentos parciais por valor, por item/fração ou divididos por N; troco; estorno.
  */
-export function BillPanel({ table, preselect, onEmpty }: { table: CashierTable; preselect: string[] | null; onEmpty: () => void }) {
+export function BillPanel({
+  registerId,
+  table,
+  preselect,
+  onEmpty,
+  onFinalize,
+}: {
+  registerId: string;
+  table: CashierTable;
+  preselect: string[] | null;
+  onEmpty: () => void;
+  onFinalize: (info: FinalizeInfo) => void;
+}) {
   const qc = useQueryClient();
   const pin = usePin();
   const [selected, setSelected] = useState<string[]>(() => preselect ?? table.comandas.map((c) => c.id));
@@ -56,7 +79,7 @@ export function BillPanel({ table, preselect, onEmpty }: { table: CashierTable; 
   };
 
   const printBill = useMutation({
-    mutationFn: () => api('/cashier/bill/print', { method: 'POST', body: JSON.stringify({ comandaIds: ordered }) }),
+    mutationFn: () => api('/cashier/bill/print', { method: 'POST', body: JSON.stringify({ comandaIds: ordered, registerId }) }),
     onSuccess: () => setNotice('Pré-conta enviada para a impressora do caixa.'),
   });
   const action = useMutation({
@@ -177,6 +200,11 @@ export function BillPanel({ table, preselect, onEmpty }: { table: CashierTable; 
                       <span className="flex-1">
                         {formatTime(p.createdAt)} · Pago por <strong>{p.payerName}</strong> ({PAYMENT_METHOD_LABELS[p.method]})
                         {p.changeCents > 0 && ` · troco ${formatBRL(p.changeCents)}`}
+                        {p.items.length > 0 && (
+                          <span className="block text-xs text-slate-400">
+                            {p.items.map((i) => `${i.whole ? '' : `${formatBRL(i.amountCents)} do `}${i.productName}`).join(' + ')}
+                          </span>
+                        )}
                       </span>
                       <span>{formatBRL(p.allocations.filter((a) => ordered.includes(a.comandaId)).reduce((s, a) => s + a.amountCents, 0))}</span>
                       {p.status === 'OK' ? (
@@ -195,14 +223,25 @@ export function BillPanel({ table, preselect, onEmpty }: { table: CashierTable; 
             <Totals bill={b} />
             {b.totals.remainingCents > 0 ? (
               <PaymentForm
+                registerId={registerId}
                 bill={b}
                 comandaIds={ordered}
                 onPaid={(r) => {
                   refresh();
-                  setNotice(
-                    (r.changeCents ? `Troco: ${formatBRL(r.changeCents)}. ` : '') +
-                      (r.closedComandaIds.length ? `${r.closedComandaIds.length} comanda(s) fechada(s); cupom enviado.` : 'Pagamento registrado.'),
-                  );
+                  const closed = b.comandas.filter((c) => r.closedComandaIds.includes(c.id));
+                  if (closed.length) {
+                    // Conta quitada: o caixa escolhe cupom não fiscal, fiscal ou só finalizar.
+                    onFinalize({
+                      comandaIds: closed.map((c) => c.id),
+                      names: closed.map((c) => c.customerName),
+                      tableNumber: table.number,
+                      changeCents: r.changeCents,
+                      fiscalMode: r.fiscalMode,
+                      fiscalRequested: r.fiscalRequested,
+                    });
+                  } else {
+                    setNotice((r.changeCents ? `Troco: ${formatBRL(r.changeCents)}. ` : '') + 'Pagamento registrado.');
+                  }
                   const left = table.comandas.filter((c) => !r.closedComandaIds.includes(c.id)).map((c) => c.id);
                   // Quem pagou saiu da conta; se não sobrou ninguém selecionado, seleciona o resto da mesa.
                   setSelected((s) => {
@@ -255,7 +294,12 @@ function ComandaBlock({ comanda: c, bill }: { comanda: BillComanda; bill: Bill }
               {i.sharedWith > 1 && <span className="text-slate-500"> · rateado entre {i.sharedWith}</span>}
               {i.paidCents > 0 && (
                 <span className="ml-2 text-xs text-emerald-400">
-                  pago {i.paidFraction.num === i.paidFraction.den ? 'inteiro' : `${i.paidFraction.num}/${i.paidFraction.den}`}
+                  pago{' '}
+                  {i.paidFraction.num === i.paidFraction.den
+                    ? 'inteiro'
+                    : i.paidFraction.den <= 12 // fração "de gente" (1/2, 1/3…); pagamento por valor vira R$
+                      ? `${i.paidFraction.num}/${i.paidFraction.den}`
+                      : formatBRL(i.paidCents)}
                 </span>
               )}
             </span>
@@ -298,7 +342,17 @@ function Totals({ bill: b }: { bill: Bill }) {
   );
 }
 
-function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: string[]; onPaid: (r: CreatePaymentResult) => void }) {
+function PaymentForm({
+  registerId,
+  bill: b,
+  comandaIds,
+  onPaid,
+}: {
+  registerId: string;
+  bill: Bill;
+  comandaIds: string[];
+  onPaid: (r: CreatePaymentResult) => void;
+}) {
   const [mode, setMode] = useState<'VALOR' | 'ITENS'>('VALOR');
   const [method, setMethod] = useState<PaymentMethod>('PIX');
   const [amount, setAmount] = useState('');
@@ -306,6 +360,7 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
   const [split, setSplit] = useState('');
   const [payer, setPayer] = useState('');
   const [picks, setPicks] = useState<ItemPick[]>([]);
+  const [valueInputs, setValueInputs] = useState<Record<string, string>>({});
   const [clientUuid, setClientUuid] = useState(() => crypto.randomUUID());
   const [localError, setLocalError] = useState<string | null>(null);
   const remaining = b.totals.remainingCents;
@@ -313,6 +368,7 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
   useEffect(() => {
     setAmount('');
     setPicks([]);
+    setValueInputs({});
     setPayer(b.comandas.length === 1 ? b.comandas[0]!.customerName : '');
   }, [comandaIds.join(',')]);
 
@@ -323,7 +379,12 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
       const item = b.items.find((i) => i.orderItemId === p.orderItemId && i.comandaId === p.comandaId);
       const comanda = b.comandas.find((c) => c.id === p.comandaId);
       if (!item || !comanda) continue;
-      const part = fractionAmount(item.amountCents, { num: p.num, den: p.den }, { fraction: item.paidFraction, cents: item.paidCents });
+      const part =
+        p.amountCents !== undefined
+          ? p.amountCents > 0 && item.paidCents + p.amountCents <= item.amountCents
+            ? p.amountCents
+            : null
+          : fractionAmount(item.amountCents, { num: p.num!, den: p.den! }, { fraction: item.paidFraction, cents: item.paidCents });
       if (part === null) continue;
       const fee = b.serviceFeeEnabled && !comanda.serviceFeeWaived ? percentOf(part, SERVICE_FEE_BPS) : 0;
       perComanda.set(p.comandaId, (perComanda.get(p.comandaId) ?? 0) + part + fee);
@@ -341,6 +402,7 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
         method: 'POST',
         body: JSON.stringify({
           clientUuid,
+          registerId,
           comandaIds,
           method,
           amountCents,
@@ -354,11 +416,19 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
       setAmount('');
       setTendered('');
       setPicks([]);
+      setValueInputs({});
       onPaid(r);
     },
   });
 
+  const invalidValue = picks.some((p) => {
+    if (p.amountCents === undefined) return false;
+    const item = b.items.find((i) => i.orderItemId === p.orderItemId && i.comandaId === p.comandaId);
+    return !item || p.amountCents <= 0 || item.paidCents + p.amountCents > item.amountCents;
+  });
+
   const submit = () => {
+    if (mode === 'ITENS' && invalidValue) return setLocalError('Confira os valores digitados: cada um deve ser maior que zero e até o que falta do item.');
     if (!amountCents || amountCents <= 0) return setLocalError(mode === 'ITENS' ? 'Escolha os itens.' : 'Valor inválido.');
     if (amountCents > remaining) return setLocalError(`O valor passa do restante (${formatBRL(remaining)}).`);
     if (!payer.trim()) return setLocalError('Informe quem está pagando.');
@@ -414,26 +484,33 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
       ) : (
         <ul className="max-h-72 space-y-1 overflow-y-auto">
           {b.items
-            .filter((i) => i.amountCents > 0 && i.paidFraction.num < i.paidFraction.den)
+            .filter((i) => i.amountCents > 0 && i.paidCents < i.amountCents)
             .map((i) => {
               const current = pickOf(i.orderItemId, i.comandaId);
+              const k = `${i.orderItemId}-${i.comandaId}`;
+              const left = i.amountCents - i.paidCents;
               const who = b.comandas.length > 1 ? `${b.comandas.find((c) => c.id === i.comandaId)?.customerName}: ` : '';
               return (
-                <li key={`${i.orderItemId}-${i.comandaId}`} className="flex items-center gap-2 text-sm">
+                <li key={k} className="flex flex-wrap items-center gap-2 text-sm">
                   <span className="flex-1">
                     {who}
                     {i.qty}× {i.productName} <span className="text-slate-500">{formatBRL(i.amountCents)}</span>
+                    {i.paidCents > 0 && <span className="text-xs text-amber-300"> · falta {formatBRL(left)}</span>}
                   </span>
                   <SelectField
                     label=""
                     aria-label={`Parte de ${i.productName}`}
-                    value={current ? `${current.num}/${current.den}` : ''}
+                    value={current ? (current.amountCents !== undefined ? 'valor' : `${current.num}/${current.den}`) : ''}
                     onChange={(e) => {
-                      const [num, den] = e.target.value.split('/').map(Number);
-                      setPicks((ps) => [
-                        ...ps.filter((p) => !(p.orderItemId === i.orderItemId && p.comandaId === i.comandaId)),
-                        ...(num && den ? [{ orderItemId: i.orderItemId, comandaId: i.comandaId, num, den }] : []),
-                      ]);
+                      const v = e.target.value;
+                      const others = picks.filter((p) => !(p.orderItemId === i.orderItemId && p.comandaId === i.comandaId));
+                      if (v === 'valor') {
+                        const typed = parseBRL(valueInputs[k] ?? '') ?? 0;
+                        setPicks([...others, { orderItemId: i.orderItemId, comandaId: i.comandaId, amountCents: typed }]);
+                        return;
+                      }
+                      const [num, den] = v.split('/').map(Number);
+                      setPicks([...others, ...(num && den ? [{ orderItemId: i.orderItemId, comandaId: i.comandaId, num, den }] : [])]);
                     }}
                   >
                     <option value="">—</option>
@@ -447,7 +524,24 @@ function PaymentForm({ bill: b, comandaIds, onPaid }: { bill: Bill; comandaIds: 
                     {i.paidFraction.num > 0 && (
                       <option value={`${i.paidFraction.den - i.paidFraction.num}/${i.paidFraction.den}`}>O que falta</option>
                     )}
+                    <option value="valor">Valor (R$)</option>
                   </SelectField>
+                  {current?.amountCents !== undefined && (
+                    <input
+                      aria-label={`Valor de ${i.productName}`}
+                      inputMode="decimal"
+                      autoFocus
+                      placeholder="0,00"
+                      value={valueInputs[k] ?? ''}
+                      onChange={(e) => {
+                        const text = e.target.value;
+                        setValueInputs((vs) => ({ ...vs, [k]: text }));
+                        const cents = parseBRL(text) ?? 0;
+                        setPicks((ps) => ps.map((p) => (p.orderItemId === i.orderItemId && p.comandaId === i.comandaId ? { ...p, amountCents: cents } : p)));
+                      }}
+                      className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-right"
+                    />
+                  )}
                 </li>
               );
             })}

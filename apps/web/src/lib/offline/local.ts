@@ -24,6 +24,7 @@ export function pendingComandas(entries: OutboxEntry[], tableId: string, tableNu
         tableId,
         tableNumber,
         customerName: body.customerName,
+        peopleCount: body.peopleCount ?? 1,
         status: 'ABERTA',
         openedAt: new Date(e.createdAt / 1000).toISOString(),
         totalCents: 0,

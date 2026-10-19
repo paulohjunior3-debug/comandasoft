@@ -47,14 +47,14 @@ export function SettingsPage() {
             hint="Ligada: 10% sobre os itens de toda comanda. O gerente pode retirar de uma comanda específica, com motivo."
           />
           <TextField
-            label="Couvert por pessoa (R$)"
+            label="Couvert padrão por pessoa (R$)"
             inputMode="decimal"
             value={couvert}
             onChange={(e) => {
               setSaved(false);
               setCouvert(e.target.value);
             }}
-            hint="0,00 = sem couvert"
+            hint="Valor sugerido na abertura do caixa. Se vai ter couvert e a partir de que horas é decidido em cada abertura."
           />
         </Section>
 

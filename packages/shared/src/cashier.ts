@@ -20,23 +20,88 @@ const reason = z.string().trim().min(3, 'Informe o motivo').max(200);
 /** PIN de gerente quando quem está no caixa não tem permissão para a ação (SPEC 4). */
 const authorizerPin = z.string().regex(/^\d{4,6}$/, 'PIN inválido').optional();
 
+const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário inválido (use HH:MM)');
+const registerId = z.string().uuid('Escolha o caixa');
+
+// ---------- Caixas (pontos de cobrança: Caixa Carlos, Caixa Paulo…) ----------
+
+/**
+ * AUTOMATICO: toda conta quitada neste caixa já pede o cupom fiscal.
+ * PERGUNTAR: ao quitar, o caixa escolhe entre cupom não fiscal, fiscal ou só finalizar.
+ */
+export const FISCAL_MODES = ['PERGUNTAR', 'AUTOMATICO'] as const;
+export type FiscalMode = (typeof FISCAL_MODES)[number];
+
+export const cashRegisterInputSchema = z.object({
+  name: z.string().trim().min(1, 'Informe o nome do caixa').max(40),
+  fiscalMode: z.enum(FISCAL_MODES).default('PERGUNTAR'),
+  /** Impressora deste caixa (cupom, comprovantes, gaveta). Vazio = impressora do caixa das Configurações. */
+  printerId: z
+    .string()
+    .uuid()
+    .or(z.literal(''))
+    .nullish()
+    .transform((v) => v || null),
+  active: z.boolean().default(true),
+});
+export type CashRegisterInput = z.input<typeof cashRegisterInputSchema>;
+
+export interface CashRegister {
+  id: string;
+  name: string;
+  fiscalMode: FiscalMode;
+  printerId: string | null;
+  active: boolean;
+  /** Sessão aberta agora neste caixa, se houver. */
+  openSession: { id: string; openedAt: string; openedBy: string } | null;
+}
+
+// ---------- Regras do dia (definidas na abertura do primeiro caixa) ----------
+
+/** Tolerância do couvert: quem chegou antes do início e ficou além dela também paga. */
+export const COUVERT_TOLERANCE_MINUTES = 15;
+
+export interface DayRules {
+  /** Sessão que definiu as regras (o primeiro caixa aberto). */
+  sessionId: string;
+  registerName: string;
+  openedAt: string;
+  /** Horário previsto para fechar (pode ser depois da meia-noite). */
+  expectedCloseAt: string | null;
+  /** Mesas em funcionamento hoje (as N primeiras pelo número). null = todas. */
+  tablesInService: number | null;
+  /** Couvert por pessoa e a partir de quando. 0 = sem couvert hoje. */
+  couvertCents: number;
+  couvertStartAt: string | null;
+}
+
 // ---------- Sessão de caixa ----------
 
 export const openCashSessionSchema = z.object({
+  registerId,
   /** Fundo de troco deixado na gaveta na abertura. */
   openingFloatCents: cents,
+  /** Previsão de fechamento (HH:MM). Antes da hora de abertura = dia seguinte (ex.: abre 16:00, fecha 01:00). */
+  expectedCloseTime: time.optional(),
+  /** Mesas em funcionamento hoje. */
+  tablesInService: z.number().int().min(1, 'Ao menos 1 mesa').max(999).optional(),
+  /** Couvert do dia: valor por pessoa e horário de início. Ausente = sem couvert. */
+  couvert: z.object({ amountCents: positiveCents, startTime: time }).nullish(),
 });
+export type OpenCashSessionInput = z.input<typeof openCashSessionSchema>;
 
 export const CASH_MOVEMENT_TYPES = ['SANGRIA', 'SUPRIMENTO'] as const;
 export type CashMovementType = (typeof CASH_MOVEMENT_TYPES)[number];
 
 export const cashMovementSchema = z.object({
+  registerId,
   type: z.enum(CASH_MOVEMENT_TYPES),
   amountCents: positiveCents,
   reason,
 });
 
 export const closeCashSessionSchema = z.object({
+  registerId,
   /** Valor contado por forma de pagamento. Dinheiro é obrigatório; cartões e Pix, opcionais. */
   counted: z.object({
     DINHEIRO: cents,
@@ -61,6 +126,10 @@ export interface CashMovement {
 
 export interface CashSessionSummary {
   id: string;
+  registerId: string;
+  registerName: string;
+  fiscalMode: FiscalMode;
+  expectedCloseAt: string | null;
   openedAt: string;
   openedBy: string;
   openingFloatCents: number;
@@ -108,6 +177,8 @@ export interface CashierComanda {
   cpfLast3: string;
   status: ComandaStatus;
   openedAt: string;
+  /** Pessoas nesta comanda (multiplica o couvert). */
+  peopleCount: number;
   totals: ComandaTotals;
 }
 
@@ -169,6 +240,8 @@ export interface BillPayment {
   userName: string;
   /** Quanto deste pagamento foi para cada comanda da conta. */
   allocations: { comandaId: string; amountCents: number }[];
+  /** Pagamento por item: o que a pessoa pagou (ex.: R$ 15,00 do Filé, Água, Coca). Valores sem a taxa. */
+  items: { productName: string; amountCents: number; whole: boolean }[];
 }
 
 export interface BillComanda extends CashierComanda {
@@ -210,17 +283,28 @@ export const removeAdjustmentSchema = z.object({ authorizerPin });
 
 // ---------- Pagamentos ----------
 
-export const paymentItemSchema = z.object({
-  orderItemId: z.string().uuid(),
-  comandaId: z.string().uuid(),
-  /** Fração do item (1/1 = inteiro, 1/3 da pizza…). */
-  num: z.number().int().min(1),
-  den: z.number().int().min(1).max(20),
-});
+/**
+ * Item pago por fração (1/1 = inteiro, 1/3 da pizza) ou por valor
+ * ("R$ 15,00 do filé de R$ 100,00", quem vai embora antes e paga só a parte dele).
+ */
+export const paymentItemSchema = z
+  .object({
+    orderItemId: z.string().uuid(),
+    comandaId: z.string().uuid(),
+    num: z.number().int().min(1).optional(),
+    den: z.number().int().min(1).max(20).optional(),
+    amountCents: positiveCents.optional(),
+  })
+  .refine((v) => (v.amountCents !== undefined) !== (v.num !== undefined && v.den !== undefined), {
+    message: 'Informe a fração ou o valor do item',
+  })
+  .refine((v) => v.num === undefined || v.den === undefined || v.num <= v.den, 'Fração maior que o item');
+export type PaymentItemInput = z.input<typeof paymentItemSchema>;
 
 export const createPaymentSchema = z
   .object({
     clientUuid: z.string().uuid(),
+    registerId,
     /** Comandas que este pagamento abate, na ordem em que devem ser quitadas. */
     comandaIds: z.array(z.string().uuid()).min(1).max(50),
     method: z.enum(PAYMENT_METHODS),
@@ -229,10 +313,9 @@ export const createPaymentSchema = z
     /** Dinheiro: quanto o cliente entregou, para calcular o troco. */
     tenderedCents: cents.optional(),
     payerName: z.string().trim().min(1, 'Informe quem está pagando').max(60),
-    /** Pagamento por item ou fração (opcional). */
+    /** Pagamento por item, fração ou valor de item (opcional). */
     items: z.array(paymentItemSchema).max(100).optional(),
-  })
-  .refine((v) => v.items === undefined || v.items.every((i) => i.num <= i.den), 'Fração maior que o item');
+  });
 export type CreatePaymentInput = z.input<typeof createPaymentSchema>;
 
 export interface CreatePaymentResult {
@@ -241,6 +324,34 @@ export interface CreatePaymentResult {
   /** Comandas que este pagamento quitou (foram fechadas). */
   closedComandaIds: string[];
   duplicate: boolean;
+  /** Como o caixa trata o cupom fiscal ao quitar. */
+  fiscalMode: FiscalMode;
+  /** true quando o cupom fiscal já foi pedido automaticamente (caixa em modo AUTOMATICO). */
+  fiscalRequested: boolean;
+}
+
+// ---------- Finalização da conta ----------
+
+/** Cupom não fiscal (de conferência/consumo) das comandas quitadas. */
+export const receiptRequestSchema = z.object({
+  registerId,
+  comandaIds: z.array(z.string().uuid()).min(1).max(50),
+});
+
+/**
+ * Pedido de cupom fiscal (NFC-e). A emissão é a fase 5 (provedor fiscal + contador):
+ * até lá o pedido fica registrado para ser emitido quando o módulo estiver ativo.
+ */
+export const fiscalRequestSchema = z.object({
+  registerId,
+  comandaIds: z.array(z.string().uuid()).min(1).max(50),
+  /** Colocar o CPF da comanda na nota. */
+  cpfOnNote: z.boolean().default(true),
+});
+
+export interface FiscalRequestResult {
+  id: string;
+  status: 'AGUARDANDO_MODULO_FISCAL';
 }
 
 export const refundPaymentSchema = z.object({ reason, authorizerPin });
