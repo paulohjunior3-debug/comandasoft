@@ -1,0 +1,249 @@
+{
+  "estabelecimento": "Esquina da Tilápia Bar & Restaurante",
+  "observacoes": [
+    "Transcrito da foto do cardápio impresso. Sabores (espetos, caldos, sucos, doses) viraram produtos separados para sair certo no cupom da cozinha/bar.",
+    "Molhos são cobrados à parte (não listados com preço no cardápio).",
+    "Couvert artístico só em dias de show: configure em Administração > Configurações quando houver."
+  ],
+  "categorias": [
+    {
+      "nome": "Porções completas",
+      "cor": "#f59e0b",
+      "produtos": [
+        { "nome": "Porção completa Filé de Tilápia", "preco": "100,00", "descricao": "Acompanha arroz, feijão tropeiro ou de caldo. Serve 3 a 4 pessoas." },
+        { "nome": "Porção completa Tilápia Crispy c/ espinho", "preco": "100,00", "descricao": "Acompanha arroz, feijão tropeiro ou de caldo. Serve 3 a 4 pessoas." },
+        { "nome": "Porção completa Tilápia Inteira s/ espinho", "preco": "110,00", "descricao": "Acompanha arroz, feijão tropeiro ou de caldo. Serve 3 a 4 pessoas." },
+        { "nome": "Porção completa Traíra sem espinho", "preco": "110,00", "descricao": "Acompanha arroz, feijão tropeiro ou de caldo. Serve 3 a 4 pessoas." }
+      ]
+    },
+    {
+      "nome": "Porções 500g",
+      "cor": "#22c55e",
+      "produtos": [
+        { "nome": "Filé de Tilápia 500g", "preco": "65,00" },
+        { "nome": "Tilápia Crispy c/ espinho 500g", "preco": "70,00" },
+        { "nome": "Tilápia Inteira s/ espinho 500g", "preco": "80,00" },
+        { "nome": "Filé de Tucunaré 500g", "preco": "65,00" },
+        { "nome": "Filé de Traíra 500g", "preco": "60,00" },
+        { "nome": "Tilápia em posta (pedaço 200g)", "preco": "11,00" },
+        { "nome": "Costela de Tilápia", "preco": "45,00" },
+        { "nome": "Costela de Tambaqui", "preco": "50,00" },
+        { "nome": "Lambari frito", "preco": "55,00" },
+        { "nome": "Contra filé com batata", "preco": "65,00" },
+        { "nome": "Moela", "preco": "40,00" },
+        { "nome": "Calabresa", "preco": "38,00" },
+        { "nome": "Torresmo com mandioca", "preco": "55,00" },
+        { "nome": "Frango à passarinho 800g", "preco": "45,00" },
+        { "nome": "Batata frita", "preco": "28,00" }
+      ]
+    },
+    {
+      "nome": "Jantinha",
+      "cor": "#ef4444",
+      "produtos": [
+        { "nome": "Jantinha", "preco": "28,00", "descricao": "01 espeto ou 01 peixe em posta ou 02 ovos fritos. Acompanha arroz, feijão tropeiro ou de caldo, vinagrete e mandioca." },
+        { "nome": "Jantinha especial (150g filé de tilápia)", "preco": "33,00", "descricao": "Acompanha arroz, feijão tropeiro ou de caldo, vinagrete e mandioca." }
+      ]
+    },
+    {
+      "nome": "Espetos",
+      "cor": "#a855f7",
+      "produtos": [
+        { "nome": "Espeto Franbacon", "preco": "12,00" },
+        { "nome": "Espeto Carne", "preco": "12,00" },
+        { "nome": "Espeto Coração", "preco": "12,00" },
+        { "nome": "Espeto Tulipa de Frango", "preco": "12,00" },
+        { "nome": "Espeto completo Franbacon", "preco": "17,00", "descricao": "Acompanha vinagrete e mandioca." },
+        { "nome": "Espeto completo Carne", "preco": "17,00", "descricao": "Acompanha vinagrete e mandioca." },
+        { "nome": "Espeto completo Coração", "preco": "17,00", "descricao": "Acompanha vinagrete e mandioca." },
+        { "nome": "Espeto completo Tulipa de Frango", "preco": "17,00", "descricao": "Acompanha vinagrete e mandioca." }
+      ]
+    },
+    {
+      "nome": "Caldos 500ml",
+      "cor": "#f97316",
+      "produtos": [
+        { "nome": "Caldo de Frango", "preco": "23,00", "descricao": "Acompanha torrada e cebolinha." },
+        { "nome": "Caldo Vaca Atolada", "preco": "23,00", "descricao": "Acompanha torrada e cebolinha." },
+        { "nome": "Caldo de Piranha", "preco": "23,00", "descricao": "Acompanha torrada e cebolinha." }
+      ]
+    },
+    {
+      "nome": "Saladas",
+      "cor": "#84cc16",
+      "produtos": [
+        { "nome": "Salada alface e tomate", "preco": "15,00" },
+        { "nome": "Vinagrete", "preco": "12,00" },
+        { "nome": "Jiló", "preco": "18,00" }
+      ]
+    },
+    {
+      "nome": "Guarnições",
+      "cor": "#eab308",
+      "produtos": [
+        { "nome": "Arroz", "preco": "15,00" },
+        { "nome": "Feijão tropeiro", "preco": "25,00" },
+        { "nome": "Mandioca cozida", "preco": "12,00" }
+      ]
+    },
+    {
+      "nome": "Cerveja 600ml",
+      "cor": "#d97706",
+      "produtos": [
+        { "nome": "Brahma 600ml", "preco": "13,00" },
+        { "nome": "Skol 600ml", "preco": "12,00" },
+        { "nome": "Antarctica Original 600ml", "preco": "15,00" },
+        { "nome": "Heineken 600ml", "preco": "18,00" },
+        { "nome": "Amstel 600ml", "preco": "14,00" },
+        { "nome": "Petra 600ml", "preco": "11,00" },
+        { "nome": "Antarctica Boa 600ml", "preco": "12,00" },
+        { "nome": "Crystal 600ml", "preco": "8,00" },
+        { "nome": "Spaten 600ml", "preco": "15,00" },
+        { "nome": "Budweiser 600ml", "preco": "15,00" },
+        { "nome": "Corona 600ml", "preco": "20,00" }
+      ]
+    },
+    {
+      "nome": "Cerveja lata 350ml",
+      "cor": "#b45309",
+      "produtos": [
+        { "nome": "Brahma lata", "preco": "6,00" },
+        { "nome": "Skol lata", "preco": "6,00" },
+        { "nome": "Antarctica Original lata", "preco": "7,00" },
+        { "nome": "Amstel lata", "preco": "7,00" },
+        { "nome": "Petra lata", "preco": "6,00" },
+        { "nome": "Crystal lata", "preco": "5,00" },
+        { "nome": "Petra Premium Escura lata", "preco": "7,00" },
+        { "nome": "Antarctica Boa lata", "preco": "6,00" },
+        { "nome": "Brahma Zero Álcool lata", "preco": "7,00" }
+      ]
+    },
+    {
+      "nome": "Long neck",
+      "cor": "#ca8a04",
+      "produtos": [
+        { "nome": "Heineken long neck 330ml", "preco": "12,00" },
+        { "nome": "Budweiser long neck 330ml", "preco": "11,00" },
+        { "nome": "Heineken Zero Álcool long neck 330ml", "preco": "12,00" },
+        { "nome": "Corona long neck 330ml", "preco": "13,00" },
+        { "nome": "Michelob Ultra long neck 330ml", "preco": "11,00" },
+        { "nome": "Stella Pure Gold long neck 330ml", "preco": "11,00" }
+      ]
+    },
+    {
+      "nome": "Drinks e diversos",
+      "cor": "#ec4899",
+      "produtos": [
+        { "nome": "H2OH!", "preco": "8,00" },
+        { "nome": "Água tônica", "preco": "7,00" },
+        { "nome": "Gatorade", "preco": "8,00" },
+        { "nome": "GT Beats", "preco": "12,00" },
+        { "nome": "Skol Beats", "preco": "12,00" },
+        { "nome": "Ice Cabaré", "preco": "12,00" },
+        { "nome": "Caipirinha", "preco": "16,00" },
+        { "nome": "Caipivodka", "preco": "22,00" },
+        { "nome": "CDB (Cu de Burro)", "preco": "7,00" }
+      ]
+    },
+    {
+      "nome": "Sucos",
+      "cor": "#fb923c",
+      "produtos": [
+        { "nome": "Suco de Laranja 1L", "preco": "22,00" },
+        { "nome": "Suco de Maracujá 1L", "preco": "22,00" },
+        { "nome": "Suco de Abacaxi 1L", "preco": "22,00" },
+        { "nome": "Suco de Abacaxi com Hortelã 1L", "preco": "22,00" },
+        { "nome": "Suco de Acerola 1L", "preco": "22,00" },
+        { "nome": "Suco de Goiaba 1L", "preco": "22,00" },
+        { "nome": "Suco de Limão 1L", "preco": "22,00" },
+        { "nome": "Suco de Laranja 500ml", "preco": "11,00" },
+        { "nome": "Suco de Maracujá 500ml", "preco": "11,00" },
+        { "nome": "Suco de Abacaxi 500ml", "preco": "11,00" },
+        { "nome": "Suco de Abacaxi com Hortelã 500ml", "preco": "11,00" },
+        { "nome": "Suco de Acerola 500ml", "preco": "11,00" },
+        { "nome": "Suco de Goiaba 500ml", "preco": "11,00" },
+        { "nome": "Suco de Limão 500ml", "preco": "11,00" },
+        { "nome": "Suco Del Valle 1L", "preco": "15,00" },
+        { "nome": "Suco Del Valle lata 350ml", "preco": "7,00" },
+        { "nome": "Kapo", "preco": "5,00" }
+      ]
+    },
+    {
+      "nome": "Doses",
+      "cor": "#8b5cf6",
+      "produtos": [
+        { "nome": "Dose Campari", "preco": "15,00" },
+        { "nome": "Dose Rum Montilla", "preco": "15,00" },
+        { "nome": "Dose Gin", "preco": "15,00" },
+        { "nome": "Dose Tequila", "preco": "15,00" },
+        { "nome": "Dose Pinga de Engenho", "preco": "6,00" },
+        { "nome": "Dose Paratudo", "preco": "6,00" },
+        { "nome": "Dose Cachaça 51", "preco": "6,00" },
+        { "nome": "Dose Velho Barreiro", "preco": "6,00" },
+        { "nome": "Dose Presidente", "preco": "6,00" },
+        { "nome": "Dose Domus", "preco": "6,00" },
+        { "nome": "Dose Gengibre", "preco": "6,00" },
+        { "nome": "Dose Menta", "preco": "6,00" },
+        { "nome": "Dose Ypioca Ouro", "preco": "6,00" },
+        { "nome": "Dose Vodka", "preco": "6,00" },
+        { "nome": "Dose São João da Barra", "preco": "6,00" }
+      ]
+    },
+    {
+      "nome": "Whisky",
+      "cor": "#92400e",
+      "produtos": [
+        { "nome": "Dose White Horse", "preco": "20,00" },
+        { "nome": "Dose Ballantines", "preco": "20,00" },
+        { "nome": "Dose Red Label", "preco": "20,00" },
+        { "nome": "Garrafa White Horse", "preco": "180,00" },
+        { "nome": "Garrafa Ballantines", "preco": "180,00" },
+        { "nome": "Garrafa Red Label", "preco": "180,00" }
+      ]
+    },
+    {
+      "nome": "Energéticos",
+      "cor": "#2563eb",
+      "produtos": [
+        { "nome": "Red Bull 250ml", "preco": "14,00" },
+        { "nome": "TNT 250ml", "preco": "14,00" },
+        { "nome": "Monster lata 473ml", "preco": "14,00" }
+      ]
+    },
+    {
+      "nome": "Refrigerantes",
+      "cor": "#dc2626",
+      "produtos": [
+        { "nome": "Coca-Cola 2L", "preco": "15,00" },
+        { "nome": "Coca-Cola 1L", "preco": "10,00" },
+        { "nome": "Coca-Cola lata", "preco": "6,00" },
+        { "nome": "Coca-Cola 600ml", "preco": "7,00" },
+        { "nome": "Coca-Cola 290ml", "preco": "5,00" },
+        { "nome": "Sprite 2L", "preco": "12,00" },
+        { "nome": "Sprite lata", "preco": "6,00" },
+        { "nome": "Fanta 2L", "preco": "12,00" },
+        { "nome": "Fanta lata", "preco": "6,00" },
+        { "nome": "Guaraná Antarctica 2L", "preco": "12,00" },
+        { "nome": "Guaraná Antarctica 600ml", "preco": "7,00" },
+        { "nome": "Guaraná Antarctica lata", "preco": "6,00" },
+        { "nome": "Schweppes lata", "preco": "6,00" }
+      ]
+    },
+    {
+      "nome": "Água",
+      "cor": "#0ea5e9",
+      "produtos": [
+        { "nome": "Água com gás", "preco": "5,00" },
+        { "nome": "Água sem gás", "preco": "4,00" }
+      ]
+    },
+    {
+      "nome": "Vinho",
+      "cor": "#7f1d1d",
+      "produtos": [
+        { "nome": "Vinho taça", "preco": "8,00" },
+        { "nome": "Vinho garrafa", "preco": "40,00" }
+      ]
+    }
+  ]
+}

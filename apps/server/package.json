@@ -11,7 +11,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "sandbox": "tsx scripts/sandbox.ts"
+    "sandbox": "tsx scripts/sandbox.ts",
+    "db:import-menu": "tsx scripts/importar-cardapio.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
