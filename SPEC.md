@@ -133,7 +133,7 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
 - **Um CPF só pode ter uma comanda aberta por vez** (garante que a busca por CPF no caixa encontre exatamente uma comanda/mesa).
 - Uma **mesa pode ter várias comandas**; cada comanda pertence a uma mesa.
 - **Status da comanda**: `ABERTA` → `EM_FECHAMENTO` → `FECHADA` (ou `CANCELADA`).
-- **Status da mesa** (derivado): `LIVRE`, `OCUPADA`, `EM_FECHAMENTO`.
+- **Status da mesa** (derivado): `LIVRE` (sem comandas abertas), `OCUPADA`, `EM_FECHAMENTO` (quando **todas** as comandas abertas da mesa pediram fechamento; se só uma pessoa pediu a conta, a mesa continua ocupada e a comanda aparece marcada).
 - *(Melhorias)*:
   - **Transferir itens** entre comandas e **transferir comanda** entre mesas.
   - **Juntar mesas**.
@@ -304,9 +304,10 @@ comandas           (number, table_id, customer_name, cpf_hmac, cpf_encrypted, cp
                     closed_at, notes, qr_locked_until)
 table_visits       (table_id, user_id, visited_at)            -- "atendi a mesa"
 orders             (client_uuid UNIQUE, comanda_id, user_id, created_at_device, received_at)
-order_items        (order_id, comanda_id, product_id, product_name_snapshot, qty,
-                    unit_price_cents, modifiers_json, notes, status[ATIVO|CANCELADO],
-                    canceled_by, cancel_reason)
+order_items        (order_id, product_id, product_name_snapshot, category_id, qty,
+                    unit_price_cents, notes, status[ATIVO|CANCELADO],
+                    canceled_by, cancel_reason, canceled_at)
+order_item_shares  (order_item_id, comanda_id, amount_cents)   -- parte de cada comanda no item
 payments           (cash_session_id, method[CREDITO|DEBITO|PIX|DINHEIRO], amount_cents,
                     change_cents, payer_name, user_id, status[OK|ESTORNADO], fiscal_doc_id)
 payment_comandas   (payment_id, comanda_id, amount_cents)     -- pagamento cobrindo várias comandas
@@ -328,6 +329,8 @@ Regras-chave:
 - **CPF**: `cpf_hmac` (HMAC-SHA256 com segredo do servidor) permite a busca no caixa; `cpf_encrypted` (AES-GCM) guarda o CPF para "CPF na nota" da NFC-e; `cpf_last3` serve ao PIN do QR. O CPF em texto puro nunca é gravado.
 - **Índice único parcial** em `comandas(cpf_hmac)` onde `status IN ('ABERTA','EM_FECHAMENTO')`: um CPF, uma comanda aberta.
 - Taxa de serviço gravada como `adjustments` do tipo `TAXA_SERVICO` (10%) quando a configuração estiver ligada.
+- **Rateio** (implementado na fase 1): cada item tem uma linha em `order_item_shares` por comanda. Item de uma comanda só = 1 linha com o valor cheio; rateado entre N comandas = N linhas que somam exatamente o total (os centavos que sobram vão para as primeiras). O saldo de itens da comanda é a soma das suas partes em itens ativos.
+- **Número da comanda**: sequência interna contínua (`comandas.number`), usada só como referência; no dia a dia a comanda é o nome do cliente.
 - Nome e preço do produto são **copiados (snapshot)** no item, para que alterações futuras no cardápio não mudem o histórico.
 
 ---
@@ -359,6 +362,8 @@ POST   /public/m/:qrToken/comandas/:id/unlock (3 últimos dígitos do CPF → to
 POST   /public/m/:qrToken/call-waiter
 GET    /health
 ```
+
+> Fase 1: o mapa de mesas atualiza por consulta a cada 10 s. O Socket.IO entra quando o caixa e o KDS precisarem de atualização instantânea.
 
 Eventos Socket.IO: `table.updated`, `comanda.updated`, `order.created`, `print.status`, `waiter.called`, `close.requested`.
 

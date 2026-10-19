@@ -3,3 +3,4 @@ export * from './auth';
 export * from './money';
 export * from './cpf';
 export * from './admin';
+export * from './waiter';

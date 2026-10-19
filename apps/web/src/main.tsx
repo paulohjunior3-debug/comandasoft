@@ -13,6 +13,10 @@ import { SettingsPage } from './pages/admin/SettingsPage';
 import { TablesPage } from './pages/admin/TablesPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { HomePage } from './pages/Home';
+import { ComandaPage } from './pages/waiter/ComandaPage';
+import { OrderPage } from './pages/waiter/OrderPage';
+import { TableMapPage } from './pages/waiter/TableMapPage';
+import { TablePage } from './pages/waiter/TablePage';
 import { LoginPage } from './pages/Login';
 import './index.css';
 
@@ -25,6 +29,8 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const WAITER_ROLES: Role[] = ['GARCOM', 'GERENTE'];
 
 function RequireAuth({ children, roles }: { children: ReactNode; roles?: Role[] }) {
   const { user, loading } = useAuth();
@@ -48,6 +54,38 @@ createRoot(document.getElementById('root')!).render(
               element={
                 <RequireAuth>
                   <HomePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <TableMapPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom/mesa/:tableId"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <TablePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom/mesa/:tableId/pedido"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <OrderPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom/comanda/:comandaId"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <ComandaPage />
                 </RequireAuth>
               }
             />

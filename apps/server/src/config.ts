@@ -11,6 +11,7 @@ const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DATABASE_URL: z.string().url('DATABASE_URL inválida'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET precisa de pelo menos 32 caracteres'),
+  CPF_SECRET: z.string().min(32, 'CPF_SECRET precisa de pelo menos 32 caracteres'),
   PORT: z.coerce.number().int().positive().default(3000),
   HOST: z.string().default('0.0.0.0'),
   HTTPS_CERT: z.preprocess(emptyToUndefined, z.string().optional()),

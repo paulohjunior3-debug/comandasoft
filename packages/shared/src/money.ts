@@ -41,6 +41,18 @@ export function centsToInput(cents: Cents): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
 
+/**
+ * Divide um valor em `parts` partes inteiras que somam exatamente o total.
+ * Os centavos que sobram vão para as primeiras partes: 1000 / 3 → [334, 333, 333].
+ */
+export function splitCents(total: Cents, parts: number): Cents[] {
+  assertCents(total);
+  if (!Number.isInteger(parts) || parts < 1) throw new Error(`Número de partes inválido: ${parts}`);
+  const base = Math.floor(total / parts);
+  const remainder = total - base * parts;
+  return Array.from({ length: parts }, (_, i) => base + (i < remainder ? 1 : 0));
+}
+
 /** Aplica percentual em pontos-base (1000 = 10%) com arredondamento meio-para-cima. */
 export function percentOf(cents: Cents, basisPoints: number): Cents {
   assertCents(cents);

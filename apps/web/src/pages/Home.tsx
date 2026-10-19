@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useOnline } from '../lib/useOnline';
 
 const AREAS: { title: string; description: string; roles: Role[]; to?: string }[] = [
-  { title: 'Garçom', description: 'Mapa de mesas, comandas e pedidos', roles: ['GARCOM', 'GERENTE'] },
+  { title: 'Garçom', description: 'Mapa de mesas, comandas e pedidos', roles: ['GARCOM', 'GERENTE'], to: '/garcom' },
   { title: 'Caixa', description: 'Pagamentos, sangria e fechamento', roles: ['CAIXA', 'GERENTE'] },
   { title: 'Administração', description: 'Cardápio, mesas, impressoras e usuários', roles: [], to: '/admin' },
 ];

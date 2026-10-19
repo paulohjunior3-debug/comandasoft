@@ -24,7 +24,7 @@ beforeAll(async () => {
     { name: 'Maria', login: 'maria', passwordHash: await hashPassword('senha-certa'), role: 'GARCOM' },
     { name: 'Inativo', login: 'inativo', passwordHash: await hashPassword('senha-certa'), role: 'CAIXA', active: false },
   ]);
-  app = await buildApp({ db: db as Db, jwtSecret: 'x'.repeat(32), webDist: false });
+  app = await buildApp({ db: db as Db, jwtSecret: 'x'.repeat(32), cpfSecret: 'c'.repeat(32), webDist: false });
 });
 
 afterAll(async () => {

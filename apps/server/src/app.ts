@@ -9,21 +9,25 @@ import { ZodError } from 'zod';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
+import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { HttpError, mapDbError } from './lib/errors';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
+import { waiterRoutes } from './routes/waiter';
 
 export interface AppDeps {
   db: Db;
   tokens: TokenService;
   guards: Guards;
   listInstalledPrinters: ListInstalledPrinters;
+  cpf: CpfVault;
 }
 
 export interface BuildAppOptions {
   db: Db;
   jwtSecret: string;
+  cpfSecret: string;
   fastify?: FastifyServerOptions;
   /** Pasta do build da PWA. Padrão: apps/web/dist, se existir. `false` desliga. */
   webDist?: string | false;
@@ -36,13 +40,20 @@ const defaultWebDist = fileURLToPath(new URL('../../web/dist', import.meta.url))
 export async function buildApp({
   db,
   jwtSecret,
+  cpfSecret,
   fastify,
   webDist = defaultWebDist,
   listInstalledPrinters = cachedLister(listWindowsPrinters),
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
-  const deps: AppDeps = { db, tokens, guards: createGuards(tokens, db), listInstalledPrinters };
+  const deps: AppDeps = {
+    db,
+    tokens,
+    guards: createGuards(tokens, db),
+    listInstalledPrinters,
+    cpf: createCpfVault(cpfSecret),
+  };
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
@@ -81,6 +92,7 @@ export async function buildApp({
       });
       await api.register((auth) => authRoutes(auth, deps), { prefix: '/auth' });
       await api.register((admin) => adminRoutes(admin, deps), { prefix: '/admin' });
+      await api.register((waiter) => waiterRoutes(waiter, deps), { prefix: '/waiter' });
     },
     { prefix: '/api' },
   );

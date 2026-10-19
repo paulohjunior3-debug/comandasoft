@@ -11,6 +11,7 @@ import {
   printerInputSchema,
   productInputSchema,
   settingsSchema,
+  splitCents,
   userCreateSchema,
 } from './index';
 
@@ -58,6 +59,15 @@ describe('money', () => {
     expect(parseBRL('abc')).toBeNull();
     expect(parseBRL('1,234')).toBeNull();
     expect(centsToInput(1250)).toBe('12,50');
+  });
+
+  it('rateio não perde nem cria centavos', () => {
+    expect(splitCents(1000, 3)).toEqual([334, 333, 333]);
+    expect(splitCents(1890, 1)).toEqual([1890]);
+    expect(splitCents(2, 5)).toEqual([1, 1, 0, 0, 0]);
+    for (const [total, n] of [[9999, 7], [1, 2], [123457, 11]] as const) {
+      expect(splitCents(total, n).reduce((a, b) => a + b, 0)).toBe(total);
+    }
   });
 });
 

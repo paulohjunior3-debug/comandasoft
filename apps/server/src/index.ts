@@ -15,6 +15,7 @@ const https =
 const app = await buildApp({
   db: conn.db,
   jwtSecret: config.JWT_SECRET,
+  cpfSecret: config.CPF_SECRET,
   fastify: {
     logger: { level: config.NODE_ENV === 'production' ? 'info' : 'debug' },
     ...(https ? { https } : {}),

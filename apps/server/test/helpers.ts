@@ -38,6 +38,7 @@ export async function createTestContext(): Promise<TestContext> {
   const app = await buildApp({
     db,
     jwtSecret: 'x'.repeat(32),
+    cpfSecret: 'c'.repeat(32),
     webDist: false,
     listInstalledPrinters: async () => installedPrinters,
   });

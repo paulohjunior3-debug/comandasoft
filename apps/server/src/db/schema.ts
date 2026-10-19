@@ -1,4 +1,4 @@
-import { ROLES } from '@sistema-bar/shared';
+import { COMANDA_STATUSES, ROLES } from '@sistema-bar/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -153,3 +153,148 @@ export const settings = pgTable('settings', {
     .defaultNow()
     .$onUpdate(() => new Date()),
 });
+
+// ---------- Comandas e pedidos (SPEC 5.2–5.5) ----------
+
+export const comandaStatusEnum = pgEnum('comanda_status', COMANDA_STATUSES);
+export const orderItemStatusEnum = pgEnum('order_item_status', ['ATIVO', 'CANCELADO']);
+export const printJobTypeEnum = pgEnum('print_job_type', ['PRODUCAO', 'CANCELAMENTO', 'PRE_CONTA', 'CUPOM', 'DANFE', 'CAIXA', 'TESTE']);
+export const printJobStatusEnum = pgEnum('print_job_status', ['PENDENTE', 'IMPRIMINDO', 'OK', 'ERRO']);
+
+const OPEN_COMANDA = sql`status in ('ABERTA', 'EM_FECHAMENTO')`;
+
+export const comandas = pgTable(
+  'comandas',
+  {
+    id,
+    /** Número interno sequencial (referência/auditoria). No dia a dia a comanda é identificada pelo nome. */
+    number: integer().generatedAlwaysAsIdentity().notNull().unique(),
+    tableId: uuid()
+      .notNull()
+      .references(() => diningTables.id, { onDelete: 'restrict' }),
+    customerName: text().notNull(),
+    /** HMAC do CPF: permite buscar pelo CPF no caixa sem guardar o número em claro. */
+    cpfHmac: text().notNull(),
+    /** CPF cifrado (AES-256-GCM), só para "CPF na nota" da NFC-e. */
+    cpfEncrypted: text().notNull(),
+    /** 3 últimos dígitos: PIN do QR do cliente (SPEC 5.6). */
+    cpfLast3: text().notNull(),
+    phone: text(),
+    status: comandaStatusEnum().notNull().default('ABERTA'),
+    clientUuid: uuid().notNull().unique(),
+    openedBy: uuid()
+      .notNull()
+      .references(() => users.id),
+    openedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    closingRequestedAt: timestamp({ withTimezone: true }),
+    closedAt: timestamp({ withTimezone: true }),
+    notes: text(),
+    qrLockedUntil: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index().on(t.tableId),
+    index().on(t.status),
+    // Um CPF, uma comanda aberta (a busca por CPF no caixa encontra exatamente uma).
+    uniqueIndex('comandas_open_cpf_unique').on(t.cpfHmac).where(OPEN_COMANDA),
+    // Nomes não se repetem entre as comandas abertas da mesma mesa.
+    uniqueIndex('comandas_open_name_per_table_unique').on(t.tableId, sql`lower(${t.customerName})`).where(OPEN_COMANDA),
+  ],
+);
+
+/** "Atendi a mesa": registra visita sem pedido (SPEC 5.3). */
+export const tableVisits = pgTable(
+  'table_visits',
+  {
+    id,
+    clientUuid: uuid().notNull().unique(),
+    tableId: uuid()
+      .notNull()
+      .references(() => diningTables.id, { onDelete: 'cascade' }),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    visitedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.tableId, t.visitedAt)],
+);
+
+export const orders = pgTable(
+  'orders',
+  {
+    id,
+    clientUuid: uuid().notNull().unique(),
+    tableId: uuid()
+      .notNull()
+      .references(() => diningTables.id),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id),
+    createdAtDevice: timestamp({ withTimezone: true }).notNull(),
+    receivedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.tableId, t.receivedAt)],
+);
+
+export const orderItems = pgTable(
+  'order_items',
+  {
+    id,
+    orderId: uuid()
+      .notNull()
+      .references(() => orders.id, { onDelete: 'cascade' }),
+    productId: uuid()
+      .notNull()
+      .references(() => products.id),
+    /** Nome, categoria e preço copiados: mudar o cardápio não altera o histórico. */
+    productNameSnapshot: text().notNull(),
+    categoryId: uuid().notNull(),
+    qty: integer().notNull(),
+    unitPriceCents: integer().notNull(),
+    notes: text(),
+    status: orderItemStatusEnum().notNull().default('ATIVO'),
+    canceledBy: uuid().references(() => users.id),
+    cancelReason: text(),
+    canceledAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.orderId), check('order_items_qty_positive', sql`${t.qty} > 0`)],
+);
+
+/**
+ * Parte de cada comanda em um item. Item lançado para uma comanda = 1 linha com o valor cheio;
+ * rateado entre N comandas = N linhas cuja soma é exatamente o total do item.
+ */
+export const orderItemShares = pgTable(
+  'order_item_shares',
+  {
+    orderItemId: uuid()
+      .notNull()
+      .references(() => orderItems.id, { onDelete: 'cascade' }),
+    comandaId: uuid()
+      .notNull()
+      .references(() => comandas.id),
+    amountCents: integer().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.orderItemId, t.comandaId] }), index().on(t.comandaId)],
+);
+
+/** Fila persistente de impressão (SPEC 5.5). O worker que imprime vem na próxima etapa. */
+export const printJobs = pgTable(
+  'print_jobs',
+  {
+    id,
+    printerId: uuid()
+      .notNull()
+      .references(() => printers.id),
+    type: printJobTypeEnum().notNull(),
+    payload: jsonb().notNull(),
+    status: printJobStatusEnum().notNull().default('PENDENTE'),
+    attempts: integer().notNull().default(0),
+    lastError: text(),
+    referenceId: uuid(),
+    printedAt: timestamp({ withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index().on(t.status, t.createdAt), index().on(t.referenceId)],
+);

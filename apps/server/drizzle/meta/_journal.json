@@ -15,6 +15,13 @@
       "when": 1792381443399,
       "tag": "0001_neat_shen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792382779128,
+      "tag": "0002_breezy_iron_fist",
+      "breakpoints": true
     }
   ]
 }

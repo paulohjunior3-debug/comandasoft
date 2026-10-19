@@ -29,6 +29,41 @@ await db.insert(schema.users).values({
   role: 'ADMIN',
 });
 
-const app = await buildApp({ db, jwtSecret: randomBytes(48).toString('base64url'), webDist: false });
+// SANDBOX_DEMO=1: cardápio, impressoras e mesas de exemplo para testar o app do garçom.
+if (process.env.SANDBOX_DEMO === '1') {
+  const [bar, cozinha] = await db
+    .insert(schema.printers)
+    .values([
+      { name: 'Bar', windowsName: 'Demo Bar', sectorLabel: 'BAR' },
+      { name: 'Cozinha', windowsName: 'Demo Cozinha', sectorLabel: 'COZINHA' },
+    ])
+    .returning();
+  const menu: [string, string, string, [string, number][]][] = [
+    ['Cervejas', '#f59e0b', bar!.id, [['Heineken 600ml', 1890], ['Original 600ml', 1590], ['Chopp 300ml', 1100]]],
+    ['Drinks', '#ec4899', bar!.id, [['Caipirinha de limão', 2200], ['Gin tônica', 2900]]],
+    ['Porções', '#22c55e', cozinha!.id, [['Batata frita', 3290], ['Calabresa acebolada', 3890], ['Frango a passarinho', 4290]]],
+    ['Sem álcool', '#3b82f6', bar!.id, [['Refrigerante lata', 700], ['Água sem gás', 500]]],
+  ];
+  for (const [i, [name, color, printerId, items]] of menu.entries()) {
+    const [cat] = await db.insert(schema.categories).values({ name, color, sortOrder: i }).returning();
+    await db.insert(schema.printerCategories).values({ printerId, categoryId: cat!.id });
+    await db.insert(schema.products).values(items.map(([n, priceCents]) => ({ categoryId: cat!.id, name: n, priceCents })));
+  }
+  await db.insert(schema.diningTables).values(
+    Array.from({ length: 12 }, (_, i) => ({
+      number: i + 1,
+      area: i < 8 ? 'Salão' : 'Varanda',
+      capacity: 4,
+      qrToken: randomBytes(8).toString('base64url'),
+    })),
+  );
+}
+
+const app = await buildApp({
+  db,
+  jwtSecret: randomBytes(48).toString('base64url'),
+  cpfSecret: randomBytes(48).toString('base64url'),
+  webDist: false,
+});
 await app.listen({ port, host: '127.0.0.1' });
 console.log(`Sandbox (banco em memória) em http://127.0.0.1:${port} — usuário: teste`);
