@@ -1,6 +1,7 @@
 import {
   formatBRL,
   localDate,
+  matchesSearch,
   PAYMENT_METHOD_LABELS,
   type PaymentMethod,
   type CashRegister,
@@ -188,6 +189,9 @@ function ReportBody({ r }: { r: SalesReport }) {
         />
       </Panel>
 
+      {/* ---- Por produto ---- */}
+      <Products products={r.products} />
+
       {/* ---- Por caixa ---- */}
       <Panel title="Entradas por caixa">
         <MethodTable
@@ -245,42 +249,99 @@ function ReportBody({ r }: { r: SalesReport }) {
         </div>
       </Panel>
 
-      {/* ---- Produtos ---- */}
-      <Products products={r.products} />
     </div>
   );
 }
 
 function Products({ products }: { products: SalesReport['products'] }) {
+  const [search, setSearch] = useState('');
   const [all, setAll] = useState(false);
-  if (!products.length) return null;
-  const shown = all ? products : products.slice(0, 15);
+  const q = search.trim();
+  // Busca sem acento: "file" acha "Filé à parmegiana".
+  const found = q ? products.filter((p) => matchesSearch(p.name, q)) : products;
+  const shown = q || all ? found : found.slice(0, 15);
+  const total = found.reduce((acc, p) => ({ qty: acc.qty + p.qty, cents: acc.cents + p.totalCents }), { qty: 0, cents: 0 });
+
   return (
-    <Panel title="Produtos mais vendidos">
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-slate-400">
-          <tr>
-            <Th>Produto</Th>
-            <Th right>Qtd.</Th>
-            <Th right>Valor</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {shown.map((p) => (
-            <tr key={p.name} className="border-t border-slate-800">
-              <Td>{p.name}</Td>
-              <Td right>{p.qty}</Td>
-              <Td right>{formatBRL(p.totalCents)}</Td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {products.length > 15 && (
+    <Panel title="Vendas por produto">
+      <div className="mb-3 flex flex-wrap items-end gap-3 print:hidden">
+        <div className="min-w-56 flex-1">
+          <TextField
+            label="Produto"
+            type="search"
+            placeholder="Ex.: filé, heineken, porção"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            hint="Usa o período e o caixa escolhidos acima. Conta as comandas já fechadas."
+          />
+        </div>
+      </div>
+      {q && <p className="mb-3 hidden text-sm print:block">Produto: {q}</p>}
+
+      {q && found.length > 0 && (
+        <div className="mb-3 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg bg-slate-800 p-3 print:border print:border-slate-300 print:bg-white">
+            <p className="text-xs text-slate-400 uppercase">Quantidade vendida</p>
+            <p className="text-2xl font-semibold tabular-nums text-amber-400">{total.qty}</p>
+          </div>
+          <div className="rounded-lg bg-slate-800 p-3 print:border print:border-slate-300 print:bg-white">
+            <p className="text-xs text-slate-400 uppercase">Valor vendido</p>
+            <p className="text-2xl font-semibold tabular-nums">{formatBRL(total.cents)}</p>
+          </div>
+        </div>
+      )}
+
+      {found.length === 0 ? (
+        <p className="py-4 text-center text-sm text-slate-500">
+          {q ? `Nenhuma venda de "${q}" nesse período.` : 'Nenhuma comanda fechada nesse período.'}
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-400">
+              <tr>
+                <Th>{q ? 'Produto / data' : 'Produto'}</Th>
+                <Th right>Qtd.</Th>
+                <Th right>Valor</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((p) => (
+                <ProductRows key={p.name} product={p} withDays={Boolean(q)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!q && found.length > 15 && (
         <button onClick={() => setAll((v) => !v)} className="mt-2 text-sm text-amber-400 print:hidden">
-          {all ? 'Mostrar só os 15 primeiros' : `Mostrar todos (${products.length})`}
+          {all ? 'Mostrar só os 15 primeiros' : `Mostrar todos (${found.length})`}
         </button>
       )}
     </Panel>
+  );
+}
+
+/** Linha do produto e, na busca, uma linha por dia em que ele vendeu. */
+function ProductRows({ product: p, withDays }: { product: SalesReport['products'][number]; withDays: boolean }) {
+  return (
+    <>
+      <tr className="border-t border-slate-800 font-medium">
+        <Td>{p.name}</Td>
+        <Td right>{p.qty}</Td>
+        <Td right>{formatBRL(p.totalCents)}</Td>
+      </tr>
+      {withDays &&
+        p.days.map((d) => (
+          <tr key={d.date} className="text-slate-400">
+            <Td className="pl-6">
+              {br(d.date)} <span className="text-xs text-slate-500">{weekday(d.date)}</span>
+            </Td>
+            <Td right>{d.qty}</Td>
+            <Td right>{formatBRL(d.totalCents)}</Td>
+          </tr>
+        ))}
+    </>
   );
 }
 
@@ -428,6 +489,9 @@ function downloadCsv(r: SalesReport, registerName: string | undefined) {
     [],
     ['Produto', 'Quantidade', 'Valor'],
     ...r.products.map((p) => [p.name, p.qty, money(p.totalCents)]),
+    [],
+    ['Produto', 'Data', 'Quantidade', 'Valor'],
+    ...r.products.flatMap((p) => p.days.map((d) => [p.name, br(d.date), d.qty, money(d.totalCents)])),
   ];
   const cell = (v: string | number) => {
     const s = String(v);

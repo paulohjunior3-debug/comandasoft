@@ -128,6 +128,7 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
   // ---- Vendas: comandas fechadas cujo último pagamento caiu num caixa do período ----
   const sales = { comandas: 0, people: 0, itemsCents: 0, serviceFeeCents: 0, couvertCents: 0, discountCents: 0, totalCents: 0, averageTicketCents: 0 };
   const soldComandaIds: string[] = [];
+  const soldDay = new Map<string, string>();
   for (const c of comandaRows) {
     if (c.status !== 'FECHADA' || !c.finalTotals) continue;
     const last = allocationRows.filter((a) => a.comandaId === c.id).sort((a, b) => b.at.getTime() - a.at.getTime())[0];
@@ -144,6 +145,7 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     day.comandas += 1;
     day.salesCents += t.totalCents;
     soldComandaIds.push(c.id);
+    soldDay.set(c.id, day.date);
   }
   sales.averageTicketCents = sales.comandas ? Math.round(sales.totalCents / sales.comandas) : 0;
 
@@ -182,21 +184,35 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
   // ---- Produtos vendidos (comandas fechadas) ----
   const productRows = soldComandaIds.length
     ? await db
-        .select({ orderItemId: orderItems.id, name: orderItems.productNameSnapshot, qty: orderItems.qty, amountCents: orderItemShares.amountCents })
+        .select({
+          orderItemId: orderItems.id,
+          comandaId: orderItemShares.comandaId,
+          name: orderItems.productNameSnapshot,
+          qty: orderItems.qty,
+          amountCents: orderItemShares.amountCents,
+        })
         .from(orderItemShares)
         .innerJoin(orderItems, eq(orderItems.id, orderItemShares.orderItemId))
         .where(and(inArray(orderItemShares.comandaId, soldComandaIds), eq(orderItems.status, 'ATIVO')))
     : [];
-  const products = new Map<string, { name: string; qty: number; totalCents: number; items: Set<string> }>();
+  type Tally = { qty: number; totalCents: number; items: Set<string> };
+  const tally = (t: Tally, r: (typeof productRows)[number]) => {
+    // Item rateado entre comandas: a quantidade conta uma vez, o valor soma as partes.
+    if (!t.items.has(r.orderItemId)) {
+      t.items.add(r.orderItemId);
+      t.qty += r.qty;
+    }
+    t.totalCents += r.amountCents;
+  };
+  const products = new Map<string, Tally & { name: string; days: Map<string, Tally> }>();
   for (const r of productRows) {
     let p = products.get(r.name);
-    if (!p) products.set(r.name, (p = { name: r.name, qty: 0, totalCents: 0, items: new Set() }));
-    // Item rateado entre comandas: a quantidade conta uma vez, o valor soma as partes.
-    if (!p.items.has(r.orderItemId)) {
-      p.items.add(r.orderItemId);
-      p.qty += r.qty;
-    }
-    p.totalCents += r.amountCents;
+    if (!p) products.set(r.name, (p = { name: r.name, qty: 0, totalCents: 0, items: new Set(), days: new Map() }));
+    tally(p, r);
+    const date = soldDay.get(r.comandaId)!;
+    let d = p.days.get(date);
+    if (!d) p.days.set(date, (d = { qty: 0, totalCents: 0, items: new Set() }));
+    tally(d, r);
   }
 
   return {
@@ -226,7 +242,12 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
       differenceCents: r.s.closedAt ? r.s.differenceCents : null,
     })),
     products: [...products.values()]
-      .map(({ name, qty, totalCents }) => ({ name, qty, totalCents }))
+      .map(({ name, qty, totalCents, days }) => ({
+        name,
+        qty,
+        totalCents,
+        days: [...days].map(([date, d]) => ({ date, qty: d.qty, totalCents: d.totalCents })).sort((a, b) => a.date.localeCompare(b.date)),
+      }))
       .sort((a, b) => b.totalCents - a.totalCents || a.name.localeCompare(b.name)),
   };
 }

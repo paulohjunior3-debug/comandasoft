@@ -70,6 +70,6 @@ export interface SalesReport {
     /** Contado − esperado no fechamento (null = ainda aberto). */
     differenceCents: number | null;
   }[];
-  /** Produtos das comandas fechadas, do maior valor para o menor. */
-  products: { name: string; qty: number; totalCents: number }[];
+  /** Produtos das comandas fechadas, do maior valor para o menor, com o detalhe por dia. */
+  products: { name: string; qty: number; totalCents: number; days: { date: string; qty: number; totalCents: number }[] }[];
 }

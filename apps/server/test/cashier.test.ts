@@ -414,6 +414,10 @@ describe('relatório de vendas e entradas', () => {
     expect(r.sales.averageTicketCents).toBe(Math.round(r.sales.totalCents / r.sales.comandas));
     expect(r.products.length).toBeGreaterThan(0);
     expect(r.products[0]!.totalCents).toBeGreaterThanOrEqual(r.products.at(-1)!.totalCents);
+    // Venda por produto no período, com o detalhe por dia (ex.: quantas Heinekens hoje).
+    const heineken = r.products.find((p) => p.name === 'Heineken')!;
+    expect(heineken.qty).toBeGreaterThan(0);
+    expect(heineken.days).toEqual([{ date: today, qty: heineken.qty, totalCents: heineken.totalCents }]);
 
     const requests = await ctx.db.select().from(fiscalRequests);
     expect(r.fiscal.requests).toBe(requests.length);
