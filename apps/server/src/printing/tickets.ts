@@ -19,6 +19,20 @@ export interface ProductionTicket {
   reprint?: boolean;
 }
 
+/** Aviso ao setor (bar, cozinha) de que um item lançado foi cancelado: não preparar. */
+export interface CancelTicket {
+  kind: 'CANCELAMENTO';
+  sector: string;
+  tableNumber: number;
+  customers: string[];
+  /** Quem cancelou (operador) e quem autorizou. */
+  operator: string;
+  authorizedBy: string;
+  createdAt: string;
+  reason: string;
+  items: { qty: number; name: string; notes: string | null }[];
+}
+
 export interface TestTicket {
   kind: 'TESTE';
   printerName: string;
@@ -92,4 +106,4 @@ export interface DrawerTicket {
   reprint?: boolean;
 }
 
-export type TicketPayload = ProductionTicket | TestTicket | BillTicket | CashTicket | DrawerTicket;
+export type TicketPayload = ProductionTicket | CancelTicket | TestTicket | BillTicket | CashTicket | DrawerTicket;

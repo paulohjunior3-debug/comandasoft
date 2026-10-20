@@ -120,7 +120,7 @@ function UserModal({ user, onClose }: { user: AdminUser | null; onClose: () => v
         maxLength={6}
         value={pin}
         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-        hint="4 a 6 números. Usado por gerentes para autorizar cancelamentos e descontos."
+        hint="4 a 6 números. Gerente e administrador usam para autorizar no caixa: cancelar item, desconto, estorno."
       />
       {user?.hasPin && <Toggle label="Remover o PIN atual" checked={clearPin} onChange={setClearPin} />}
       <Toggle

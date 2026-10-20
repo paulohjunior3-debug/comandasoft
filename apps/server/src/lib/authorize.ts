@@ -22,7 +22,7 @@ export async function authorizeManager(db: Db, request: FastifyRequest, pin: str
   const user = request.user!;
   if (user.role === 'GERENTE' || user.role === 'ADMIN') return { id: user.id, name: user.name, self: true };
   if (!pin) {
-    throw new HttpError(403, CASHIER_ERRORS.PIN_REQUIRED, 'Esta ação precisa da autorização de um gerente (PIN).');
+    throw new HttpError(403, CASHIER_ERRORS.PIN_REQUIRED, 'Esta ação precisa da autorização de um gerente ou do administrador (PIN).');
   }
   const managers = await db
     .select({ id: users.id, name: users.name, pinHash: users.pinHash })
@@ -31,5 +31,5 @@ export async function authorizeManager(db: Db, request: FastifyRequest, pin: str
   for (const m of managers) {
     if (await verifyPassword(m.pinHash!, pin)) return { id: m.id, name: m.name, self: false };
   }
-  throw new HttpError(403, CASHIER_ERRORS.PIN_INVALID, 'PIN de gerente inválido.');
+  throw new HttpError(403, CASHIER_ERRORS.PIN_INVALID, 'PIN inválido. Use o PIN de um gerente ou do administrador (cadastrado em Usuários).');
 }

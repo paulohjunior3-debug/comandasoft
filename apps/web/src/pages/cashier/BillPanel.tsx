@@ -8,6 +8,7 @@ import {
   SERVICE_FEE_BPS,
   type Bill,
   type BillComanda,
+  type BillItem,
   type CashierTable,
   type CreatePaymentResult,
   type PaymentMethod,
@@ -61,6 +62,7 @@ export function BillPanel({
   const pin = usePin();
   const [selected, setSelected] = useState<string[]>(() => preselect ?? table.comandas.map((c) => c.id));
   const [modal, setModal] = useState<'DESCONTO' | 'TAXA_SERVICO_REMOVIDA' | 'COUVERT_REMOVIDO' | null>(null);
+  const [canceling, setCanceling] = useState<BillItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setSelected(preselect ?? table.comandas.map((c) => c.id)), [table.id, preselect]);
@@ -149,7 +151,7 @@ export function BillPanel({
         <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
           <div className="space-y-4">
             {b.comandas.map((c) => (
-              <ComandaBlock key={c.id} comanda={c} bill={b} />
+              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} />
             ))}
 
             {b.adjustments.length > 0 && (
@@ -271,13 +273,36 @@ export function BillPanel({
           }
         />
       )}
+      {canceling && (
+        <CancelItemModal
+          item={canceling}
+          onClose={() => setCanceling(null)}
+          submit={(body) =>
+            pin
+              .run((authorizerPin) =>
+                api<{ printed: boolean }>(`/cashier/order-items/${canceling.orderItemId}/cancel`, {
+                  method: 'POST',
+                  body: JSON.stringify({ ...body, authorizerPin }),
+                }),
+              )
+              .then((r) => {
+                refresh();
+                setCanceling(null);
+                setNotice(
+                  `${body.qty}× ${canceling.productName} cancelado.${r.printed ? ' Aviso de cancelamento enviado ao setor.' : ''}`,
+                );
+              })
+          }
+        />
+      )}
       {pin.element}
     </div>
   );
 }
 
-function ComandaBlock({ comanda: c, bill }: { comanda: BillComanda; bill: Bill }) {
+function ComandaBlock({ comanda: c, bill, onCancelItem }: { comanda: BillComanda; bill: Bill; onCancelItem: (item: BillItem) => void }) {
   const items = bill.items.filter((i) => i.comandaId === c.id);
+  const open = c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO';
   return (
     <section className="rounded-xl bg-slate-900">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
@@ -287,10 +312,11 @@ function ComandaBlock({ comanda: c, bill }: { comanda: BillComanda; bill: Bill }
       <ul className="divide-y divide-slate-800/60 text-sm">
         {items.length === 0 && <li className="px-4 py-2 text-slate-500">Sem itens.</li>}
         {items.map((i) => (
-          <li key={`${i.orderItemId}-${i.comandaId}`} className={`flex gap-2 px-4 py-2 ${i.amountCents === 0 ? 'text-slate-600 line-through' : ''}`}>
-            <span className="w-8 font-semibold">{i.qty}×</span>
+          <li key={`${i.orderItemId}-${i.comandaId}`} className={`group flex items-center gap-2 px-4 py-2 ${i.canceled ? 'text-slate-600' : ''}`}>
+            <span className={`w-8 font-semibold ${i.canceled ? 'line-through' : ''}`}>{i.qty}×</span>
             <span className="flex-1">
-              {i.productName}
+              <span className={i.canceled ? 'line-through' : ''}>{i.productName}</span>
+              {i.canceled && <span className="ml-2 text-xs text-red-400 no-underline">cancelado</span>}
               {i.sharedWith > 1 && <span className="text-slate-500"> · rateado entre {i.sharedWith}</span>}
               {i.paidCents > 0 && (
                 <span className="ml-2 text-xs text-emerald-400">
@@ -303,7 +329,16 @@ function ComandaBlock({ comanda: c, bill }: { comanda: BillComanda; bill: Bill }
                 </span>
               )}
             </span>
-            <span>{formatBRL(i.amountCents)}</span>
+            <span className={i.canceled ? 'line-through' : ''}>{formatBRL(i.amountCents)}</span>
+            {open && !i.canceled && i.paidCents === 0 && (
+              <button
+                onClick={() => onCancelItem(i)}
+                className="rounded px-2 py-0.5 text-xs text-red-300 hover:bg-red-950"
+                title="Cancelar este item (pede o PIN do gerente)"
+              >
+                Cancelar
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -628,6 +663,88 @@ function AdjustmentModal({
       )}
       <TextField label="Motivo" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus={type !== 'DESCONTO'} />
       <p className="text-xs text-slate-500">Fica registrado na auditoria. Se você não for gerente, será pedido o PIN de um gerente.</p>
+    </Modal>
+  );
+}
+
+const CANCEL_REASONS = ['Lançado errado', 'Cliente desistiu', 'Demorou demais', 'Produto em falta'];
+
+/** Cancelar item lançado: quantidade (todo ou parte) e motivo; o PIN do gerente vem do usePin. */
+function CancelItemModal({
+  item,
+  onClose,
+  submit,
+}: {
+  item: BillItem;
+  onClose: () => void;
+  submit: (body: { qty: number; reason: string }) => Promise<void>;
+}) {
+  const [qty, setQty] = useState(item.qty);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const go = async () => {
+    if (reason.trim().length < 3) return setError('Informe o motivo do cancelamento.');
+    setBusy(true);
+    setError(null);
+    try {
+      await submit({ qty, reason: reason.trim() });
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Cancelar item"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Voltar</Button>
+          <Button variant="danger" onClick={go} disabled={busy}>
+            Cancelar {qty}× {item.productName}
+          </Button>
+        </>
+      }
+    >
+      <ErrorBanner message={error} />
+      <p className="text-base font-medium">
+        {item.qty}× {item.productName} <span className="text-slate-400">· {formatBRL(item.unitPriceCents)} cada</span>
+      </p>
+      {item.sharedWith > 1 && (
+        <p className="rounded-lg bg-amber-950 px-3 py-2 text-sm text-amber-200">
+          Este item está rateado entre {item.sharedWith} comandas: o cancelamento vale para todas.
+        </p>
+      )}
+      {item.qty > 1 && (
+        <SelectField label="Quantas unidades cancelar" value={qty} onChange={(e) => setQty(Number(e.target.value))}>
+          {Array.from({ length: item.qty }, (_, n) => item.qty - n).map((n) => (
+            <option key={n} value={n}>
+              {n === item.qty ? `Todas (${n})` : n}
+            </option>
+          ))}
+        </SelectField>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {CANCEL_REASONS.map((r) => (
+          <button
+            key={r}
+            type="button"
+            onClick={() => setReason(r)}
+            className={`rounded-full px-3 py-1 text-sm ${reason === r ? 'bg-slate-100 text-slate-950' : 'bg-slate-800 text-slate-300'}`}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <TextField label="Motivo" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+      <p className="text-xs text-slate-500">
+        Fica registrado na auditoria e o setor (bar/cozinha) recebe um aviso de cancelamento. Se você não for gerente, será pedido o PIN de
+        um gerente ou do administrador.
+      </p>
     </Modal>
   );
 }

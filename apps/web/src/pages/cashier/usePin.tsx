@@ -49,7 +49,7 @@ export function usePin() {
 
   const element: ReactNode = prompt && (
     <Modal
-      title="Autorização do gerente"
+      title="Autorização do gerente ou administrador"
       onClose={cancel}
       footer={
         <>
@@ -61,9 +61,9 @@ export function usePin() {
       }
     >
       <ErrorBanner message={prompt.error} />
-      <p className="text-sm text-slate-300">Esta ação precisa da autorização de um gerente. Peça para ele digitar o PIN.</p>
+      <p className="text-sm text-slate-300">Esta ação precisa da autorização de um gerente ou do administrador. Peça para ele digitar o PIN dele.</p>
       <TextField
-        label="PIN do gerente"
+        label="PIN do gerente ou administrador"
         type="password"
         inputMode="numeric"
         autoComplete="off"

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { cashierBillRoutes } from './bills';
 import { cashierFinalizeRoutes } from './finalize';
+import { cashierItemRoutes } from './items';
 import { cashierPaymentRoutes } from './payments';
 import { cashSessionRoutes } from './session';
 
@@ -12,4 +13,5 @@ export async function cashierRoutes(app: FastifyInstance, deps: AppDeps) {
   await app.register((r) => cashierBillRoutes(r, deps));
   await app.register((r) => cashierPaymentRoutes(r, deps), { prefix: '/payments' });
   await app.register((r) => cashierFinalizeRoutes(r, deps));
+  await app.register((r) => cashierItemRoutes(r, deps));
 }

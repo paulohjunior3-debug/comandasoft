@@ -215,6 +215,8 @@ export interface BillItem {
   /** Quanto desta parte já foi pago por item (pagamento por item/fração). */
   paidCents: number;
   paidFraction: { num: number; den: number };
+  /** Item cancelado (valor zerado; aparece riscado). */
+  canceled: boolean;
 }
 
 export interface BillAdjustment {
@@ -355,6 +357,14 @@ export interface FiscalRequestResult {
 }
 
 export const refundPaymentSchema = z.object({ reason, authorizerPin });
+
+/** Cancelar item lançado (SPEC 4): todo ou parte da quantidade, com motivo e PIN de gerente/admin. */
+export const cancelItemSchema = z.object({
+  qty: z.number().int().min(1, 'Quantidade inválida'),
+  reason,
+  authorizerPin,
+});
+export type CancelItemInput = z.infer<typeof cancelItemSchema>;
 
 export const CASHIER_ERRORS = {
   NO_OPEN_SESSION: 'NO_OPEN_SESSION',

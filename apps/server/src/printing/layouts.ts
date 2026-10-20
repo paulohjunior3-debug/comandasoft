@@ -1,6 +1,6 @@
 import type { Block } from '@sistema-bar/escpos';
 import { formatBRL } from '@sistema-bar/shared';
-import type { BillTicket, CashTicket, CompanyHeader, ProductionTicket, TestTicket, TicketPayload } from './tickets';
+import type { BillTicket, CancelTicket, CashTicket, CompanyHeader, ProductionTicket, TestTicket, TicketPayload } from './tickets';
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', {
@@ -32,6 +32,31 @@ function production(t: ProductionTicket): Block[] {
     if (item.notes) blocks.push({ kind: 'text', text: `>> ${item.notes.toUpperCase()}`, bold: true });
   }
   blocks.push({ kind: 'rule' }, { kind: 'feed', lines: 1 });
+  return blocks;
+}
+
+/** Cancelamento (SPEC 5.5): o setor para de preparar o item. Bem chamativo, para não passar batido. */
+function cancellation(t: CancelTicket): Block[] {
+  const blocks: Block[] = [
+    { kind: 'text', text: t.sector, align: 'center', size: 'big', bold: true },
+    { kind: 'rule', char: '=' },
+    { kind: 'text', text: '*** CANCELADO ***', align: 'center', size: 'big', bold: true },
+    { kind: 'text', text: 'NÃO PREPARAR', align: 'center', size: 'tall', bold: true },
+    { kind: 'rule', char: '=' },
+    { kind: 'text', text: `MESA ${t.tableNumber}`, align: 'center', size: 'big', bold: true },
+    { kind: 'text', text: t.customers.join(', ').toUpperCase(), align: 'center', bold: true },
+    { kind: 'rule' },
+  ];
+  for (const item of t.items) {
+    blocks.push({ kind: 'text', text: `${item.qty}x ${item.name}`, size: 'tall', bold: true });
+    if (item.notes) blocks.push({ kind: 'text', text: `>> ${item.notes.toUpperCase()}` });
+  }
+  blocks.push(
+    { kind: 'rule' },
+    { kind: 'text', text: `Motivo: ${t.reason}` },
+    { kind: 'text', text: `${t.operator}${t.authorizedBy !== t.operator ? ` · autorizado por ${t.authorizedBy}` : ''} · ${when(t.createdAt)}` },
+    { kind: 'feed', lines: 1 },
+  );
   return blocks;
 }
 
@@ -159,6 +184,8 @@ export function ticketBlocks(payload: TicketPayload): Block[] {
   switch (payload.kind) {
     case 'PRODUCAO':
       return production(payload);
+    case 'CANCELAMENTO':
+      return cancellation(payload);
     case 'TESTE':
       return test(payload);
     case 'CONTA':
@@ -181,6 +208,8 @@ export function describeTicket(payload: TicketPayload): string {
       return `${CASH_TITLE[payload.variant]}${payload.amountCents !== undefined ? ` · ${money(payload.amountCents)}` : ''}`;
     case 'CONTA':
       return `${payload.variant === 'PRE_CONTA' ? 'Pré-conta' : 'Cupom'} · Mesa ${payload.tableNumber} · ${payload.comandas.map((c) => c.name).join(', ')}`;
+    case 'CANCELAMENTO':
+      return `CANCELADO · Mesa ${payload.tableNumber} · ${payload.items.map((i) => `${i.qty}x ${i.name}`).join(', ')}`;
     case 'PRODUCAO': {
       const items = payload.items.reduce((s, i) => s + i.qty, 0);
       return `Mesa ${payload.tableNumber} · ${payload.customers.join(', ')} · ${items} ${items === 1 ? 'item' : 'itens'}`;

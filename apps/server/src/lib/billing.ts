@@ -125,6 +125,7 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       sharedWith: r.sharedWith,
       paidCents: paid.reduce((s, p) => s + p.cents, 0),
       paidFraction,
+      canceled: r.status === 'CANCELADO',
     };
   });
 
