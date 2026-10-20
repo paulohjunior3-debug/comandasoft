@@ -1,4 +1,4 @@
-import { ADJUSTMENT_TYPES, CASH_MOVEMENT_TYPES, COMANDA_STATUSES, FISCAL_MODES, PAYMENT_METHODS, ROLES } from '@sistema-bar/shared';
+import { ADJUSTMENT_TYPES, CASH_MOVEMENT_TYPES, COMANDA_STATUSES, FISCAL_DOCUMENT_STATUSES, FISCAL_MODES, PAYMENT_METHODS, ROLES } from '@sistema-bar/shared';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -101,6 +101,8 @@ export const products = pgTable(
     csosn: text(),
     unit: text().notNull().default('UN'),
     origin: text(),
+    /** Código Especificador da Substituição Tributária (produtos com ST, ex.: bebidas). */
+    cest: text(),
     ...timestamps,
   },
   (t) => [
@@ -499,4 +501,60 @@ export const qrUnlockAttempts = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index().on(t.comandaId, t.createdAt)],
+);
+
+// ---------- Fiscal: NFC-e (SPEC 5.8, fase 5) ----------
+
+/**
+ * Configuração fiscal (uma linha só, key = 'main'). Os dados públicos do emitente ficam em
+ * `data`; o CSC, o certificado A1 e a senha dele ficam cifrados (AES-256-GCM, chave derivada
+ * do CPF_SECRET do .env) e nunca voltam para a tela.
+ */
+export const fiscalConfig = pgTable('fiscal_config', {
+  key: text().primaryKey(),
+  data: jsonb().notNull(),
+  cscId: text(),
+  cscTokenEnc: text(),
+  certPfxEnc: text(),
+  certPasswordEnc: text(),
+  certSubject: text(),
+  certCnpj: text(),
+  certValidFrom: timestamp({ withTimezone: true }),
+  certValidUntil: timestamp({ withTimezone: true }),
+  certUploadedAt: timestamp({ withTimezone: true }),
+  /** Emissora escolhida na fase 5 (null = nenhuma ainda). */
+  provider: text(),
+  updatedAt: timestamp({ withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+export const fiscalDocumentStatusEnum = pgEnum('fiscal_document_status', FISCAL_DOCUMENT_STATUSES);
+
+/** Notas emitidas (NFC-e modelo 65) com o XML autorizado, guardado por 5 anos para o contador. */
+export const fiscalDocuments = pgTable(
+  'fiscal_documents',
+  {
+    id,
+    fiscalRequestId: uuid().references(() => fiscalRequests.id),
+    model: integer().notNull().default(65),
+    series: integer().notNull(),
+    number: integer().notNull(),
+    /** Chave de acesso (44 dígitos). */
+    accessKey: text().notNull().unique(),
+    environment: text().notNull(),
+    status: fiscalDocumentStatusEnum().notNull(),
+    totalCents: integer().notNull(),
+    /** XML autorizado (nota + protocolo). */
+    xml: text(),
+    protocol: text(),
+    issuedAt: timestamp({ withTimezone: true }).notNull(),
+    canceledAt: timestamp({ withTimezone: true }),
+    cancelReason: text(),
+    /** XML do evento de cancelamento. */
+    cancelXml: text(),
+    ...timestamps,
+  },
+  (t) => [index().on(t.issuedAt), uniqueIndex('fiscal_documents_series_number').on(t.environment, t.series, t.number)],
 );

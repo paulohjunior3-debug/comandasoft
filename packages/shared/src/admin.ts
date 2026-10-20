@@ -72,6 +72,13 @@ export const productInputSchema = z.object({
   csosn: optionalText(4),
   unit: z.string().trim().min(1).max(6).default('UN'),
   origin: optionalText(1),
+  cest: z
+    .string()
+    .trim()
+    .regex(/^(\d{7})?$/, 'CEST deve ter 7 dígitos')
+    .transform((v) => v || null)
+    .nullish()
+    .transform((v) => v ?? null),
 });
 export type ProductInput = z.input<typeof productInputSchema>;
 
@@ -90,6 +97,7 @@ export interface Product {
   csosn: string | null;
   unit: string;
   origin: string | null;
+  cest: string | null;
 }
 
 /** Alteração rápida de "esgotado", usada também pelo garçom/gerente no futuro. */

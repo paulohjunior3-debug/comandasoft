@@ -29,6 +29,7 @@ interface Form {
   csosn: string;
   unit: string;
   origin: string;
+  cest: string;
 }
 
 const toForm = (p: Product | null, categoryId: string): Form => ({
@@ -44,6 +45,7 @@ const toForm = (p: Product | null, categoryId: string): Form => ({
   csosn: p?.csosn ?? '',
   unit: p?.unit ?? 'UN',
   origin: p?.origin ?? '',
+  cest: p?.cest ?? '',
 });
 
 export function ProductsPage() {
@@ -220,7 +222,10 @@ function ProductModal({
           <TextField label="CSOSN/CST" maxLength={4} value={form.csosn} onChange={(e) => set('csosn', e.target.value)} />
           <TextField label="Unidade" maxLength={6} value={form.unit} onChange={(e) => set('unit', e.target.value.toUpperCase())} />
           <TextField label="Origem" maxLength={1} value={form.origin} onChange={(e) => set('origin', e.target.value)} hint="0 = nacional" />
-          <p className="col-span-2 text-xs text-slate-500">Confirme esses códigos com o contador antes de emitir NFC-e (fase 5).</p>
+          <TextField label="CEST" inputMode="numeric" maxLength={7} value={form.cest} onChange={(e) => set('cest', e.target.value)} hint="Só produtos com substituição tributária" />
+          <p className="col-span-2 text-xs text-slate-500">
+            Confirme esses códigos com o contador. Para preencher vários de uma vez, use Fiscal → Dados fiscais dos produtos.
+          </p>
         </div>
       )}
     </Modal>

@@ -10,6 +10,8 @@ import { outbox } from './lib/offline/outbox';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { AuditPage } from './pages/admin/AuditPage';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
+import { FiscalPage } from './pages/admin/FiscalPage';
+import { ProductFiscalPage } from './pages/admin/ProductFiscalPage';
 import { PrintersPage } from './pages/admin/PrintersPage';
 import { PrintQueuePage } from './pages/admin/PrintQueuePage';
 import { ProductsPage } from './pages/admin/ProductsPage';
@@ -166,6 +168,8 @@ createRoot(document.getElementById('root')!).render(
               <Route path="caixas" element={<RegistersPage />} />
               <Route path="relatorios" element={<ReportsPage />} />
               <Route path="auditoria" element={<AuditPage />} />
+              <Route path="fiscal" element={<FiscalPage />} />
+              <Route path="fiscal/produtos" element={<ProductFiscalPage />} />
               <Route path="configuracoes" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

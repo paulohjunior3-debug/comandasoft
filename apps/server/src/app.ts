@@ -9,6 +9,7 @@ import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
 import { appVersion, paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
+import { createSecretBox, type SecretBox } from './lib/secret-box';
 import { installErrorHandler } from './lib/error-handler';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
 import { createPrintWorker, type PrintWorker } from './printing/worker';
@@ -35,6 +36,8 @@ export interface AppDeps {
   printWorker: PrintWorker & { mode: PrintTransport['mode'] };
   /** Porta HTTP do QR do cliente (null = desligado). */
   publicPort: number | null;
+  /** Cofre dos segredos fiscais (CSC, certificado A1). */
+  secrets: SecretBox;
 }
 
 export interface BuildAppOptions {
@@ -78,6 +81,7 @@ export async function buildApp({
     cpf: createCpfVault(cpfSecret),
     printWorker: Object.assign(createPrintWorker({ db, transport: printTransport, log: app.log }), { mode: printTransport.mode }),
     publicPort,
+    secrets: createSecretBox(cpfSecret, 'fiscal'),
   };
   app.decorate('printWorker', deps.printWorker);
   app.addHook('onClose', () => deps.printWorker.stop());

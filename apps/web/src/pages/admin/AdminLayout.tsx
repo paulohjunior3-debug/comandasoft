@@ -1,5 +1,7 @@
 import { NavLink, Outlet, Link } from 'react-router';
+import type { FiscalStatus } from '@sistema-bar/shared';
 import { useAuth } from '../../lib/auth';
+import { useApiQuery } from '../../lib/queries';
 
 export const ADMIN_SECTIONS = [
   { to: '/admin/relatorios', label: 'Relatórios' },
@@ -11,6 +13,7 @@ export const ADMIN_SECTIONS = [
   { to: '/admin/usuarios', label: 'Usuários' },
   { to: '/admin/caixas', label: 'Caixas' },
   { to: '/admin/configuracoes', label: 'Configurações' },
+  { to: '/admin/fiscal', label: 'Fiscal' },
   { to: '/admin/auditoria', label: 'Auditoria' },
 ] as const;
 
@@ -47,8 +50,23 @@ export function AdminLayout() {
         </nav>
       </aside>
       <main className="mx-auto w-full max-w-5xl min-w-0 px-4 py-6 lg:px-8">
+        <CertificateWarning />
         <Outlet />
       </main>
     </div>
+  );
+}
+
+/** Certificado A1 vencendo: sem ele o caixa não emite NFC-e (avisa 30 dias antes). */
+function CertificateWarning() {
+  const status = useApiQuery<FiscalStatus>('/admin/fiscal/status');
+  const c = status.data?.certificate;
+  if (!c || c.daysLeft > 30) return null;
+  return (
+    <Link to="/admin/fiscal" className="mb-4 block rounded-lg bg-red-950 px-3 py-2 text-sm text-red-200 print:hidden">
+      {c.daysLeft < 0
+        ? 'O certificado digital venceu: a nota fiscal não pode ser emitida. Envie o novo em Fiscal.'
+        : `O certificado digital vence em ${c.daysLeft} dia(s). Providencie a renovação com a certificadora.`}
+    </Link>
   );
 }

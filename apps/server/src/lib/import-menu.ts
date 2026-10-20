@@ -20,7 +20,19 @@ const menuSchema = z.object({
     z.object({
       nome: z.string().min(1),
       cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-      produtos: z.array(z.object({ nome: z.string().min(1), preco: price, descricao: z.string().optional() })),
+      produtos: z.array(
+        z.object({
+          nome: z.string().min(1),
+          preco: price,
+          descricao: z.string().optional(),
+          // Dados fiscais opcionais (NFC-e): o contador pode mandar junto no arquivo.
+          ncm: z.string().regex(/^\d{8}$/, 'NCM deve ter 8 dígitos').optional(),
+          cfop: z.string().regex(/^\d{4}$/, 'CFOP deve ter 4 dígitos').optional(),
+          csosn: z.string().regex(/^\d{2,3}$/, 'CSOSN/CST deve ter 2 ou 3 dígitos').optional(),
+          origem: z.string().regex(/^[0-8]$/, 'Origem de 0 a 8').optional(),
+          cest: z.string().regex(/^\d{7}$/, 'CEST deve ter 7 dígitos').optional(),
+        }),
+      ),
     }),
   ),
 });
@@ -50,17 +62,25 @@ export async function importMenu(db: Db, raw: unknown, source: string) {
       }
 
       for (const p of cat.produtos) {
+        // Só os campos fiscais que vieram no arquivo; os outros ficam como estão.
+        const fiscal = Object.fromEntries(
+          Object.entries({ ncm: p.ncm, cfop: p.cfop, csosn: p.csosn, origin: p.origem, cest: p.cest }).filter(([, v]) => v !== undefined),
+        );
         const [existing] = await tx
           .select()
           .from(products)
           .where(and(eq(products.categoryId, category!.id), eq(products.name, p.nome)));
         if (existing) {
-          if (existing.priceCents !== p.preco || (p.descricao ?? null) !== existing.description) {
-            await tx.update(products).set({ priceCents: p.preco, description: p.descricao ?? null }).where(eq(products.id, existing.id));
+          const fiscalChanged = Object.entries(fiscal).some(([k, v]) => existing[k as keyof typeof existing] !== v);
+          if (existing.priceCents !== p.preco || (p.descricao ?? null) !== existing.description || fiscalChanged) {
+            await tx
+              .update(products)
+              .set({ priceCents: p.preco, description: p.descricao ?? null, ...fiscal })
+              .where(eq(products.id, existing.id));
             updated++;
           }
         } else {
-          await tx.insert(products).values({ categoryId: category!.id, name: p.nome, priceCents: p.preco, description: p.descricao ?? null });
+          await tx.insert(products).values({ categoryId: category!.id, name: p.nome, priceCents: p.preco, description: p.descricao ?? null, ...fiscal });
           created++;
         }
       }

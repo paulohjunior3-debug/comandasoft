@@ -125,7 +125,8 @@ export function refreshSession(): Promise<AuthResponse | null> {
   return refreshing;
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** Requisição autenticada; renova o token pelo cookie e repete uma vez se ele expirou. */
+async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const call = () =>
     send(`/api${path}`, {
       ...init,
@@ -146,5 +147,22 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       onSessionLost();
     }
   }
-  return parse<T>(res);
+  return res;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return parse<T>(await authedFetch(path, init));
+}
+
+/** Baixa um arquivo da API (ex.: .zip dos XMLs) e oferece para salvar com o nome que o servidor mandou. */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const res = await authedFetch(path);
+  if (!res.ok) await parse(res); // lança o erro em português
+  const name = res.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
 }
