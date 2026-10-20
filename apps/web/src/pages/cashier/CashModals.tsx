@@ -38,7 +38,11 @@ export function describeRules(rules: DayRules): string {
   const parts: string[] = [`${periodLabel(rules.period, rules.businessDate)} · ${brDate(rules.businessDate)}`];
   if (rules.expectedCloseAt) parts.push(`turno até ${formatLocalTime(rules.expectedCloseAt)}`);
   if (rules.tablesInService) parts.push(`${rules.tablesInService} mesas`);
-  parts.push(rules.couvertCents ? `couvert ${formatBRL(rules.couvertCents)}/pessoa desde ${formatLocalTime(rules.couvertStartAt!)}` : 'sem couvert');
+  // Couvert por show: diz se está valendo agora (ou programado), senão "sem couvert agora".
+  const open = rules.couvertWindows.find((w) => !w.endAt);
+  if (open && Date.parse(open.startAt) <= Date.now()) parts.push(`couvert ${formatBRL(open.amountCents)}/pessoa ativo desde ${formatLocalTime(open.startAt)}`);
+  else if (open) parts.push(`couvert ${formatBRL(open.amountCents)}/pessoa a partir de ${formatLocalTime(open.startAt)}`);
+  else parts.push(rules.couvertWindows.length ? 'sem couvert agora (encerrado)' : 'sem couvert');
   return parts.join(' · ');
 }
 

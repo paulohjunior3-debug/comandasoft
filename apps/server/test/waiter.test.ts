@@ -65,7 +65,7 @@ describe('abertura de comanda', () => {
     expect(row!.cpfLast3).toBe('725');
     const vault = createCpfVault('c'.repeat(32));
     expect(row!.cpfHmac).toBe(vault.hmac(CPF[0]!));
-    expect(vault.reveal(row!.cpfEncrypted)).toBe('52998224725');
+    expect(vault.reveal(row!.cpfEncrypted!)).toBe('52998224725');
   });
 
   it('reenviar a mesma abertura (mesmo clientUuid) não duplica', async () => {
@@ -95,9 +95,9 @@ describe('abertura de comanda', () => {
     ids.pauloMesa11 = other.json().id;
   });
 
-  it('caixa não usa as rotas do garçom', async () => {
+  it('o caixa também usa as rotas do garçom (abre mesa e lança pelo painel do caixa)', async () => {
     const caixa = await ctx.as('caixa');
-    expect((await caixa({ method: 'GET', url: '/api/waiter/tables' })).statusCode).toBe(403);
+    expect((await caixa({ method: 'GET', url: '/api/waiter/tables' })).statusCode).toBe(200);
   });
 });
 

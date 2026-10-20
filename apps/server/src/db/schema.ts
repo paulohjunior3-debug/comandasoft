@@ -160,6 +160,11 @@ export const printerCategories = pgTable(
 export const diningTables = pgTable('tables', {
   id,
   number: integer().notNull().unique(),
+  /**
+   * "Mesa" do balcão (número 0): onde ficam as vendas no balcão do caixa. Não aparece no mapa
+   * do garçom, no QR nem no cadastro de mesas; os cupons saem como BALCÃO.
+   */
+  isCounter: boolean().notNull().default(false),
   area: text(),
   capacity: integer(),
   active: boolean().notNull().default(true),
@@ -196,12 +201,15 @@ export const comandas = pgTable(
       .notNull()
       .references(() => diningTables.id, { onDelete: 'restrict' }),
     customerName: text().notNull(),
-    /** HMAC do CPF: permite buscar pelo CPF no caixa sem guardar o número em claro. */
-    cpfHmac: text().notNull(),
+    /**
+     * HMAC do CPF: permite buscar pelo CPF no caixa sem guardar o número em claro.
+     * Obrigatório nas mesas (regra do app); só a venda no balcão pode ficar sem CPF.
+     */
+    cpfHmac: text(),
     /** CPF cifrado (AES-256-GCM), só para "CPF na nota" da NFC-e. */
-    cpfEncrypted: text().notNull(),
+    cpfEncrypted: text(),
     /** 3 últimos dígitos: PIN do QR do cliente (SPEC 5.6). */
-    cpfLast3: text().notNull(),
+    cpfLast3: text(),
     phone: text(),
     /** Pessoas nesta comanda (multiplica o couvert). */
     peopleCount: integer().notNull().default(1),
@@ -383,6 +391,29 @@ export const cashSessions = pgTable(
   },
   // Uma sessão aberta por caixa.
   (t) => [uniqueIndex('cash_sessions_one_open_per_register').on(t.registerId).where(sql`${t.closedAt} is null`)],
+);
+
+/**
+ * Couvert do dia em janelas (um show das 14h às 16h, outro das 20h às 22h…). O gerente inicia
+ * e encerra; a abertura do caixa com "couvert a partir de" cria a primeira. Ver couvertFor.
+ */
+export const couvertWindows = pgTable(
+  'couvert_windows',
+  {
+    id,
+    /** Dia do movimento a que a janela pertence (o mesmo da abertura do caixa). */
+    businessDate: date({ mode: 'string' }).notNull(),
+    amountCents: integer().notNull(),
+    startAt: timestamp({ withTimezone: true }).notNull(),
+    /** null = couvert ainda ativo. */
+    endAt: timestamp({ withTimezone: true }),
+    startedBy: uuid()
+      .notNull()
+      .references(() => users.id),
+    endedBy: uuid().references(() => users.id),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.businessDate), check('couvert_windows_positive', sql`${t.amountCents} > 0`)],
 );
 
 /**

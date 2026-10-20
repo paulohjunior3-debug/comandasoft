@@ -176,7 +176,8 @@ export interface InstalledPrinter {
 
 // ---------- Usuários ----------
 
-const password = z.string().min(6, 'A senha precisa de pelo menos 6 caracteres').max(128);
+// 4 dígitos bastam para o dia a dia no celular (o login tem limite de tentativas); admin: use uma mais forte.
+const password = z.string().min(4, 'A senha precisa de pelo menos 4 caracteres').max(128);
 const pin = z
   .string()
   .regex(/^(\d{4,6})?$/, 'O PIN deve ter de 4 a 6 números')
@@ -230,6 +231,8 @@ export const settingsSchema = z.object({
   /** Liga/desliga a taxa de serviço de 10% (SPEC 5.7). */
   serviceFeeEnabled: z.boolean(),
   couvertCents: cents,
+  /** Vários shows no mesmo dia: cobrar o couvert uma vez por pessoa ou a cada show. */
+  couvertMode: z.enum(['UMA_VEZ', 'POR_SHOW']),
   /** Minutos sem atendimento para a mesa ficar amarela / vermelha no mapa. */
   alertYellowMinutes: z.number().int().min(1).max(240),
   alertRedMinutes: z.number().int().min(1).max(480),
@@ -267,6 +270,7 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const DEFAULT_SETTINGS: Settings = {
   serviceFeeEnabled: false,
   couvertCents: 0,
+  couvertMode: 'UMA_VEZ',
   alertYellowMinutes: 15,
   alertRedMinutes: 30,
   companyName: '',

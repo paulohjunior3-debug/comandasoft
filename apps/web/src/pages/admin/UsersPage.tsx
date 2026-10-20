@@ -110,7 +110,11 @@ function UserModal({ user, onClose }: { user: AdminUser | null; onClose: () => v
         autoComplete="new-password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        hint={user ? 'Deixe em branco para manter. Trocar a senha desconecta os aparelhos do usuário.' : 'Mínimo 6 caracteres'}
+        hint={
+          user
+            ? 'Deixe em branco para manter. Trocar a senha desconecta os aparelhos do usuário.'
+            : 'Mínimo 4 caracteres (ex.: 4 números). Para o administrador, use uma senha mais forte.'
+        }
       />
       <TextField
         label={user?.hasPin ? 'Novo PIN de autorização' : 'PIN de autorização'}

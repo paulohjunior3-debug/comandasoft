@@ -30,8 +30,34 @@ describe('horários do turno (Brasília)', () => {
 });
 
 describe('regra do couvert', () => {
-  const rules = { couvertCents: 1500, couvertStartAt: '2026-10-19T17:00:00Z' }; // a partir das 14:00
+  const rules = { mode: 'UMA_VEZ' as const, windows: [{ amountCents: 1500, startAt: '2026-10-19T17:00:00Z', endAt: null }] }; // a partir das 14:00
   const at = (hhmm: string) => new Date(`2026-10-19T${hhmm}:00-03:00`);
+
+  // Sábado: show das 14h às 16h (R$ 15) e das 20h às 22h (R$ 20).
+  const sabado = (mode: 'UMA_VEZ' | 'POR_SHOW') => ({
+    mode,
+    windows: [
+      { amountCents: 1500, startAt: at('14:00'), endAt: at('16:00') },
+      { amountCents: 2000, startAt: at('20:00'), endAt: at('22:00') },
+    ],
+  });
+
+  it('dois shows: entre os shows não cobra; no segundo, cobra quem chega ou fica', () => {
+    const s = sabado('UMA_VEZ');
+    expect(couvertFor(s, { openedAt: at('17:00'), closedAt: at('19:00'), peopleCount: 1 }, at('23:00'))).toBe(0);
+    expect(couvertFor(s, { openedAt: at('17:00'), closedAt: null, peopleCount: 2 }, at('20:20'))).toBe(4000);
+    expect(couvertFor(s, { openedAt: at('21:00'), closedAt: null, peopleCount: 1 }, at('21:01'))).toBe(2000);
+    // Depois de encerrado (22h) quem chega não paga.
+    expect(couvertFor(s, { openedAt: at('22:30'), closedAt: null, peopleCount: 1 }, at('23:00'))).toBe(0);
+  });
+
+  it('quem fica nos dois shows: uma vez (padrão) ou a cada show (configuração)', () => {
+    const tarde = { openedAt: at('13:00'), closedAt: null, peopleCount: 1 };
+    expect(couvertFor(sabado('UMA_VEZ'), tarde, at('23:00'))).toBe(1500);
+    expect(couvertFor(sabado('POR_SHOW'), tarde, at('23:00'))).toBe(3500);
+    // Foi embora às 20:10 (antes da tolerância do 2º show): só o primeiro.
+    expect(couvertFor(sabado('POR_SHOW'), { ...tarde, closedAt: at('20:10') }, at('23:00'))).toBe(1500);
+  });
 
   it('quem abre a comanda depois do início já paga, por pessoa', () => {
     expect(couvertFor(rules, { openedAt: at('14:30'), closedAt: null, peopleCount: 2 }, at('14:31'))).toBe(3000);

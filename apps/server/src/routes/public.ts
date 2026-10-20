@@ -41,7 +41,10 @@ const comandaGone = () =>
  */
 export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicDeps) {
   async function tableOf(qrToken: string) {
-    const [t] = await db.select().from(diningTables).where(and(eq(diningTables.qrToken, qrToken), eq(diningTables.active, true)));
+    const [t] = await db
+      .select()
+      .from(diningTables)
+      .where(and(eq(diningTables.qrToken, qrToken), eq(diningTables.active, true), eq(diningTables.isCounter, false)));
     if (!t) throw tableGone();
     return t;
   }
@@ -85,7 +88,9 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
       const c = await openComandaOf(table.id, comandaId);
       if (c.qrLockedAt) throw locked();
 
-      const ok = timingSafeEqual(Buffer.from(pin), Buffer.from(c.cpfLast3.padStart(3, '0').slice(-3)));
+      // Sem CPF (só venda no balcão, que nem aparece no QR) não há PIN: nunca libera.
+      const expected = (c.cpfLast3 ?? 'xxx').padStart(3, '0').slice(-3);
+      const ok = Boolean(c.cpfLast3) && timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
       await db.insert(qrUnlockAttempts).values({ comandaId: c.id, ok, ip: request.ip });
       if (ok) return { token: await tokens.signQr(c.id), expiresInSeconds: QR_TOKEN_TTL_SECONDS };
 

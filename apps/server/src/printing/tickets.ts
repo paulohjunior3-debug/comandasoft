@@ -7,6 +7,8 @@ export interface ProductionTicket {
   /** BAR, COZINHA… em fonte dupla no topo. */
   sector: string;
   tableNumber: number;
+  /** "BALCÃO" nas vendas do balcão; sem ele, sai "MESA <número>". */
+  tableLabel?: string;
   /** Para quem entregar (SPEC 5.5): um nome, ou vários quando o pedido foi rateado. */
   customers: string[];
   waiter: string;
@@ -24,6 +26,8 @@ export interface CancelTicket {
   kind: 'CANCELAMENTO';
   sector: string;
   tableNumber: number;
+  /** "BALCÃO" nas vendas do balcão; sem ele, sai "MESA <número>". */
+  tableLabel?: string;
   customers: string[];
   /** Quem cancelou (operador) e quem autorizou. */
   operator: string;
@@ -60,6 +64,8 @@ export interface BillTicket {
   variant: 'PRE_CONTA' | 'CUPOM';
   company: CompanyHeader;
   tableNumber: number;
+  /** "BALCÃO" nas vendas do balcão; sem ele, sai "MESA <número>". */
+  tableLabel?: string;
   createdAt: string;
   operator: string;
   comandas: {

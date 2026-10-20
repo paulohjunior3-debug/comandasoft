@@ -41,7 +41,8 @@ export async function tableRoutes(app: FastifyInstance, { db, publicPort }: AppD
   }
 
   app.get('/', async () => {
-    const rows = await db.select().from(diningTables).orderBy(asc(diningTables.number));
+    // O balcão do caixa é criado pelo sistema e não se edita aqui.
+    const rows = await db.select().from(diningTables).where(eq(diningTables.isCounter, false)).orderBy(asc(diningTables.number));
     return rows.map(toTable);
   });
 

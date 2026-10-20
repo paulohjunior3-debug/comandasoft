@@ -76,7 +76,22 @@ export interface DayRules {
   /** Dia do movimento e período (Ter = 1 … Dom = 6; null = dia extra). */
   businessDate: string;
   period: number | null;
+  /** Couvert do dia em janelas (shows): o gerente inicia e encerra. */
+  couvertWindows: CouvertWindow[];
 }
+
+export interface CouvertWindow {
+  id: string;
+  amountCents: number;
+  startAt: string;
+  /** null = ativo agora. */
+  endAt: string | null;
+  startedBy: string;
+}
+
+/** Iniciar o couvert agora (show começando): valor por pessoa; PIN se for o perfil Caixa. */
+export const startCouvertSchema = z.object({ amountCents: positiveCents, authorizerPin });
+export const stopCouvertSchema = z.object({ authorizerPin });
 
 // ---------- Sessão de caixa ----------
 
@@ -209,7 +224,8 @@ export interface CashierComanda {
   id: string;
   number: number;
   customerName: string;
-  cpfLast3: string;
+  /** null = venda no balcão sem CPF. */
+  cpfLast3: string | null;
   status: ComandaStatus;
   openedAt: string;
   /** Pessoas nesta comanda (multiplica o couvert). */
@@ -220,12 +236,41 @@ export interface CashierComanda {
 export interface CashierTable {
   id: string;
   number: number;
+  /** "Mesa" do balcão (vendas no balcão do caixa). */
+  isCounter: boolean;
+  /** "Mesa 12" ou "Balcão". */
+  label: string;
   area: string | null;
   comandas: CashierComanda[];
   totals: ComandaTotals;
   /** Alguma comanda pediu a conta. */
   closingRequested: boolean;
 }
+
+/** Venda no balcão: nome e CPF opcionais (sem nome: "Balcão 1", "Balcão 2"…). */
+export const counterComandaSchema = z.object({
+  clientUuid: z.string().uuid(),
+  customerName: z
+    .string()
+    .trim()
+    .max(60)
+    .optional()
+    .transform((v) => v || undefined),
+  cpf: z
+    .string()
+    .transform(onlyDigits)
+    .refine((v) => v === '' || isValidCpf(v), 'CPF inválido')
+    .optional()
+    .transform((v) => v || undefined),
+});
+
+export interface CounterComandaResult {
+  comandaId: string;
+  tableId: string;
+}
+
+/** "Mesa 12" ou "Balcão" (vendas no balcão do caixa). */
+export const tableLabel = (t: { number: number; isCounter: boolean }) => (t.isCounter ? 'Balcão' : `Mesa ${t.number}`);
 
 export interface LookupResult {
   table: CashierTable;
@@ -291,6 +336,8 @@ export interface BillComanda extends CashierComanda {
 
 export interface Bill {
   tableNumber: number;
+  /** "Mesa 12" ou "Balcão". */
+  tableLabel: string;
   comandas: BillComanda[];
   items: BillItem[];
   adjustments: BillAdjustment[];
@@ -403,6 +450,17 @@ export const cancelItemSchema = z.object({
   authorizerPin,
 });
 export type CancelItemInput = z.infer<typeof cancelItemSchema>;
+
+/**
+ * Mover item lançado na comanda errada: para outra comanda da mesa ou de outra mesa, inteiro
+ * ou parte da quantidade (item rateado: move a parte desta comanda).
+ */
+export const moveItemSchema = z.object({
+  fromComandaId: z.string().uuid(),
+  toComandaId: z.string().uuid('Escolha a comanda de destino'),
+  qty: z.number().int().min(1, 'Quantidade inválida').optional(),
+});
+export type MoveItemInput = z.infer<typeof moveItemSchema>;
 
 export const CASHIER_ERRORS = {
   NO_OPEN_SESSION: 'NO_OPEN_SESSION',

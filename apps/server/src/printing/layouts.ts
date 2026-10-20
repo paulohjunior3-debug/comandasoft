@@ -21,7 +21,7 @@ function production(t: ProductionTicket): Block[] {
   const blocks: Block[] = [
     { kind: 'text', text: t.sector, align: 'center', size: 'big', bold: true },
     { kind: 'rule', char: '=' },
-    { kind: 'text', text: `MESA ${t.tableNumber}`, align: 'center', size: 'big', bold: true },
+    { kind: 'text', text: place(t), align: 'center', size: 'big', bold: true },
     { kind: 'text', text: t.customers.join(', ').toUpperCase(), align: 'center', size: 'tall', bold: true },
     { kind: 'text', text: `${t.waiter} · ${when(t.createdAt)} · #${t.orderRef}`, align: 'center' },
   ];
@@ -43,7 +43,7 @@ function cancellation(t: CancelTicket): Block[] {
     { kind: 'text', text: '*** CANCELADO ***', align: 'center', size: 'big', bold: true },
     { kind: 'text', text: 'NÃO PREPARAR', align: 'center', size: 'tall', bold: true },
     { kind: 'rule', char: '=' },
-    { kind: 'text', text: `MESA ${t.tableNumber}`, align: 'center', size: 'big', bold: true },
+    { kind: 'text', text: place(t), align: 'center', size: 'big', bold: true },
     { kind: 'text', text: t.customers.join(', ').toUpperCase(), align: 'center', bold: true },
     { kind: 'rule' },
   ];
@@ -97,7 +97,7 @@ function bill(t: BillTicket): Block[] {
     ...header(t.company),
     { kind: 'rule', char: '=' },
     { kind: 'text', text: t.variant === 'PRE_CONTA' ? 'CONFERÊNCIA DE CONTA' : 'CUPOM DE CONSUMO', align: 'center', bold: true },
-    { kind: 'text', text: `MESA ${t.tableNumber}`, align: 'center', size: 'big', bold: true },
+    { kind: 'text', text: place(t), align: 'center', size: 'big', bold: true },
     { kind: 'text', text: `${when(t.createdAt)} · ${t.operator}`, align: 'center' },
   ];
   if (t.reprint) blocks.push({ kind: 'text', text: '*** REIMPRESSÃO ***', align: 'center', bold: true });
@@ -180,6 +180,10 @@ function cash(t: CashTicket): Block[] {
   return blocks;
 }
 
+/** "MESA 12" ou "BALCÃO" no topo do cupom; "Mesa 12"/"Balcão" na lista da fila. */
+const place = (t: { tableNumber: number; tableLabel?: string }) => t.tableLabel?.toUpperCase() ?? `MESA ${t.tableNumber}`;
+const placeShort = (t: { tableNumber: number; tableLabel?: string }) => t.tableLabel ?? `Mesa ${t.tableNumber}`;
+
 export function ticketBlocks(payload: TicketPayload): Block[] {
   switch (payload.kind) {
     case 'PRODUCAO':
@@ -207,12 +211,12 @@ export function describeTicket(payload: TicketPayload): string {
     case 'CAIXA':
       return `${CASH_TITLE[payload.variant]}${payload.amountCents !== undefined ? ` · ${money(payload.amountCents)}` : ''}`;
     case 'CONTA':
-      return `${payload.variant === 'PRE_CONTA' ? 'Pré-conta' : 'Cupom'} · Mesa ${payload.tableNumber} · ${payload.comandas.map((c) => c.name).join(', ')}`;
+      return `${payload.variant === 'PRE_CONTA' ? 'Pré-conta' : 'Cupom'} · ${placeShort(payload)} · ${payload.comandas.map((c) => c.name).join(', ')}`;
     case 'CANCELAMENTO':
-      return `CANCELADO · Mesa ${payload.tableNumber} · ${payload.items.map((i) => `${i.qty}x ${i.name}`).join(', ')}`;
+      return `CANCELADO · ${placeShort(payload)} · ${payload.items.map((i) => `${i.qty}x ${i.name}`).join(', ')}`;
     case 'PRODUCAO': {
       const items = payload.items.reduce((s, i) => s + i.qty, 0);
-      return `Mesa ${payload.tableNumber} · ${payload.customers.join(', ')} · ${items} ${items === 1 ? 'item' : 'itens'}`;
+      return `${placeShort(payload)} · ${payload.customers.join(', ')} · ${items} ${items === 1 ? 'item' : 'itens'}`;
     }
   }
 }

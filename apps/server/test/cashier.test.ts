@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { suggestedBusinessDate, type SalesReport } from '@sistema-bar/shared';
-import { cashSessions, comandas, fiscalRequests, payments, printJobs } from '../src/db/schema';
+import { cashSessions, comandas, couvertWindows, fiscalRequests, payments, printJobs } from '../src/db/schema';
 import { createTestContext, type TestContext } from './helpers';
 
 type Inject = Awaited<ReturnType<TestContext['as']>>;
@@ -154,8 +154,8 @@ describe('abertura do caixa (regras do dia)', () => {
 });
 
 describe('couvert do dia', () => {
-  // Couvert desde agora − 1 h, para os testes não dependerem do relógio.
-  const setCouvertStart = (date: Date) => ctx.db.update(cashSessions).set({ couvertStartAt: date }).where(eq(cashSessions.registerId, ids.carlos));
+  // Move o início do couvert do dia (a janela criada na abertura), para não depender do relógio.
+  const setCouvertStart = (date: Date) => ctx.db.update(couvertWindows).set({ startAt: date });
   const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
   const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
 

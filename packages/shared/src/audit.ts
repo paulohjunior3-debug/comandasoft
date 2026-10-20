@@ -71,6 +71,19 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
 
   REIMPRESSAO: { label: 'Reimprimiu cupom', group: 'IMPRESSAO' },
 
+  TRANSFERENCIA: { label: 'Transferiu comanda de mesa', group: 'VENDAS' },
+  ITEM_TRANSFERIDO: { label: 'Moveu item para outra comanda', group: 'CANCELAMENTOS', sensitive: true },
+  VENDA_BALCAO_ABERTA: { label: 'Abriu venda no balcão', group: 'VENDAS' },
+  COUVERT_INICIADO: { label: 'Iniciou o couvert', group: 'CAIXA' },
+  COUVERT_ENCERRADO: { label: 'Encerrou o couvert', group: 'CAIXA' },
+  FISCAL_CONFIG_ALTERADA: { label: 'Alterou os dados fiscais', group: 'CONFIGURACOES' },
+  FISCAL_CSC_ALTERADO: { label: 'Alterou o CSC da NFC-e', group: 'CONFIGURACOES', sensitive: true },
+  CERTIFICADO_ENVIADO: { label: 'Enviou o certificado digital', group: 'CONFIGURACOES', sensitive: true },
+  CERTIFICADO_REMOVIDO: { label: 'Removeu o certificado digital', group: 'CONFIGURACOES', sensitive: true },
+  PRODUTOS_FISCAL_ALTERADOS: { label: 'Alterou dados fiscais de produtos', group: 'CADASTROS' },
+  FISCAL_XML_EXPORTADO: { label: 'Baixou os XMLs para o contador', group: 'CONFIGURACOES' },
+  PRODUTO_FOTO_ALTERADA: { label: 'Trocou a foto de produto', group: 'CADASTROS' },
+  PRODUTO_FOTO_REMOVIDA: { label: 'Removeu a foto de produto', group: 'CADASTROS' },
   QR_BLOQUEADO: { label: 'QR bloqueado por PIN errado', group: 'CLIENTE_QR', sensitive: true },
   QR_LIBERADO: { label: 'Liberou o QR da comanda', group: 'CLIENTE_QR' },
 };

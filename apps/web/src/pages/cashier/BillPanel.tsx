@@ -20,6 +20,7 @@ import { Badge, Button, ErrorBanner, Loading, Modal, SelectField, TextField } fr
 import { api } from '../../lib/api';
 import { formatTime } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
+import { LaunchItemsModal, MoveItemModal, OpenTableModal } from './CashierActions';
 import { usePin } from './usePin';
 
 const FRACTIONS = [
@@ -37,6 +38,8 @@ export interface FinalizeInfo {
   comandaIds: string[];
   names: string[];
   tableNumber: number;
+  /** "Mesa 12" ou "Balcão". */
+  tableLabel: string;
   changeCents: number;
   fiscalMode: CreatePaymentResult['fiscalMode'];
   fiscalRequested: boolean;
@@ -68,6 +71,9 @@ export function BillPanel({
   const [modal, setModal] = useState<'DESCONTO' | 'TAXA_SERVICO_REMOVIDA' | 'COUVERT_REMOVIDO' | null>(null);
   const [canceling, setCanceling] = useState<BillItem | null>(null);
   const [transferring, setTransferring] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [addingComanda, setAddingComanda] = useState(false);
+  const [moving, setMoving] = useState<BillItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setSelected(preselect ?? table.comandas.map((c) => c.id)), [table.id, preselect]);
@@ -115,9 +121,11 @@ export function BillPanel({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-semibold">Mesa {table.number}</h2>
+        <h2 className="text-2xl font-semibold">{table.label}</h2>
         <div className="flex gap-2">
           <Button onClick={() => setSelected(table.comandas.map((c) => c.id))}>Mesa inteira</Button>
+          <Button variant="primary" onClick={() => setLaunching(true)}>Lançar itens</Button>
+          {!table.isCounter && <Button onClick={() => setAddingComanda(true)}>Nova comanda</Button>}
           <Button onClick={() => setTransferring(true)}>Transferir</Button>
           <Button onClick={() => printBill.mutate()} disabled={!ordered.length || printBill.isPending}>Imprimir pré-conta</Button>
         </div>
@@ -157,7 +165,7 @@ export function BillPanel({
         <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
           <div className="space-y-4">
             {b.comandas.map((c) => (
-              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} />
+              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onMoveItem={setMoving} />
             ))}
 
             {b.adjustments.length > 0 && (
@@ -243,6 +251,7 @@ export function BillPanel({
                       comandaIds: closed.map((c) => c.id),
                       names: closed.map((c) => c.customerName),
                       tableNumber: table.number,
+                      tableLabel: table.label,
                       changeCents: r.changeCents,
                       fiscalMode: r.fiscalMode,
                       fiscalRequested: r.fiscalRequested,
@@ -281,6 +290,41 @@ export function BillPanel({
               setModal(null);
             })
           }
+        />
+      )}
+      {launching && (
+        <LaunchItemsModal
+          table={table}
+          selected={ordered}
+          onClose={() => setLaunching(false)}
+          onDone={(message) => {
+            setLaunching(false);
+            refresh();
+            setNotice(message);
+          }}
+        />
+      )}
+      {addingComanda && (
+        <OpenTableModal
+          initialNumber={table.number}
+          onClose={() => setAddingComanda(false)}
+          onDone={(_tableId, comandaId) => {
+            setAddingComanda(false);
+            refresh();
+            setSelected([comandaId]);
+          }}
+        />
+      )}
+      {moving && (
+        <MoveItemModal
+          item={moving}
+          table={table}
+          onClose={() => setMoving(null)}
+          onDone={(message) => {
+            setMoving(null);
+            refresh();
+            setNotice(message);
+          }}
         />
       )}
       {transferring && (
@@ -327,14 +371,26 @@ export function BillPanel({
   );
 }
 
-function ComandaBlock({ comanda: c, bill, onCancelItem }: { comanda: BillComanda; bill: Bill; onCancelItem: (item: BillItem) => void }) {
+function ComandaBlock({
+  comanda: c,
+  bill,
+  onCancelItem,
+  onMoveItem,
+}: {
+  comanda: BillComanda;
+  bill: Bill;
+  onCancelItem: (item: BillItem) => void;
+  onMoveItem: (item: BillItem) => void;
+}) {
   const items = bill.items.filter((i) => i.comandaId === c.id);
   const open = c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO';
   return (
     <section className="rounded-xl bg-slate-900">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
         <span className="font-semibold">{c.customerName}</span>
-        <span className="text-sm text-slate-400">CPF final {c.cpfLast3} · nº {c.number}</span>
+        <span className="text-sm text-slate-400">
+          {c.cpfLast3 ? `CPF final ${c.cpfLast3}` : 'sem CPF'} · nº {c.number}
+        </span>
       </header>
       <ul className="divide-y divide-slate-800/60 text-sm">
         {items.length === 0 && <li className="px-4 py-2 text-slate-500">Sem itens.</li>}
@@ -361,6 +417,15 @@ function ComandaBlock({ comanda: c, bill, onCancelItem }: { comanda: BillComanda
               )}
             </span>
             <span className={i.canceled ? 'line-through' : ''}>{formatBRL(i.amountCents)}</span>
+            {open && !i.canceled && i.paidCents === 0 && (
+              <button
+                onClick={() => onMoveItem(i)}
+                className="rounded px-2 py-0.5 text-xs text-sky-300 hover:bg-sky-950"
+                title="Lançado na comanda errada? Mova para a certa."
+              >
+                Mover
+              </button>
+            )}
             {open && !i.canceled && i.paidCents === 0 && (
               <button
                 onClick={() => onCancelItem(i)}

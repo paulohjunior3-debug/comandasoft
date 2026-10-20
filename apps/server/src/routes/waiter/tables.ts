@@ -13,7 +13,12 @@ export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
   /** Mapa de mesas: status, nº de comandas, total e último atendimento de cada mesa (SPEC 5.3). */
   app.get('/', async (): Promise<TableMapResponse> => {
     const [allTables, open, lastOrders, lastVisits, settings, rules] = await Promise.all([
-      db.select().from(diningTables).where(eq(diningTables.active, true)).orderBy(asc(diningTables.number)),
+      // O balcão (vendas do caixa) não é mesa do salão.
+      db
+        .select()
+        .from(diningTables)
+        .where(and(eq(diningTables.active, true), eq(diningTables.isCounter, false)))
+        .orderBy(asc(diningTables.number)),
       db
         .select({ id: comandas.id, tableId: comandas.tableId, status: comandas.status, openedAt: comandas.openedAt })
         .from(comandas)

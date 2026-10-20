@@ -145,11 +145,14 @@ export function Modal({
   onClose,
   children,
   footer,
+  wide = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  /** Janela larga (ex.: escolher produtos no caixa). */
+  wide?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -166,7 +169,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-2xl bg-slate-900 shadow-2xl sm:rounded-2xl"
+        className={`flex max-h-[92dvh] w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} flex-col rounded-t-2xl bg-slate-900 shadow-2xl sm:rounded-2xl`}
       >
         <header className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
           <h2 className="text-lg font-semibold">{title}</h2>

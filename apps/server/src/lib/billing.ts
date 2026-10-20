@@ -2,6 +2,7 @@ import {
   addFractions,
   computeTotals,
   couvertFor,
+  tableLabel,
   sumTotals,
   type Bill,
   type BillAdjustment,
@@ -38,7 +39,7 @@ export type Queryable = Db | Parameters<Parameters<Db['transaction']>[0]>[0];
  */
 export async function loadBill(db: Queryable, comandaIds: string[], settings: Settings): Promise<Bill> {
   const rows = await db
-    .select({ comanda: comandas, tableNumber: diningTables.number })
+    .select({ comanda: comandas, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
     .from(comandas)
     .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
     .where(inArray(comandas.id, comandaIds));
@@ -170,7 +171,7 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
   }
   const paymentList = [...paymentMap.values()];
 
-  const billComandas: BillComanda[] = ordered.map(({ comanda: c }) => {
+  const billComandas: BillComanda[] = ordered.map(({ comanda: c, isCounter }) => {
     const mine = adjustmentList.filter((a) => a.comandaId === c.id);
     const serviceFeeWaived = mine.some((a) => a.type === 'TAXA_SERVICO_REMOVIDA');
     const couvertWaived = mine.some((a) => a.type === 'COUVERT_REMOVIDO');
@@ -182,10 +183,11 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
         ? (c.finalTotals as ComandaTotals)
         : computeTotals({
             itemsCents: items.filter((i) => i.comandaId === c.id).reduce((s, i) => s + i.amountCents, 0),
-            serviceFeeEnabled: settings.serviceFeeEnabled,
+            // Venda no balcão: sem taxa de serviço e sem couvert (não há mesa nem atendimento).
+            serviceFeeEnabled: settings.serviceFeeEnabled && !isCounter,
             serviceFeeWaived,
             // Couvert do dia × pessoas, pela regra do horário (+15 min de tolerância).
-            couvertCents: couvertFor(rules, c),
+            couvertCents: isCounter ? 0 : couvertFor(rules ? { windows: rules.couvertWindows, mode: settings.couvertMode } : null, c),
             couvertWaived,
             discounts: mine.filter((a) => a.type === 'DESCONTO'),
             paidCents,
@@ -206,11 +208,12 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
 
   return {
     tableNumber: ordered[0]?.tableNumber ?? 0,
+    tableLabel: tableLabel({ number: ordered[0]?.tableNumber ?? 0, isCounter: ordered[0]?.isCounter ?? false }),
     comandas: billComandas,
     items,
     adjustments: adjustmentList,
     payments: paymentList,
     totals: sumTotals(billComandas.map((c) => c.totals)),
-    serviceFeeEnabled: settings.serviceFeeEnabled,
+    serviceFeeEnabled: settings.serviceFeeEnabled && !(ordered[0]?.isCounter ?? false),
   };
 }

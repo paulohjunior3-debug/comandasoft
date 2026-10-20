@@ -47,6 +47,7 @@ export function billTicket(bill: Bill, variant: BillTicket['variant'], settings:
     variant,
     company: companyOf(settings),
     tableNumber: bill.tableNumber,
+    tableLabel: bill.tableLabel === `Mesa ${bill.tableNumber}` ? undefined : bill.tableLabel,
     createdAt: new Date().toISOString(),
     operator,
     comandas: bill.comandas.map((c) => ({

@@ -6,6 +6,7 @@ import {
   nameSearchSchema,
   removeAdjustmentSchema,
   sumTotals,
+  tableLabel,
   transferSchema,
   type Bill,
   type CashierTable,
@@ -55,6 +56,8 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
         return {
           id: t.id,
           number: t.number,
+          isCounter: t.isCounter,
+          label: tableLabel(t),
           area: t.area,
           comandas: list,
           totals: sumTotals(list.map((c) => c.totals)),
@@ -118,7 +121,7 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
     const input = transferSchema.parse(request.body);
     const [dest] = await db.select().from(diningTables).where(eq(diningTables.number, input.toTableNumber));
     if (!dest) throw new HttpError(404, 'NOT_FOUND', `Mesa ${input.toTableNumber} não existe.`);
-    if (!dest.active) throw new HttpError(409, 'TABLE_INACTIVE', `A mesa ${dest.number} está desativada.`);
+    if (!dest.active || dest.isCounter) throw new HttpError(409, 'TABLE_INACTIVE', `A mesa ${dest.number} não pode receber comandas.`);
 
     const ids = [...new Set(input.comandaIds)];
     const moving = await db

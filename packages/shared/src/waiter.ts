@@ -150,7 +150,8 @@ export interface ComandaItem {
 
 export interface ComandaDetail extends ComandaSummary {
   phone: string | null;
-  cpfLast3: string;
+  /** null = venda no balcão sem CPF. */
+  cpfLast3: string | null;
   items: ComandaItem[];
   subtotalCents: number;
   serviceFeeCents: number;

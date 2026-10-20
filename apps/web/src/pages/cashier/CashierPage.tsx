@@ -13,7 +13,7 @@ import {
   type NameSearchHit,
   type PrintQueueResponse,
 } from '@sistema-bar/shared';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { Badge, Button, EmptyState, ErrorBanner, Loading, Modal, Toggle } from '../../components/ui';
@@ -22,6 +22,8 @@ import { useAuth } from '../../lib/auth';
 import { formatTime } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { BillPanel, type FinalizeInfo } from './BillPanel';
+import { CounterSaleModal, CouvertModal, OpenTableModal } from './CashierActions';
+import { usePin } from './usePin';
 import { CloseCashModal, describeRules, MovementModal, OpenCashForm } from './CashModals';
 
 // Caixa em que este aparelho trabalha (Caixa Carlos, Caixa Paulo…). Só conveniência local.
@@ -148,8 +150,22 @@ function RegisterPicker({ registers, onChoose, isAdmin }: { registers: CashRegis
 function SessionActions({ registerId }: { registerId: string }) {
   const [movement, setMovement] = useState<CashMovementType | null>(null);
   const [closing, setClosing] = useState(false);
+  const [couvert, setCouvert] = useState(false);
+  const pin = usePin();
+  const qc = useQueryClient();
   return (
     <>
+      <Button onClick={() => setCouvert(true)}>Couvert</Button>
+      {couvert && (
+        <CouvertModal
+          pin={pin}
+          onClose={() => setCouvert(false)}
+          onChanged={() => {
+            for (const key of ['/cashier/session', '/cashier/session/day-rules', 'bill', '/cashier/tables']) void qc.invalidateQueries({ queryKey: [key] });
+          }}
+        />
+      )}
+      {pin.element}
       <Button onClick={() => setMovement('SUPRIMENTO')}>Suprimento</Button>
       <Button onClick={() => setMovement('SANGRIA')}>Sangria</Button>
       <Button variant="danger" onClick={() => setClosing(true)}>Fechar caixa</Button>
@@ -184,6 +200,10 @@ function Workspace({ registerId }: { registerId: string }) {
   const [current, setCurrent] = useState<{ tableId: string; preselect: string[] | null } | null>(null);
   const [query, setQuery] = useState('');
   const [finalizing, setFinalizing] = useState<FinalizeInfo | null>(null);
+  const [creating, setCreating] = useState<'mesa' | 'balcao' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const qc = useQueryClient();
+  const refreshTables = () => void qc.invalidateQueries({ queryKey: ['/cashier/tables'] });
 
   const [hits, setHits] = useState<NameSearchHit[] | null>(null);
   const open = (tableId: string, preselect: string[] | null) => {
@@ -224,6 +244,36 @@ function Workspace({ registerId }: { registerId: string }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
       <aside className="space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => setCreating('mesa')}>+ Abrir mesa</Button>
+          <Button onClick={() => setCreating('balcao')}>Venda balcão</Button>
+        </div>
+        {notice && (
+          <p className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300" onClick={() => setNotice(null)}>
+            {notice}
+          </p>
+        )}
+        {creating === 'mesa' && (
+          <OpenTableModal
+            onClose={() => setCreating(null)}
+            onDone={(tableId, comandaId) => {
+              setCreating(null);
+              refreshTables();
+              open(tableId, [comandaId]);
+            }}
+          />
+        )}
+        {creating === 'balcao' && (
+          <CounterSaleModal
+            onClose={() => setCreating(null)}
+            onDone={(tableId, comandaId, message) => {
+              setCreating(null);
+              setNotice(message);
+              refreshTables();
+              open(tableId, [comandaId]);
+            }}
+          />
+        )}
         <form onSubmit={search} className="space-y-2">
           <label htmlFor="busca" className="block text-sm text-slate-300">Mesa, nome ou CPF do cliente</label>
           <div className="flex gap-2">
@@ -292,12 +342,12 @@ function Workspace({ registerId }: { registerId: string }) {
                   <li key={t.id}>
                     <button
                       onClick={() => open(t.id, null)}
-                      title={`Mesa ${t.number} · ${t.comandas.map((c) => c.customerName).join(', ')} · resta ${formatBRL(t.totals.remainingCents)}`}
-                      aria-label={`Mesa ${t.number}${t.closingRequested ? ', pediu a conta' : ''}`}
+                      title={`${t.label} · ${t.comandas.map((c) => c.customerName).join(', ')} · resta ${formatBRL(t.totals.remainingCents)}`}
+                      aria-label={`${t.label}${t.closingRequested ? ', pediu a conta' : ''}`}
                       aria-pressed={selected}
                       className={`flex h-10 w-full items-center justify-center rounded-md border text-sm font-bold tabular-nums ${tone} ${selected ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950' : ''}`}
                     >
-                      {t.number}
+                      {t.isCounter ? 'BAL' : t.number}
                     </button>
                   </li>
                 );
@@ -357,7 +407,7 @@ function FinalizeModal({ registerId, info, onClose }: { registerId: string; info
 
   return (
     <Modal
-      title={`Mesa ${info.tableNumber} quitada`}
+      title={`${info.tableLabel} quitada`}
       onClose={onClose}
       footer={
         <Button variant="primary" onClick={onClose}>

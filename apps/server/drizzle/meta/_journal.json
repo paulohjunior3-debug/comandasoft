@@ -71,6 +71,20 @@
       "when": 1792466703993,
       "tag": "0009_bouncy_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792515713895,
+      "tag": "0010_adorable_iron_fist",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792515967788,
+      "tag": "0011_square_inertia",
+      "breakpoints": true
     }
   ]
 }

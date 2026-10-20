@@ -132,6 +132,7 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
               kind: 'PRODUCAO',
               sector: printer.sectorLabel,
               tableNumber: table.number,
+              tableLabel: table.isCounter ? 'Balcão' : undefined,
               customers: ordered.map((c) => c.customerName),
               waiter: request.user!.name,
               createdAt: input.createdAtDevice,

@@ -64,25 +64,47 @@ export function computeTotals(input: TotalsInput): ComandaTotals {
   };
 }
 
+export const COUVERT_MODES = ['UMA_VEZ', 'POR_SHOW'] as const;
+export type CouvertMode = (typeof COUVERT_MODES)[number];
+
+/** Janela de couvert do dia: um show (início e fim; fim null = ainda ativo). */
+export interface CouvertWindowRule {
+  amountCents: number;
+  startAt: string | Date;
+  endAt: string | Date | null;
+}
+
 /**
- * Couvert de uma comanda pelas regras do dia (SPEC, decisão do dono):
- * - comanda aberta a partir do horário do couvert: cobra;
- * - aberta antes, mas ainda na mesa depois de início + 15 min de tolerância: cobra;
- * - fechada antes disso: não cobra.
+ * Couvert de uma comanda pelas janelas do dia (decisão do dono):
+ * - comanda aberta enquanto o couvert está ativo: cobra;
+ * - aberta antes do início, mas ainda na mesa depois de início + 15 min de tolerância: cobra;
+ * - aberta depois de encerrado, ou fechada antes da tolerância: não cobra.
+ * Vários shows no dia: UMA_VEZ cobra só o primeiro que se aplica; POR_SHOW cobra cada um.
  * Valor = couvert por pessoa × pessoas da comanda.
  */
 export function couvertFor(
-  rules: { couvertCents: number; couvertStartAt: string | Date | null } | null,
+  couvert: { windows: CouvertWindowRule[]; mode: CouvertMode } | null,
   comanda: { openedAt: Date | string; closedAt: Date | string | null; peopleCount: number },
   now: Date = new Date(),
   toleranceMinutes = 15,
 ): Cents {
-  if (!rules || rules.couvertCents <= 0 || !rules.couvertStartAt) return 0;
-  const start = new Date(rules.couvertStartAt).getTime();
+  if (!couvert || couvert.windows.length === 0) return 0;
   const opened = new Date(comanda.openedAt).getTime();
   const lastMoment = comanda.closedAt ? new Date(comanda.closedAt).getTime() : now.getTime();
-  const applies = opened >= start || lastMoment >= start + toleranceMinutes * 60 * 1000;
-  return applies ? rules.couvertCents * comanda.peopleCount : 0;
+  const tolerance = toleranceMinutes * 60 * 1000;
+  const applicable = [...couvert.windows]
+    .filter((w) => w.amountCents > 0)
+    .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+    .filter((w) => {
+      const start = new Date(w.startAt).getTime();
+      const end = w.endAt ? new Date(w.endAt).getTime() : Infinity;
+      if (opened >= start) return opened < end; // chegou durante o show
+      // Já estava: paga se continuou na mesa até início + tolerância (e o show durou isso).
+      return lastMoment >= start + tolerance && end >= start + tolerance;
+    });
+  if (!applicable.length) return 0;
+  const perPerson = couvert.mode === 'POR_SHOW' ? applicable.reduce((s, w) => s + w.amountCents, 0) : applicable[0]!.amountCents;
+  return perPerson * comanda.peopleCount;
 }
 
 /** Soma totais de várias comandas (fechamento da mesa inteira). */

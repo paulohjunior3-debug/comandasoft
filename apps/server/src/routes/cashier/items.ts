@@ -1,5 +1,5 @@
-import { cancelItemSchema, splitCents } from '@sistema-bar/shared';
-import { and, desc, eq } from 'drizzle-orm';
+import { cancelItemSchema, moveItemSchema, splitCents } from '@sistema-bar/shared';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { comandas, diningTables, orderItems, orderItemShares, orders, paymentItems, payments, printerCategories, printers, printJobs } from '../../db/schema';
@@ -16,12 +16,93 @@ import { idParams } from '../admin/params';
  * com um cupom de cancelamento e fica na auditoria.
  */
 export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+  /**
+   * Item lançado na comanda errada vai para a certa (mesma mesa ou outra), inteiro ou parte da
+   * quantidade. Item rateado: move a parte desta comanda. Item já pago, nem em parte, não se move.
+   */
+  app.post('/order-items/:id/move', async (request) => {
+    const { id } = idParams.parse(request.params);
+    const input = moveItemSchema.parse(request.body);
+    if (input.fromComandaId === input.toComandaId) throw new HttpError(400, 'VALIDATION', 'Escolha outra comanda de destino.');
+
+    const [item] = await db.select().from(orderItems).where(eq(orderItems.id, id));
+    if (!item) throw notFound('Item');
+    if (item.status !== 'ATIVO') throw new HttpError(409, 'ALREADY_CANCELED', 'Item cancelado não pode ser movido.');
+
+    const shares = await db.select().from(orderItemShares).where(eq(orderItemShares.orderItemId, id));
+    const mine = shares.find((s) => s.comandaId === input.fromComandaId);
+    if (!mine) throw new HttpError(400, 'VALIDATION', 'Este item não está nessa comanda.');
+
+    const involved = await db
+      .select({ c: comandas, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
+      .from(comandas)
+      .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+      .where(inArray(comandas.id, [input.fromComandaId, input.toComandaId]));
+    const from = involved.find((r) => r.c.id === input.fromComandaId);
+    const to = involved.find((r) => r.c.id === input.toComandaId);
+    if (!from || !to) throw notFound('Comanda');
+    for (const r of [from, to]) {
+      if (!(OPEN_STATUSES as readonly string[]).includes(r.c.status)) {
+        throw new HttpError(409, 'COMANDA_NOT_OPEN', `A comanda de ${r.c.customerName} já foi encerrada.`);
+      }
+    }
+    const [paid] = await db
+      .select({ id: paymentItems.paymentId })
+      .from(paymentItems)
+      .innerJoin(payments, eq(payments.id, paymentItems.paymentId))
+      .where(and(eq(paymentItems.orderItemId, id), eq(payments.status, 'OK')))
+      .limit(1);
+    if (paid) throw new HttpError(409, 'ITEM_PAID', 'Este item já foi pago (no todo ou em parte). Estorne o pagamento antes de mover.');
+
+    const shared = shares.length > 1;
+    const qty = shared ? item.qty : (input.qty ?? item.qty);
+    if (qty > item.qty) throw new HttpError(400, 'VALIDATION', `O item tem só ${item.qty} unidade(s).`);
+    const where = (r: typeof from) => `${r.c.customerName} (${r.isCounter ? 'balcão' : `mesa ${r.tableNumber}`})`;
+
+    await db.transaction(async (tx) => {
+      if (shared || qty === item.qty) {
+        // A parte desta comanda passa para a outra (somando, se a outra já dividia o mesmo item).
+        const theirs = shares.find((s) => s.comandaId === input.toComandaId);
+        if (theirs) {
+          await tx
+            .update(orderItemShares)
+            .set({ amountCents: theirs.amountCents + mine.amountCents })
+            .where(and(eq(orderItemShares.orderItemId, id), eq(orderItemShares.comandaId, input.toComandaId)));
+          await tx.delete(orderItemShares).where(and(eq(orderItemShares.orderItemId, id), eq(orderItemShares.comandaId, input.fromComandaId)));
+        } else {
+          await tx
+            .update(orderItemShares)
+            .set({ comandaId: input.toComandaId })
+            .where(and(eq(orderItemShares.orderItemId, id), eq(orderItemShares.comandaId, input.fromComandaId)));
+        }
+      } else {
+        // Parte da quantidade: o item fica com o resto e a parte movida vira uma linha na outra comanda.
+        await tx.update(orderItems).set({ qty: item.qty - qty }).where(eq(orderItems.id, id));
+        await tx
+          .update(orderItemShares)
+          .set({ amountCents: item.unitPriceCents * (item.qty - qty) })
+          .where(and(eq(orderItemShares.orderItemId, id), eq(orderItemShares.comandaId, input.fromComandaId)));
+        const { id: _id, createdAt: _c, updatedAt: _u, ...copy } = item;
+        const [split] = await tx.insert(orderItems).values({ ...copy, qty }).returning({ id: orderItems.id });
+        await tx.insert(orderItemShares).values({ orderItemId: split!.id, comandaId: input.toComandaId, amountCents: item.unitPriceCents * qty });
+      }
+      await audit(tx, request, {
+        action: 'ITEM_TRANSFERIDO',
+        entity: 'order_item',
+        entityId: id,
+        before: { product: item.productNameSnapshot, comanda: where(from) },
+        after: { qty: shared ? 'parte rateada' : qty, comanda: where(to) },
+      });
+    });
+    return { moved: qty, to: where(to) };
+  });
+
   app.post('/order-items/:id/cancel', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = cancelItemSchema.parse(request.body);
 
     const [row] = await db
-      .select({ item: orderItems, tableId: orders.tableId, tableNumber: diningTables.number })
+      .select({ item: orderItems, tableId: orders.tableId, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
       .from(orderItems)
       .innerJoin(orders, eq(orders.id, orderItems.orderId))
       .innerJoin(diningTables, eq(diningTables.id, orders.tableId))
@@ -94,6 +175,7 @@ export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker 
           kind: 'CANCELAMENTO',
           sector,
           tableNumber: row.tableNumber,
+          tableLabel: row.isCounter ? 'Balcão' : undefined,
           customers: shares.map((s) => s.name),
           operator: request.user!.name,
           authorizedBy: authorizer.name,

@@ -6,9 +6,12 @@ import { waiterComandaRoutes } from './comandas';
 import { waiterOrderRoutes } from './orders';
 import { waiterTableRoutes } from './tables';
 
-/** App do garçom (SPEC 5.3). Gerente e admin também podem lançar. */
+/**
+ * App do garçom (SPEC 5.3). Gerente e admin também podem lançar, e o caixa também (abre mesa,
+ * lança itens e faz venda no balcão pelo painel do caixa). O pedido fica em nome de quem lançou.
+ */
 export async function waiterRoutes(app: FastifyInstance, deps: AppDeps) {
-  app.addHook('preHandler', deps.guards.requireRole('GARCOM', 'GERENTE'));
+  app.addHook('preHandler', deps.guards.requireRole('GARCOM', 'GERENTE', 'CAIXA'));
 
   /** Cardápio ativo agrupado por categoria, para lançar pedidos (e para o cache offline). */
   app.get('/menu', async (): Promise<MenuCategory[]> => loadMenu(deps.db));

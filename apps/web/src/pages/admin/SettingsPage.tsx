@@ -54,8 +54,17 @@ export function SettingsPage() {
               setSaved(false);
               setCouvert(e.target.value);
             }}
-            hint="Valor sugerido na abertura do caixa. Se vai ter couvert e a partir de que horas é decidido em cada abertura."
+            hint="Valor sugerido ao iniciar o couvert. O gerente inicia e encerra o couvert no caixa (botão Couvert), a cada show."
           />
+          <SelectField
+            label="Mais de um show no mesmo dia"
+            value={form.couvertMode}
+            onChange={(e) => set('couvertMode', e.target.value as Settings['couvertMode'])}
+            hint="Para quem fica na mesa durante dois ou mais shows."
+          >
+            <option value="UMA_VEZ">Cobrar o couvert uma vez só por pessoa</option>
+            <option value="POR_SHOW">Cobrar o couvert a cada show</option>
+          </SelectField>
         </Section>
 
         <Section title="Semana do bar (períodos)">

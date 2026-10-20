@@ -24,11 +24,11 @@ import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../../app';
-import { cashMovements, cashRegisters, cashSessions, comandas, diningTables, payments, users } from '../../db/schema';
+import { cashMovements, cashRegisters, cashSessions, comandas, couvertWindows, diningTables, payments, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import type { Queryable } from '../../lib/billing';
 import { companyOf, enqueueCashierPrint } from '../../lib/cashier-print';
-import { getDayRules } from '../../lib/day-rules';
+import { couvertWindowsOf, getDayRules } from '../../lib/day-rules';
 import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
 
@@ -200,6 +200,18 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
           period: period ?? null,
         })
         .returning();
+      // "Couvert a partir de" na abertura vira a primeira janela do dia (se não houver uma ativa).
+      if (dayRules?.couvertCents && dayRules.couvertStartAt) {
+        const active = (await couvertWindowsOf(tx, businessDate)).some((w) => !w.endAt);
+        if (!active) {
+          await tx.insert(couvertWindows).values({
+            businessDate,
+            amountCents: dayRules.couvertCents,
+            startAt: dayRules.couvertStartAt,
+            startedBy: request.user!.id,
+          });
+        }
+      }
       await audit(tx, request, {
         action: 'CAIXA_ABERTO',
         entity: 'cash_session',
