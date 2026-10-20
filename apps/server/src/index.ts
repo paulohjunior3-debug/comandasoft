@@ -38,7 +38,7 @@ const app = await buildApp({
 
 // QR do cliente em HTTP, numa porta só dele (SPEC 5.6).
 const publicApp = config.PUBLIC_PORT
-  ? await buildPublicApp({ db: conn.db, jwtSecret: config.JWT_SECRET, fastify: { loggerInstance: app.log } })
+  ? await buildPublicApp({ db: conn.db, jwtSecret: config.JWT_SECRET, mainPort: config.PORT, fastify: { loggerInstance: app.log } })
   : null;
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

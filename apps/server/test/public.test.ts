@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { maskName, type PublicComandaOption, type PublicComandaView, type PublicTableInfo } from '@sistema-bar/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -136,6 +139,27 @@ describe('QR da mesa (servidor do cliente)', () => {
       const res = await pub.inject({ method: url.endsWith('login') ? 'POST' : 'GET', url, payload: url.endsWith('login') ? {} : undefined });
       expect(res.statusCode, url).toBe(404);
     }
+  });
+
+  it('página /certificado para instalar o app nos celulares da equipe (só o certificado público)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-cert-'));
+    const ca = join(dir, 'rootCA.crt');
+    writeFileSync(ca, '-----BEGIN CERTIFICATE-----\nTESTE\n-----END CERTIFICATE-----\n');
+    const app = await buildPublicApp({ db: ctx.db, jwtSecret: 'x'.repeat(32), webDist: false, caCertPath: ca, mainPort: 8443 });
+    const page = await app.inject({ method: 'GET', url: '/certificado', headers: { host: '192.168.0.10:8080' } });
+    expect(page.statusCode).toBe(200);
+    expect(page.headers['content-type']).toContain('text/html');
+    expect(page.body).toContain('https://192.168.0.10:8443');
+    expect(page.body).toContain('Instalar app');
+    const file = await app.inject({ method: 'GET', url: '/certificado/sistema-bar.crt' });
+    expect(file.headers['content-type']).toBe('application/x-x509-ca-cert');
+    expect(file.body).toContain('BEGIN CERTIFICATE');
+    await app.close();
+
+    const missing = await buildPublicApp({ db: ctx.db, jwtSecret: 'x'.repeat(32), webDist: false, caCertPath: join(dir, 'nao-existe.crt') });
+    expect((await missing.inject({ method: 'GET', url: '/certificado/sistema-bar.crt' })).statusCode).toBe(404);
+    expect((await missing.inject({ method: 'GET', url: '/certificado' })).body).toContain('não foi encontrado');
+    await missing.close();
   });
 
   it('o admin recebe a porta e os endereços sugeridos para imprimir o QR', async () => {

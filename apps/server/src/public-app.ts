@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyServerOptions } from 'fastify';
 import { createTokenService } from './auth/tokens';
 import type { Db } from './db/client';
+import { certificatePageRoutes } from './lib/certificate-page';
 import { installErrorHandler } from './lib/error-handler';
 import { productImageRoutes } from './lib/product-images';
 import { paths } from './paths';
@@ -16,6 +17,10 @@ export interface BuildPublicAppOptions {
   fastify?: FastifyServerOptions;
   /** Pasta do build web (usa cliente.html e assets/). `false` desliga. */
   webDist?: string | false;
+  /** Certificado de confiança (público) para os celulares da equipe: /certificado. */
+  caCertPath?: string;
+  /** Porta HTTPS do sistema, para o link "Abrir o sistema" da página do certificado. */
+  mainPort?: number | null;
 }
 
 /**
@@ -23,7 +28,14 @@ export interface BuildPublicAppOptions {
  * abrir sem aviso de certificado, e expondo SÓ o cardápio e a consulta da comanda. Login,
  * caixa e administração não existem nesta porta.
  */
-export async function buildPublicApp({ db, jwtSecret, fastify, webDist = paths.webDist }: BuildPublicAppOptions) {
+export async function buildPublicApp({
+  db,
+  jwtSecret,
+  fastify,
+  webDist = paths.webDist,
+  caCertPath = paths.fromHome('certs/rootCA.crt'),
+  mainPort = null,
+}: BuildPublicAppOptions) {
   // Sem proxy na frente: o IP é o do aparelho (X-Forwarded-For não é aceito, para o limite por IP valer).
   const app = Fastify({ trustProxy: false, ...fastify });
   installErrorHandler(app);
@@ -34,6 +46,7 @@ export async function buildPublicApp({ db, jwtSecret, fastify, webDist = paths.w
   await app.register(rateLimit, { global: false });
   await app.register((pub) => publicRoutes(pub, { db, tokens: createTokenService(jwtSecret) }), { prefix: '/api/public' });
   await app.register((r) => productImageRoutes(r, db));
+  await app.register((r) => certificatePageRoutes(r, { caCertPath, mainPort }));
 
   const servesWeb = webDist !== false && existsSync(join(webDist, 'cliente.html'));
   if (servesWeb) {

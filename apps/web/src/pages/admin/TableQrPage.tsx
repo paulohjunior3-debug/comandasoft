@@ -123,6 +123,15 @@ export function TableQrPage() {
               </a>
             )}
           </div>
+          {base && (
+            <p className="text-sm text-slate-400">
+              Celulares da equipe (instalar o app):{' '}
+              <a href={`${base}/certificado`} target="_blank" rel="noreferrer" className="text-amber-400">
+                {base}/certificado ↗
+              </a>{' '}
+              — abra no celular do garçom e siga os passos.
+            </p>
+          )}
           <ErrorBanner message={errorMessage(save.error)} />
           {dirty && <p className="text-xs text-amber-300">Salve antes de imprimir, para o endereço ficar guardado.</p>}
         </div>
