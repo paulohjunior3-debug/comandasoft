@@ -119,6 +119,16 @@ function Aguardar-Servidor([int]$porta, [int]$segundos = 90) {
   return $false
 }
 
+# Gatilhos da tarefa do servidor: ao ligar o PC e uma verificação a cada 5 minutos (se o
+# servidor já está rodando, é ignorada). Com bateria baixa o Windows pode segurar a tarefa
+# "na fila"; a verificação religa sozinha depois.
+function Gatilhos-Servidor {
+  $aoLigar = New-ScheduledTaskTrigger -AtStartup
+  $aCada5 = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 5)
+  $aCada5.Repetition.Duration = ''
+  return @($aoLigar, $aCada5)
+}
+
 function Parar-Servidor([string]$destino) {
   if (Get-ScheduledTask -TaskName $TarefaServidor -ErrorAction SilentlyContinue) {
     Stop-ScheduledTask -TaskName $TarefaServidor -ErrorAction SilentlyContinue

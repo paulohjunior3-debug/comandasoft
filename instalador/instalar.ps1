@@ -171,7 +171,7 @@ $acaoServidor = New-ScheduledTaskAction -Execute $ps -WorkingDirectory $Destino 
   -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$Destino\servico.ps1`""
 $configServidor = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
   -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit (New-TimeSpan -Seconds 0) -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName $TarefaServidor -Action $acaoServidor -Trigger (New-ScheduledTaskTrigger -AtStartup) `
+Register-ScheduledTask -TaskName $TarefaServidor -Action $acaoServidor -Trigger (Gatilhos-Servidor) `
   -Principal $sistema -Settings $configServidor -Description 'Servidor do Sistema Bar (inicia com o Windows).' -Force | Out-Null
 
 $acaoBackup = New-ScheduledTaskAction -Execute $node -WorkingDirectory $Destino -Argument "`"$Destino\app\cli.mjs`" backup --manter 30"

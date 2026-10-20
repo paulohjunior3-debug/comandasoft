@@ -57,6 +57,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Passo 'Iniciando o servidor'
+# Instalações antigas só tinham o gatilho "ao ligar o PC": acrescenta a verificação de 5 minutos.
+Set-ScheduledTask -TaskName $TarefaServidor -Trigger (Gatilhos-Servidor) | Out-Null
 Start-ScheduledTask -TaskName $TarefaServidor
 if (-not (Aguardar-Servidor $porta)) { Falhar "O servidor não respondeu. Veja $Destino\data\logs\servidor.log" }
 Ok "Sistema Bar $nova no ar"
