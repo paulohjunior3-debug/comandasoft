@@ -12,3 +12,4 @@ export * from './time';
 export * from './text';
 export * from './reports';
 export * from './public';
+export * from './audit';

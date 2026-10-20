@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { QR_TOKEN_TTL_SECONDS, type TokenService } from '../auth/tokens';
 import type { Db } from '../db/client';
 import { comandas, diningTables, orderItems, orderItemShares, orders, qrUnlockAttempts } from '../db/schema';
+import { audit } from '../lib/audit';
 import { loadBill } from '../lib/billing';
 import { HttpError } from '../lib/errors';
 import { loadMenu } from '../lib/menu';
@@ -97,6 +98,12 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
       ];
       if (wrong >= QR_MAX_WRONG_PINS) {
         await db.update(comandas).set({ qrLockedAt: new Date() }).where(eq(comandas.id, c.id));
+        await audit(db, request, {
+          action: 'QR_BLOQUEADO',
+          entity: 'comanda',
+          entityId: c.id,
+          after: { tableNumber: table.number, customerName: c.customerName, wrongPins: wrong },
+        });
         throw locked();
       }
       const left = QR_MAX_WRONG_PINS - wrong;

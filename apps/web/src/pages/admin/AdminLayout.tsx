@@ -11,6 +11,7 @@ export const ADMIN_SECTIONS = [
   { to: '/admin/usuarios', label: 'Usuários' },
   { to: '/admin/caixas', label: 'Caixas' },
   { to: '/admin/configuracoes', label: 'Configurações' },
+  { to: '/admin/auditoria', label: 'Auditoria' },
 ] as const;
 
 export function AdminLayout() {

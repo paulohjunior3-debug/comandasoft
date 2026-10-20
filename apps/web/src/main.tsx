@@ -8,6 +8,7 @@ import { ApiRequestError } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { outbox } from './lib/offline/outbox';
 import { AdminLayout } from './pages/admin/AdminLayout';
+import { AuditPage } from './pages/admin/AuditPage';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { PrintersPage } from './pages/admin/PrintersPage';
 import { PrintQueuePage } from './pages/admin/PrintQueuePage';
@@ -164,6 +165,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="usuarios" element={<UsersPage />} />
               <Route path="caixas" element={<RegistersPage />} />
               <Route path="relatorios" element={<ReportsPage />} />
+              <Route path="auditoria" element={<AuditPage />} />
               <Route path="configuracoes" element={<SettingsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
