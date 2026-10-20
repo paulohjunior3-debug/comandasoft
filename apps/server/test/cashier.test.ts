@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { localDate, type SalesReport } from '@sistema-bar/shared';
+import { suggestedBusinessDate, type SalesReport } from '@sistema-bar/shared';
 import { cashSessions, comandas, fiscalRequests, payments, printJobs } from '../src/db/schema';
 import { createTestContext, type TestContext } from './helpers';
 
@@ -383,7 +383,8 @@ describe('sangria, suprimento e fechamento por caixa', () => {
 });
 
 describe('relatório de vendas e entradas', () => {
-  const today = localDate(new Date());
+  // Dia do movimento do caixa aberto no teste (de madrugada é o de ontem).
+  const today = suggestedBusinessDate();
   const report = async (qs: string, as: Inject = admin) => as({ method: 'GET', url: `/api/admin/reports/sales?${qs}` });
 
   it('soma as entradas por forma (cartão = crédito + débito), por caixa e por dia, sem os estornos', async () => {
