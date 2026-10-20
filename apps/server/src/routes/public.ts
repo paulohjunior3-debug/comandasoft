@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
   maskName,
+  qrPinOf,
   PUBLIC_ERRORS,
   QR_MAX_WRONG_PINS,
   QR_WRONG_PIN_WINDOW_MINUTES,
@@ -36,7 +37,7 @@ const comandaGone = () =>
 
 /**
  * QR da mesa (SPEC 5.6), sem login: cardápio, lista das comandas da mesa com nome mascarado e,
- * com o PIN (3 últimos dígitos do CPF), a própria comanda — somente leitura. PIN errado demais
+ * com o PIN (4 últimos números do telefone), a própria comanda — somente leitura. PIN errado demais
  * bloqueia a consulta daquela comanda até o garçom liberar.
  */
 export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicDeps) {
@@ -70,11 +71,16 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
   app.get('/m/:qrToken/comandas', async (request): Promise<PublicComandaOption[]> => {
     const table = await tableOf(tableParams.parse(request.params).qrToken);
     const rows = await db
-      .select({ id: comandas.id, name: comandas.customerName, lockedAt: comandas.qrLockedAt })
+      .select({ id: comandas.id, name: comandas.customerName, lockedAt: comandas.qrLockedAt, phone: comandas.phone, cpfLast3: comandas.cpfLast3 })
       .from(comandas)
       .where(and(eq(comandas.tableId, table.id), inArray(comandas.status, ['ABERTA', 'EM_FECHAMENTO'])))
       .orderBy(asc(comandas.openedAt), asc(comandas.number));
-    return rows.map((r) => ({ id: r.id, maskedName: maskName(r.name), locked: r.lockedAt !== null }));
+    return rows.map((r) => ({
+      id: r.id,
+      maskedName: maskName(r.name),
+      locked: r.lockedAt !== null,
+      pinDigits: (qrPinOf(r)?.length === 3 ? 3 : 4) as 3 | 4,
+    }));
   });
 
   app.post(
@@ -88,9 +94,9 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
       const c = await openComandaOf(table.id, comandaId);
       if (c.qrLockedAt) throw locked();
 
-      // Sem CPF (só venda no balcão, que nem aparece no QR) não há PIN: nunca libera.
-      const expected = (c.cpfLast3 ?? 'xxx').padStart(3, '0').slice(-3);
-      const ok = Boolean(c.cpfLast3) && timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
+      // PIN: 4 últimos do telefone (ou 3 do CPF nas comandas antigas). Sem nenhum dos dois, nunca libera.
+      const expected = qrPinOf(c);
+      const ok = expected !== null && pin.length === expected.length && timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
       await db.insert(qrUnlockAttempts).values({ comandaId: c.id, ok, ip: request.ip });
       if (ok) return { token: await tokens.signQr(c.id), expiresInSeconds: QR_TOKEN_TTL_SECONDS };
 
@@ -181,7 +187,7 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
     } catch {
       sub = null;
     }
-    if (sub !== comandaId) throw new HttpError(401, 'UNAUTHENTICATED', 'Digite de novo os 3 últimos números do CPF.');
+    if (sub !== comandaId) throw new HttpError(401, 'UNAUTHENTICATED', 'Digite de novo os 4 últimos números do telefone.');
   }
 }
 

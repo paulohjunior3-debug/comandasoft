@@ -136,7 +136,7 @@ export function ClientApp({ qrToken }: { qrToken: string }) {
       <footer className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-xs text-slate-500">
         Consulta somente leitura. Pedidos e pagamentos são feitos com o garçom.
         <br />
-        Seu CPF é usado só para identificar sua comanda e para a nota fiscal.
+        Seu telefone é usado só para identificar sua comanda.
       </footer>
     </div>
   );
@@ -173,6 +173,8 @@ function MyComanda({ qrToken }: { qrToken: string }) {
 function ChooseComanda({ qrToken, notice, onUnlocked }: { qrToken: string; notice: string | null; onUnlocked: (u: Unlocked) => void }) {
   const [list, setList] = useState<Result<PublicComandaOption[]> | null>(null);
   const [chosen, setChosen] = useState<PublicComandaOption | null>(null);
+  // PIN: 4 últimos do telefone (comandas antigas, sem telefone: 3 últimos do CPF).
+  const digits = chosen?.pinDigits ?? 4;
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -186,7 +188,7 @@ function ChooseComanda({ qrToken, notice, onUnlocked }: { qrToken: string; notic
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!chosen) return;
-    if (!/^\d{3}$/.test(pin)) return setError('Digite os 3 últimos números do CPF.');
+    if (pin.length !== digits) return setError(digits === 4 ? 'Digite os 4 últimos números do seu telefone.' : 'Digite os 3 últimos números do CPF.');
     setSending(true);
     const r = await call<QrUnlockResult>(`/m/${encodeURIComponent(qrToken)}/comandas/${chosen.id}/unlock`, {
       method: 'POST',
@@ -214,22 +216,22 @@ function ChooseComanda({ qrToken, notice, onUnlocked }: { qrToken: string; notic
         ) : (
           <>
             <label className="block">
-              <span className="mb-1 block text-sm text-slate-300">3 últimos números do seu CPF</span>
+              <span className="mb-1 block text-sm text-slate-300">{digits === 4 ? '4 últimos números do seu telefone' : '3 últimos números do seu CPF'}</span>
               <input
                 inputMode="numeric"
                 autoComplete="off"
                 autoFocus
-                maxLength={3}
-                placeholder="•••"
+                maxLength={digits}
+                placeholder={'•'.repeat(digits)}
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, digits))}
                 className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-3 text-center text-3xl tracking-[0.5em] outline-none focus:border-amber-500"
               />
             </label>
             {error && <Alert>{error}</Alert>}
             <button
               type="submit"
-              disabled={sending || pin.length !== 3}
+              disabled={sending || pin.length !== digits}
               className="w-full rounded-lg bg-amber-500 py-3 text-base font-semibold text-slate-950 disabled:opacity-50"
             >
               {sending ? 'Conferindo…' : 'Ver minha comanda'}
@@ -272,7 +274,7 @@ function ChooseComanda({ qrToken, notice, onUnlocked }: { qrToken: string; notic
           ))}
         </ul>
       )}
-      <p className="text-xs text-slate-500">Os nomes aparecem incompletos para proteger os clientes. Para ver os valores, confirme com o seu CPF.</p>
+      <p className="text-xs text-slate-500">Os nomes aparecem incompletos para proteger os clientes. Para ver os valores, confirme com o final do seu telefone.</p>
     </div>
   );
 }

@@ -19,7 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
-import { maskCpf } from '../../lib/format';
+import { maskCpf, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import type { usePin } from './usePin';
 
@@ -224,6 +224,7 @@ export function OpenTableModal({
   const [number, setNumber] = useState(initialNumber ? String(initialNumber) : '');
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
+  const [phone, setPhone] = useState('');
   const [people, setPeople] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -233,13 +234,15 @@ export function OpenTableModal({
   const go = async () => {
     if (!table) return setError(number ? `Mesa ${number} não existe ou está desativada.` : 'Informe o número da mesa.');
     if (!name.trim()) return setError('Informe o nome do cliente.');
-    if (!isValidCpf(onlyDigits(cpf))) return setError('CPF inválido.');
+    const digits = onlyDigits(phone);
+    if (digits.length < 10 || digits.length > 11) return setError('Informe o telefone com DDD (ex.: (34) 99999-9999).');
+    if (cpf && !isValidCpf(onlyDigits(cpf))) return setError('CPF inválido (ou deixe em branco).');
     setBusy(true);
     setError(null);
     try {
       const c = await api<{ id: string }>('/waiter/comandas', {
         method: 'POST',
-        body: JSON.stringify({ clientUuid, tableId: table.id, customerName: name.trim(), cpf, peopleCount: people }),
+        body: JSON.stringify({ clientUuid, tableId: table.id, customerName: name.trim(), phone, cpf: cpf || undefined, peopleCount: people }),
       });
       onDone(table.id, c.id);
     } catch (err) {
@@ -272,7 +275,17 @@ export function OpenTableModal({
           {table.openNames.length ? `Já na mesa ${table.number}: ${table.openNames.join(', ')}` : `Mesa ${table.number} livre${table.area ? ` · ${table.area}` : ''}`}
         </p>
       )}
-      <TextField label="CPF" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(maskCpf(e.target.value))} />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          label="Telefone (com DDD)"
+          inputMode="tel"
+          placeholder="(34) 99999-9999"
+          value={phone}
+          onChange={(e) => setPhone(maskPhone(e.target.value))}
+          hint="Obrigatório: os 4 últimos são o PIN do QR."
+        />
+        <TextField label="CPF (opcional)" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(maskCpf(e.target.value))} />
+      </div>
       <div>
         <span className="mb-1 block text-sm text-slate-300">Pessoas nesta comanda</span>
         <div className="flex items-center gap-3">

@@ -18,14 +18,16 @@ export const openComandaSchema = z.object({
   clientUuid,
   tableId: z.string().uuid('Escolha a mesa'),
   customerName: z.string().trim().min(2, 'Informe o nome do cliente').max(40, 'Nome muito longo'),
+  /** Obrigatório: os 4 últimos números são o PIN do cliente no QR da mesa. */
+  phone: z
+    .string({ error: 'Informe o telefone com DDD' })
+    .transform(onlyDigits)
+    .refine((v) => v.length >= 10 && v.length <= 11, 'Informe o telefone com DDD (ex.: (34) 99999-9999)'),
+  /** Opcional: CPF na nota fiscal e busca no caixa. Um CPF, uma comanda aberta. */
   cpf: z
     .string()
     .transform(onlyDigits)
-    .refine(isValidCpf, 'CPF inválido'),
-  phone: z
-    .string()
-    .transform(onlyDigits)
-    .refine((v) => v === '' || (v.length >= 10 && v.length <= 11), 'Telefone inválido')
+    .refine((v) => v === '' || isValidCpf(v), 'CPF inválido')
     .transform((v) => v || null)
     .nullish()
     .transform((v) => v ?? null),

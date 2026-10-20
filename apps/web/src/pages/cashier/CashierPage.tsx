@@ -217,7 +217,8 @@ function Workspace({ registerId }: { registerId: string }) {
     onSuccess: (r) => open(r.table.id, r.matchedComandaId ? [r.matchedComandaId] : null),
   });
   const byName = useMutation({
-    mutationFn: (name: string) => api<NameSearchHit[]>('/cashier/search', { method: 'POST', body: JSON.stringify({ name }) }),
+    mutationFn: (body: { name: string } | { phone: string }) =>
+      api<NameSearchHit[]>('/cashier/search', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: (list) => {
       // Um só resultado: abre direto na comanda; vários: mostra a lista para escolher.
       if (list.length === 1) open(list[0]!.tableId, [list[0]!.comandaId]);
@@ -232,9 +233,10 @@ function Workspace({ registerId }: { registerId: string }) {
     setHits(null);
     const text = query.trim();
     const digits = onlyDigits(text);
-    // Tem letra: é nome. Só números: mesa (até 4 dígitos) ou CPF (11).
-    if (/\p{L}/u.test(text)) byName.mutate(text);
+    // Tem letra: nome. Só números: mesa (até 4), CPF (11 e válido) ou telefone (8 a 11, com ou sem DDD).
+    if (/\p{L}/u.test(text)) byName.mutate({ name: text });
     else if (digits.length === 11 && isValidCpf(digits)) lookup.mutate({ cpf: digits });
+    else if (digits.length >= 8 && digits.length <= 11) byName.mutate({ phone: digits });
     else if (digits.length > 0 && digits.length <= 4) lookup.mutate({ tableNumber: Number(digits) });
   };
 
@@ -275,30 +277,21 @@ function Workspace({ registerId }: { registerId: string }) {
           />
         )}
         <form onSubmit={search} className="space-y-2">
-          <label htmlFor="busca" className="block text-sm text-slate-300">Mesa, nome ou CPF do cliente</label>
+          <label htmlFor="busca" className="block text-sm text-slate-300">Mesa, nome, telefone ou CPF</label>
           <div className="flex gap-2">
             <input
               id="busca"
               autoFocus
               autoComplete="off"
-              placeholder="Ex.: 10, Ana ou 529.982.247-25"
+              placeholder="Ex.: 10, Ana ou (34) 99999-9999"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-base outline-none focus:border-amber-500"
             />
             <Button variant="primary" type="submit" disabled={lookup.isPending || byName.isPending}>Buscar</Button>
           </div>
-          <ErrorBanner
-            message={
-              lookup.isError
-                ? errorMessage(lookup.error)
-                : byName.isError
-                  ? errorMessage(byName.error)
-                  : !/\p{L}/u.test(query) && onlyDigits(query).length === 11 && !isValidCpf(query)
-                    ? 'CPF inválido.'
-                    : null
-            }
-          />
+          {/* 11 números que não são CPF válido viram busca por telefone (não há mais "CPF inválido" aqui). */}
+          <ErrorBanner message={lookup.isError ? errorMessage(lookup.error) : byName.isError ? errorMessage(byName.error) : null} />
         </form>
 
         {hits && (
@@ -375,7 +368,7 @@ function Workspace({ registerId }: { registerId: string }) {
           />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-700 text-slate-500">
-            Busque pela mesa, pelo nome ou pelo CPF, ou escolha uma mesa ao lado.
+            Busque pela mesa, pelo nome, pelo telefone ou pelo CPF, ou escolha uma mesa ao lado.
           </div>
         )}
       </section>

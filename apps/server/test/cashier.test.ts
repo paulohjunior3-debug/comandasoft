@@ -40,7 +40,7 @@ const openComanda = async (tableId: string, customerName: string, cpf: string, p
     await garcom({
       method: 'POST',
       url: '/api/waiter/comandas',
-      payload: { clientUuid: randomUUID(), tableId, customerName, cpf, peopleCount },
+      payload: { clientUuid: randomUUID(), tableId, customerName, cpf, phone: '(34) 99999-0000', peopleCount },
     })
   ).json().id as string;
 

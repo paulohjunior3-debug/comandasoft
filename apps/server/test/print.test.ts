@@ -40,7 +40,7 @@ beforeAll(async () => {
     await garcom({
       method: 'POST',
       url: '/api/waiter/comandas',
-      payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName: 'Paulo', cpf: '529.982.247-25' },
+      payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName: 'Paulo', cpf: '529.982.247-25', phone: '(34) 99999-0000' },
     })
   ).json().id;
 });

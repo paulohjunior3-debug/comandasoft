@@ -208,7 +208,7 @@ export const comandas = pgTable(
     cpfHmac: text(),
     /** CPF cifrado (AES-256-GCM), só para "CPF na nota" da NFC-e. */
     cpfEncrypted: text(),
-    /** 3 últimos dígitos: PIN do QR do cliente (SPEC 5.6). */
+    /** 3 últimos dígitos do CPF (opcional). O PIN do QR é o final do telefone (ver qrPinOf). */
     cpfLast3: text(),
     phone: text(),
     /** Pessoas nesta comanda (multiplica o couvert). */

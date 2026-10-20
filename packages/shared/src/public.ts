@@ -5,16 +5,24 @@ import type { MenuCategory } from './waiter';
 
 /**
  * QR da mesa (SPEC 5.6): cardápio aberto e consulta da própria comanda, somente leitura,
- * liberada pelo PIN = 3 últimos dígitos do CPF.
+ * liberada pelo PIN = 4 últimos números do telefone.
  */
 
 /** Tentativas erradas de PIN por comanda antes de bloquear a consulta (até o garçom liberar). */
 export const QR_MAX_WRONG_PINS = 5;
 export const QR_WRONG_PIN_WINDOW_MINUTES = 10;
 
+/** PIN do QR: 4 últimos números do telefone (comandas antigas sem telefone: 3 últimos do CPF). */
 export const qrUnlockSchema = z.object({
-  pin: z.string().regex(/^\d{3}$/, 'Digite os 3 últimos números do CPF.'),
+  pin: z.string().regex(/^\d{3,4}$/, 'Digite os 4 últimos números do telefone.'),
 });
+
+/** O PIN de uma comanda: últimos 4 do telefone ou, se não houver telefone, últimos 3 do CPF. */
+export function qrPinOf(c: { phone: string | null; cpfLast3: string | null }): string | null {
+  const phone = (c.phone ?? '').replace(/\D/g, '');
+  if (phone.length >= 4) return phone.slice(-4);
+  return c.cpfLast3 ? c.cpfLast3.padStart(3, '0').slice(-3) : null;
+}
 
 export interface PublicTableInfo {
   tableNumber: number;
@@ -29,6 +37,8 @@ export interface PublicComandaOption {
   /** Nome mascarado: "Pau*** H." */
   maskedName: string;
   locked: boolean;
+  /** Quantos dígitos o PIN tem: 4 (telefone) ou 3 (CPF, comandas antigas). */
+  pinDigits: 3 | 4;
 }
 
 export interface QrUnlockResult {

@@ -49,9 +49,12 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
     const [table] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
     if (!table || !table.active) throw new HttpError(400, 'VALIDATION', 'Mesa inválida ou inativa.');
 
-    const protectedCpf = cpf.protect(input.cpf);
-    const conflict = await cpfConflict(protectedCpf.hmac);
-    if (conflict) throw conflict;
+    // CPF é opcional (nota fiscal e busca no caixa); se veio, continua valendo um CPF por comanda aberta.
+    const protectedCpf = input.cpf ? cpf.protect(input.cpf) : null;
+    if (protectedCpf) {
+      const conflict = await cpfConflict(protectedCpf.hmac);
+      if (conflict) throw conflict;
+    }
 
     const [sameName] = await db
       .select({ id: comandas.id })
@@ -73,9 +76,9 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
             clientUuid: input.clientUuid,
             tableId: table.id,
             customerName: input.customerName,
-            cpfHmac: protectedCpf.hmac,
-            cpfEncrypted: protectedCpf.encrypted,
-            cpfLast3: protectedCpf.last3,
+            cpfHmac: protectedCpf?.hmac ?? null,
+            cpfEncrypted: protectedCpf?.encrypted ?? null,
+            cpfLast3: protectedCpf?.last3 ?? null,
             phone: input.phone,
             peopleCount: input.peopleCount,
             openedBy: request.user!.id,
@@ -99,7 +102,7 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
           const [again] = await db.select({ id: comandas.id }).from(comandas).where(eq(comandas.clientUuid, input.clientUuid));
           if (again) return reply.code(200).send(await summaryOf(again.id));
         }
-        if (pg.constraint === 'comandas_open_cpf_unique') throw (await cpfConflict(protectedCpf.hmac)) ?? err;
+        if (pg.constraint === 'comandas_open_cpf_unique' && protectedCpf) throw (await cpfConflict(protectedCpf.hmac)) ?? err;
         if (pg.constraint === 'comandas_open_name_per_table_unique') throw duplicateName(input.customerName, table.number);
       }
       throw err;

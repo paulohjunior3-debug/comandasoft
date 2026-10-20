@@ -50,7 +50,7 @@ beforeAll(async () => {
 
   ids.mesa = ((await post('/api/admin/tables/bulk', { from: 1, to: 1 })).created as { id: string }[])[0]!.id;
   const open = async (customerName: string, cpf: string) =>
-    (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName, cpf } })).json().id as string;
+    (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName, cpf, phone: '(34) 99999-0000' } })).json().id as string;
   ids.joao = await open('João', '529.982.247-25');
   ids.ana = await open('Ana', '111.444.777-35');
   await order([ids.joao], ids.cerveja, 3); // 30,00

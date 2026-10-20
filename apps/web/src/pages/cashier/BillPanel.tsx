@@ -389,7 +389,8 @@ function ComandaBlock({
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
         <span className="font-semibold">{c.customerName}</span>
         <span className="text-sm text-slate-400">
-          {c.cpfLast3 ? `CPF final ${c.cpfLast3}` : 'sem CPF'} · nº {c.number}
+          {[c.phoneLast4 && `tel. final ${c.phoneLast4}`, c.cpfLast3 && `CPF final ${c.cpfLast3}`].filter(Boolean).join(' · ') || 'sem telefone/CPF'} · nº{' '}
+          {c.number}
         </span>
       </header>
       <ul className="divide-y divide-slate-800/60 text-sm">

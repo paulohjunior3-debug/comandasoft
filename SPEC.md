@@ -2,7 +2,7 @@
 
 > **v1.1 (2026-10-18):** incorporadas as decisões do dono sobre os pontos em aberto (ver seção 12):
 > comanda identificada por nome + mesa, busca no caixa por mesa ou CPF, taxa de serviço ligável pelo dono,
-> CPF obrigatório com PIN do QR = 3 últimos dígitos, impressoras pelo nome no Windows, KDS e estoque como fases futuras.
+> telefone obrigatório e CPF opcional (decisão de 20/10/2026), PIN do QR = 4 últimos números do telefone, impressoras pelo nome no Windows, KDS e estoque como fases futuras.
 
 > Documento de referência para desenvolvimento com Claude Code.
 > Coloque este arquivo na raiz do repositório como `SPEC.md` e referencie no `CLAUDE.md`.
@@ -202,9 +202,9 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
 
 - Cada mesa tem um QR com URL contendo o **token da mesa** (ex.: `/m/k3J9xQ`), nunca o número puro, para evitar que alguém espione outras mesas.
 - **Sem autenticação**: cardápio com fotos, categorias, preços, itens esgotados ocultos.
-- **Ver minha comanda**: lista as comandas da mesa com **nome mascarado** ("Pau*** H.") → cliente escolhe a sua → informa o **PIN = 3 últimos dígitos do CPF** → vê itens lançados, horários, valor atual, taxa de serviço, pagamentos parciais e restante.
+- **Ver minha comanda**: lista as comandas da mesa com **nome mascarado** ("Pau*** H.") → cliente escolhe a sua → informa o **PIN = 4 últimos números do telefone** (comandas antigas, sem telefone: 3 últimos do CPF) → vê itens lançados, horários, valor atual, taxa de serviço, pagamentos parciais e restante.
 - Segurança:
-  - O PIN tem só 1.000 combinações, então o **rate limit é obrigatório**: 5 tentativas erradas por comanda a cada 10 min, mais limite por IP; após o limite, a comanda fica bloqueada para consulta pelo QR até o garçom liberar.
+  - O PIN tem só 10.000 combinações, então o **rate limit é obrigatório**: 5 tentativas erradas por comanda a cada 10 min, mais limite por IP; após o limite, a comanda fica bloqueada para consulta pelo QR até o garçom liberar.
   - A consulta é **somente leitura** (não permite pedir nem pagar), o que mantém o risco baixo.
   - CPF nunca trafega/retorna completo; o servidor compara apenas com os 3 últimos dígitos guardados.
   - *(Se precisar endurecer no futuro)*: exigir CPF completo ou um PIN aleatório gerado na abertura.
@@ -339,7 +339,7 @@ settings           (key, value_json)
 Regras-chave:
 - **Saldo da comanda** = Σ itens ativos + ajustes − Σ pagamentos OK alocados. Calculado no servidor, nunca confiado ao cliente.
 - `orders.client_uuid` e `comandas.client_uuid` com **UNIQUE** garantem idempotência offline.
-- **CPF**: `cpf_hmac` (HMAC-SHA256 com segredo do servidor) permite a busca no caixa; `cpf_encrypted` (AES-GCM) guarda o CPF para "CPF na nota" da NFC-e; `cpf_last3` serve ao PIN do QR. O CPF em texto puro nunca é gravado.
+- **CPF**: `cpf_hmac` (HMAC-SHA256 com segredo do servidor) permite a busca no caixa; `cpf_encrypted` (AES-GCM) guarda o CPF para "CPF na nota" da NFC-e; `cpf_last3` mostra o final do CPF no caixa. O CPF é opcional; o telefone (obrigatório) dá o PIN do QR. O CPF em texto puro nunca é gravado.
 - **Índice único parcial** em `comandas(cpf_hmac)` onde `status IN ('ABERTA','EM_FECHAMENTO')`: um CPF, uma comanda aberta.
 - Taxa de serviço gravada como `adjustments` do tipo `TAXA_SERVICO` (10%) quando a configuração estiver ligada.
 - **Rateio** (implementado na fase 1): cada item tem uma linha em `order_item_shares` por comanda. Item de uma comanda só = 1 linha com o valor cheio; rateado entre N comandas = N linhas que somam exatamente o total (os centavos que sobram vão para as primeiras). O saldo de itens da comanda é a soma das suas partes em itens ativos.

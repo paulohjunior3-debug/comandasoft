@@ -103,14 +103,23 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
 
   /** Busca pelo nome do cliente: "ana" acha "Ana Paula" e "Ána"; devolve em que mesa está. */
   app.post('/search', async (request): Promise<NameSearchHit[]> => {
-    const { name } = nameSearchSchema.parse(request.body);
+    const { name, phone } = nameSearchSchema.parse(request.body);
     const rows = await db
-      .select({ comandaId: comandas.id, customerName: comandas.customerName, tableId: diningTables.id, tableNumber: diningTables.number, status: comandas.status })
+      .select({
+        comandaId: comandas.id,
+        customerName: comandas.customerName,
+        tableId: diningTables.id,
+        tableNumber: diningTables.number,
+        status: comandas.status,
+        phone: comandas.phone,
+      })
       .from(comandas)
       .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
       .where(inArray(comandas.status, [...OPEN_STATUSES]))
       .orderBy(asc(diningTables.number), asc(comandas.customerName));
-    return rows.filter((r) => matchesSearch(r.customerName, name)).slice(0, 30);
+    // Telefone: com ou sem DDD (compara o final). Nome: parte do nome, sem acento.
+    const hits = phone ? rows.filter((r) => r.phone?.endsWith(phone)) : rows.filter((r) => matchesSearch(r.customerName, name!));
+    return hits.slice(0, 30).map(({ phone: _p, ...h }) => h);
   });
 
   /**

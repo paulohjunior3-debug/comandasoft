@@ -17,7 +17,7 @@ const ids = {} as Record<Key, string>;
 const CPF = ['529.982.247-25', '111.444.777-35', '935.411.347-80', '286.255.878-87', '714.602.380-01'];
 
 const open = (tableId: string, customerName: string, cpf: string, clientUuid = randomUUID()) =>
-  garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid, tableId, customerName, cpf } });
+  garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid, tableId, customerName, cpf, phone: '(34) 99999-0000' } });
 
 const order = (payload: { comandaIds: string[]; items: { productId: string; qty: number; notes?: string; expectedUnitPriceCents?: number }[]; tableId?: string; clientUuid?: string }) =>
   garcom({
@@ -52,6 +52,23 @@ describe('abertura de comanda', () => {
     const res = await open(ids.mesa10, 'Paulo', '123.456.789-00');
     expect(res.statusCode).toBe(400);
     expect(res.json().message).toBe('CPF inválido');
+  });
+
+  it('exige telefone com DDD; CPF é opcional', async () => {
+    const semFone = await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa12, customerName: 'Zé' } });
+    expect(semFone.statusCode).toBe(400);
+    for (const phone of ['', '9999-1234']) {
+      const res = await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa12, customerName: 'Zé', phone } });
+      expect(res.json().message).toMatch(/Informe o telefone com DDD/);
+    }
+
+    const semCpf = await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa12, customerName: 'Zé', phone: '(34) 99999-1234', cpf: '' } });
+    expect(semCpf.statusCode).toBe(201);
+    const [row] = await ctx.db.select().from(comandas).where(eq(comandas.id, semCpf.json().id));
+    expect(row).toMatchObject({ phone: '34999991234', cpfHmac: null, cpfEncrypted: null, cpfLast3: null });
+    // Outra comanda sem CPF não esbarra na regra de "um CPF, uma comanda".
+    const outra = await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa12, customerName: 'Bia', phone: '(34) 98888-1234' } });
+    expect(outra.statusCode).toBe(201);
   });
 
   it('abre com nome + CPF + mesa e nunca grava o CPF em claro', async () => {

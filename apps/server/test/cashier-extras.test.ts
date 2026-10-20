@@ -22,7 +22,7 @@ const order = (as: Inject, tableId: string, comandaIds: string[], productId: str
     payload: { clientUuid: randomUUID(), tableId, comandaIds, items: [{ productId, qty }], createdAtDevice: new Date().toISOString() },
   });
 const open = async (as: Inject, table: number, customerName: string, cpf: string, peopleCount = 1) =>
-  (await as({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: mesa[table], customerName, cpf, peopleCount } })).json()
+  (await as({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: mesa[table], customerName, cpf, phone: '(34) 99999-0000', peopleCount } })).json()
     .id as string;
 const bill = async (...comandaIds: string[]): Promise<Bill> => (await caixa({ method: 'POST', url: '/api/cashier/bill', payload: { comandaIds } })).json();
 const item = (b: Bill, name: string, comandaId: string) => b.items.filter((i) => i.productName === name && i.comandaId === comandaId);

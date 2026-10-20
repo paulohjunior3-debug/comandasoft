@@ -18,9 +18,8 @@ let qr: string;
 let otherQr: string;
 const ids = {} as Record<'mesa' | 'outra' | 'paulo' | 'ana' | 'fechada' | 'cerveja' | 'esgotado', string>;
 
-// CPF do Paulo termina em 725; o da Ana em 735.
+// Telefone do Paulo termina em 1234; o da Ana em 5678. CPF do Paulo termina em 725.
 const CPF_PAULO = '529.982.247-25';
-const CPF_ANA = '111.444.777-35';
 
 const get = (url: string, token?: string) =>
   pub.inject({ method: 'GET', url, headers: token ? { authorization: `Bearer ${token}` } : {} });
@@ -49,10 +48,10 @@ beforeAll(async () => {
   ids.outra = tables[1]!.id;
   otherQr = tables[1]!.qrToken;
 
-  const open = async (customerName: string, cpf: string) =>
-    (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName, cpf } })).json().id as string;
-  ids.paulo = await open('Paulo Henrique', CPF_PAULO);
-  ids.ana = await open('Ana', CPF_ANA);
+  const open = async (customerName: string, phone: string, cpf?: string) =>
+    (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName, phone, cpf } })).json().id as string;
+  ids.paulo = await open('Paulo Henrique', '(34) 99999-1234', CPF_PAULO);
+  ids.ana = await open('Ana', '(34) 98888-5678');
   await garcom({
     method: 'POST',
     url: '/api/waiter/orders',
@@ -90,13 +89,14 @@ describe('QR da mesa (servidor do cliente)', () => {
   it('lista só as comandas abertas desta mesa, com nome mascarado e sem CPF', async () => {
     const list: PublicComandaOption[] = (await get(`/api/public/m/${qr}/comandas`)).json();
     expect(list.map((c) => c.maskedName)).toEqual(['Pau*** H.', 'Ana***']);
-    expect(JSON.stringify(list)).not.toMatch(/Henrique|725|cpf/i);
+    expect(list.map((c) => c.pinDigits)).toEqual([4, 4]);
+    expect(JSON.stringify(list)).not.toMatch(/Henrique|725|1234|5678|cpf|phone/i);
     expect((await get(`/api/public/m/${otherQr}/comandas`)).json()).toEqual([]);
   });
 
-  it('com os 3 últimos números do CPF vê a própria comanda (itens, taxa, total); sem o token, não', async () => {
+  it('com os 4 últimos números do telefone vê a própria comanda (itens, taxa, total); sem o token, não', async () => {
     expect((await get(`/api/public/m/${qr}/comandas/${ids.paulo}`)).statusCode).toBe(401);
-    const res = await unlock(ids.paulo, '725');
+    const res = await unlock(ids.paulo, '1234');
     expect(res.statusCode).toBe(200);
     const { token } = res.json();
     const view: PublicComandaView = (await get(`/api/public/m/${qr}/comandas/${ids.paulo}`, token)).json();
@@ -113,17 +113,17 @@ describe('QR da mesa (servidor do cliente)', () => {
   });
 
   it('PIN errado conta as tentativas; na 5ª a consulta bloqueia até o garçom liberar', async () => {
-    expect((await unlock(ids.ana, '12')).json().message).toBe('Digite os 3 últimos números do CPF.');
-    const first = await unlock(ids.ana, '000');
+    expect((await unlock(ids.ana, '12')).json().message).toBe('Digite os 4 últimos números do telefone.');
+    const first = await unlock(ids.ana, '0000');
     expect(first.statusCode).toBe(401);
     expect(first.json().message).toBe('Números não conferem. Restam 4 tentativas.');
-    for (const pin of ['001', '002']) await unlock(ids.ana, pin);
-    expect((await unlock(ids.ana, '003')).json().message).toMatch(/Resta 1 tentativa/);
-    const fifth = await unlock(ids.ana, '004');
+    for (const pin of ['0001', '0002']) await unlock(ids.ana, pin);
+    expect((await unlock(ids.ana, '0003')).json().message).toMatch(/Resta 1 tentativa/);
+    const fifth = await unlock(ids.ana, '0004');
     expect(fifth.statusCode).toBe(423);
     expect(fifth.json().error).toBe('QR_LOCKED');
     // Bloqueada: nem o PIN certo entra; a lista mostra o cadeado.
-    expect((await unlock(ids.ana, '735')).statusCode).toBe(423);
+    expect((await unlock(ids.ana, '5678')).statusCode).toBe(423);
     const list: PublicComandaOption[] = (await get(`/api/public/m/${qr}/comandas`)).json();
     expect(list.find((c) => c.id === ids.ana)!.locked).toBe(true);
 
@@ -131,7 +131,7 @@ describe('QR da mesa (servidor do cliente)', () => {
     expect((await garcom({ method: 'GET', url: `/api/waiter/comandas/${ids.ana}` })).json().qrLocked).toBe(true);
     expect((await garcom({ method: 'POST', url: `/api/waiter/comandas/${ids.ana}/qr-release` })).statusCode).toBe(200);
     expect((await garcom({ method: 'GET', url: `/api/waiter/comandas/${ids.ana}` })).json().qrLocked).toBe(false);
-    expect((await unlock(ids.ana, '735')).statusCode).toBe(200);
+    expect((await unlock(ids.ana, '5678')).statusCode).toBe(200);
   });
 
   it('o servidor do cliente não tem login, caixa nem administração', async () => {

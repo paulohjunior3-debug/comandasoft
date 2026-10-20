@@ -239,12 +239,20 @@ export function NewComandaModal({
         hint={duplicateName ? 'Ex.: "Paulo H." ou "Paulo Silva"' : 'É o nome que sai no papel para o cumim entregar.'}
       />
       <TextField
-        label="CPF"
+        label="Telefone (com DDD)"
+        inputMode="tel"
+        placeholder="(34) 99999-9999"
+        value={phone}
+        onChange={(e) => setPhone(maskPhone(e.target.value))}
+        hint="Obrigatório. Os 4 últimos números serão o PIN do cliente no QR da mesa."
+      />
+      <TextField
+        label="CPF (opcional)"
         inputMode="numeric"
         placeholder="000.000.000-00"
         value={cpf}
         onChange={(e) => setCpf(maskCpf(e.target.value))}
-        hint="Obrigatório. Os 3 últimos dígitos serão o PIN do cliente no QR da mesa."
+        hint="Para CPF na nota fiscal e para achar a comanda no caixa pelo CPF."
       />
       <div>
         <span className="mb-1 block text-sm text-slate-300">Pessoas nesta comanda</span>
@@ -255,15 +263,8 @@ export function NewComandaModal({
         </div>
         <p className="mt-1 text-xs text-slate-500">Ex.: casal numa comanda só = 2. Se tiver couvert, é cobrado por pessoa.</p>
       </div>
-      <TextField
-        label="Telefone (opcional)"
-        inputMode="tel"
-        placeholder="(31) 99999-9999"
-        value={phone}
-        onChange={(e) => setPhone(maskPhone(e.target.value))}
-      />
       <p className="text-xs text-slate-500">
-        O CPF identifica o cliente no caixa e na nota fiscal, e fica guardado de forma protegida (LGPD). Sem conexão, a
+        Telefone e CPF ficam guardados só para identificar o cliente (LGPD); o CPF, de forma protegida. Sem conexão, a
         comanda é aberta no aparelho e enviada quando a rede voltar.
       </p>
     </Modal>

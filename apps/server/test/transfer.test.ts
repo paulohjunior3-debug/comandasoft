@@ -14,8 +14,8 @@ let garcom: Inject;
 const mesa: Record<number, string> = {};
 const ids = {} as Record<'anaSilva' | 'joao' | 'anaPaula' | 'bia' | 'cerveja', string>;
 
-const open = async (table: number, customerName: string, cpf: string) =>
-  (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: mesa[table], customerName, cpf } })).json().id as string;
+const open = async (table: number, customerName: string, cpf: string, phone = '(34) 99999-0000') =>
+  (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: mesa[table], customerName, cpf, phone } })).json().id as string;
 const order = (tableId: string, comandaIds: string[]) =>
   garcom({
     method: 'POST',
@@ -36,7 +36,7 @@ beforeAll(async () => {
   const created = (await admin({ method: 'POST', url: '/api/admin/tables/bulk', payload: { from: 1, to: 4 } })).json().created as { id: string; number: number }[];
   for (const t of created) mesa[t.number] = t.id;
   ids.anaSilva = await open(1, 'Ana Silva', '529.982.247-25');
-  ids.joao = await open(1, 'João', '111.444.777-35');
+  ids.joao = await open(1, 'João', '111.444.777-35', '(34) 98765-4321');
   ids.anaPaula = await open(2, 'Ana Paula', '935.411.347-80');
   ids.bia = await open(2, 'Bia', '286.255.878-87');
   await order(mesa[1]!, [ids.joao]);
@@ -53,6 +53,15 @@ describe('caixa: busca por nome', () => {
     expect((await search('joao')).map((h) => h.customerName)).toEqual(['João']);
     expect(await search('zé')).toEqual([]);
     expect((await caixa({ method: 'POST', url: '/api/cashier/search', payload: { name: 'a' } })).json().message).toBe('Digite ao menos 2 letras do nome');
+  });
+
+  it('acha pelo telefone (inteiro ou só o final) sem devolver o número', async () => {
+    const byPhone = async (phone: string) => (await caixa({ method: 'POST', url: '/api/cashier/search', payload: { phone } })).json();
+    expect((await byPhone('34987654321')).map((h: NameSearchHit) => h.customerName)).toEqual(['João']);
+    const hits = await byPhone('87654321');
+    expect(hits.map((h: NameSearchHit) => [h.customerName, h.tableNumber])).toEqual([['João', 1]]);
+    expect(JSON.stringify(hits)).not.toContain('4321');
+    expect(await byPhone('11111111')).toEqual([]);
   });
 });
 

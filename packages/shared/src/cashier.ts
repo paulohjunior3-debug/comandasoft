@@ -196,7 +196,17 @@ export const lookupSchema = z
 export type LookupInput = z.input<typeof lookupSchema>;
 
 /** Busca pelo nome do cliente entre as comandas abertas (sem acento, parte do nome). */
-export const nameSearchSchema = z.object({ name: z.string().trim().min(2, 'Digite ao menos 2 letras do nome').max(60) });
+export const nameSearchSchema = z
+  .object({
+    name: z.string().trim().min(2, 'Digite ao menos 2 letras do nome').max(60).optional(),
+    /** Telefone (ou só o final, 8+ dígitos): acha a comanda aberta com esse número. */
+    phone: z
+      .string()
+      .transform(onlyDigits)
+      .refine((v) => v.length >= 8 && v.length <= 11, 'Digite o telefone com 8 a 11 números')
+      .optional(),
+  })
+  .refine((v) => v.name !== undefined || v.phone !== undefined, 'Informe o nome ou o telefone');
 
 export interface NameSearchHit {
   comandaId: string;
@@ -224,8 +234,10 @@ export interface CashierComanda {
   id: string;
   number: number;
   customerName: string;
-  /** null = venda no balcão sem CPF. */
+  /** null = sem CPF (opcional). */
   cpfLast3: string | null;
+  /** Final do telefone (PIN do QR). */
+  phoneLast4: string | null;
   status: ComandaStatus;
   openedAt: string;
   /** Pessoas nesta comanda (multiplica o couvert). */
