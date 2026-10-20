@@ -23,13 +23,16 @@ Todo dia às 3h é feito um backup do banco em C:\SistemaBar\data\backups
 
 CELULARES (uma vez em cada aparelho)
 ------------------------------------
-1. Envie o arquivo C:\SistemaBar\certs\rootCA.crt para o celular.
-   Android: Configurações > Segurança > Criptografia e credenciais >
-            Instalar certificado > Certificado de CA.
-   iPhone:  instale o perfil em Ajustes e depois ATIVE em
-            Ajustes > Geral > Sobre > Ajustes de Confiança de Certificado.
-2. Abra o endereço mostrado no fim da instalação, entre com o usuário do
-   garçom e use "Adicionar à tela inicial".
+1. No celular, abra  http://IP-DESTE-PC:8080/certificado  (sem cadeado) e siga
+   os passos da página: baixar e instalar o certificado do sistema
+   (Android: Configurações > Segurança > Criptografia e credenciais >
+             Instalar um certificado > Certificado de CA;
+    iPhone:  instalar o perfil e ATIVAR em Ajustes > Geral > Sobre >
+             Ajustes de Confiança de Certificado).
+   Sem o certificado, o Android só cria um atalho em vez de instalar o app.
+2. Abra o sistema (o endereço mostrado no fim da instalação), entre com o
+   usuário do garçom e instale: no Android, Chrome > "⋮ > Instalar app";
+   no iPhone, Safari > "Compartilhar > Adicionar à Tela de Início".
 
 PRIMEIROS AJUSTES (como admin, no navegador do PC)
 --------------------------------------------------
