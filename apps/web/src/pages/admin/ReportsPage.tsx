@@ -5,8 +5,12 @@ import {
   PAYMENT_METHOD_LABELS,
   type PaymentMethod,
   type CashRegister,
+  periodLabel,
+  periodTable,
+  WEEKDAY_NAMES,
   type ReceivedTotals,
   type SalesReport,
+  type Settings,
 } from '@sistema-bar/shared';
 import { useState, type ReactNode } from 'react';
 import { Button, EmptyState, ErrorBanner, Loading, PageHeader, SelectField, TextField } from '../../components/ui';
@@ -43,8 +47,11 @@ export function ReportsPage() {
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [registerId, setRegisterId] = useState('');
+  const [period, setPeriod] = useState('');
   const registers = useApiQuery<CashRegister[]>('/admin/registers');
-  const qs = new URLSearchParams({ from, to, ...(registerId ? { registerId } : {}) });
+  const settings = useApiQuery<Settings>('/admin/settings');
+  const periods = settings.data ? periodTable(settings.data) : [];
+  const qs = new URLSearchParams({ from, to, ...(registerId ? { registerId } : {}), ...(period ? { period } : {}) });
   const report = useApiQuery<SalesReport>(`/admin/reports/sales?${qs}`, Boolean(from && to));
   const r = report.data;
   const registerName = registers.data?.find((x) => x.id === registerId)?.name;
@@ -53,7 +60,7 @@ export function ReportsPage() {
     <>
       <PageHeader
         title="Relatórios"
-        description="Vendas e entradas por dia de operação. O turno conta no dia em que o caixa abriu, mesmo fechando depois da meia-noite."
+        description="Vendas e entradas pelo dia do movimento informado na abertura do caixa (o turno que passa da meia-noite continua no mesmo dia)."
         action={
           r && (
             <div className="flex gap-2 print:hidden">
@@ -79,7 +86,7 @@ export function ReportsPage() {
             </button>
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <TextField label="De" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
           <TextField label="Até" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
           <SelectField label="Caixa" value={registerId} onChange={(e) => setRegisterId(e.target.value)}>
@@ -90,11 +97,25 @@ export function ReportsPage() {
               </option>
             ))}
           </SelectField>
+          <SelectField
+            label="Período"
+            value={period}
+            onChange={(e) => setPeriod(e.target.value)}
+            hint={period ? 'Ex.: Período 5 em "Este mês" = todos os dias desse período no mês.' : undefined}
+          >
+            <option value="">Todos</option>
+            {periods.map((p) => (
+              <option key={p.period} value={p.period}>
+                Período {p.period} ({WEEKDAY_NAMES[p.weekday]})
+              </option>
+            ))}
+          </SelectField>
         </div>
       </div>
 
       <p className="mb-4 hidden text-sm print:block">
-        Período: {br(from)} a {br(to)} · {registerName ?? 'Todos os caixas'}
+        Datas: {br(from)} a {br(to)} · {registerName ?? 'Todos os caixas'}
+        {period && ` · Período ${period}`}
       </p>
 
       <ErrorBanner message={errorMessage(report.error)} />
@@ -104,7 +125,7 @@ export function ReportsPage() {
 }
 
 function ReportBody({ r }: { r: SalesReport }) {
-  if (r.cash.sessions === 0) return <EmptyState>Nenhum caixa aberto nesse período.</EmptyState>;
+  if (r.cash.sessions === 0) return <EmptyState>Nenhum caixa aberto nessas datas.</EmptyState>;
   const rc = r.received;
 
   return (
@@ -158,7 +179,7 @@ function ReportBody({ r }: { r: SalesReport }) {
         <Panel title="Caixa (dinheiro na gaveta)">
           <Rows
             rows={[
-              ['Caixas abertos no período', String(r.cash.sessions)],
+              ['Aberturas de caixa', String(r.cash.sessions)],
               ['Fundo de troco (aberturas)', formatBRL(r.cash.openingFloatCents)],
               ['Recebido em dinheiro', formatBRL(rc.byMethod.DINHEIRO)],
               ['Suprimentos', formatBRL(r.cash.suprimentoCents)],
@@ -178,6 +199,7 @@ function ReportBody({ r }: { r: SalesReport }) {
             label: (
               <>
                 {br(d.date)} <span className="text-xs text-slate-500">{weekday(d.date)}</span>
+                <span className="block text-xs text-amber-300/80">{periodLabel(d.period)}</span>
               </>
             ),
             totals: d,
@@ -223,7 +245,7 @@ function ReportBody({ r }: { r: SalesReport }) {
                 <tr key={s.id} className="border-t border-slate-800">
                   <Td>{s.registerName}</Td>
                   <Td>
-                    {br(s.date)} {formatTime(s.openedAt)}
+                    {br(s.date)} · {s.period ? `P${s.period}` : 'extra'} · {formatTime(s.openedAt)}
                     <span className="block text-xs text-slate-500">{s.openedBy}</span>
                   </Td>
                   <Td>
@@ -272,7 +294,7 @@ function Products({ products }: { products: SalesReport['products'] }) {
             placeholder="Ex.: filé, heineken, porção"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            hint="Usa o período e o caixa escolhidos acima. Conta as comandas já fechadas."
+            hint="Usa as datas, o caixa e o período escolhidos acima. Conta as comandas já fechadas."
           />
         </div>
       </div>
@@ -293,7 +315,7 @@ function Products({ products }: { products: SalesReport['products'] }) {
 
       {found.length === 0 ? (
         <p className="py-4 text-center text-sm text-slate-500">
-          {q ? `Nenhuma venda de "${q}" nesse período.` : 'Nenhuma comanda fechada nesse período.'}
+          {q ? `Nenhuma venda de "${q}" nessas datas.` : 'Nenhuma comanda fechada nessas datas.'}
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -460,7 +482,8 @@ function downloadCsv(r: SalesReport, registerName: string | undefined) {
   const money = (c: number) => (c / 100).toFixed(2).replace('.', ',');
   const lines: (string | number)[][] = [
     ['Relatório de vendas e entradas'],
-    ['Período', `${br(r.from)} a ${br(r.to)}`],
+    ['Datas', `${br(r.from)} a ${br(r.to)}`],
+    ...(r.period ? [['Período', r.period]] : []),
     ['Caixa', registerName ?? 'Todos os caixas'],
     [],
     ['Resumo', 'Valor (R$)'],
@@ -481,8 +504,8 @@ function downloadCsv(r: SalesReport, registerName: string | undefined) {
     ['Sangrias', money(r.cash.sangriaCents)],
     ['Diferença nos fechamentos', money(r.cash.differenceCents)],
     [],
-    ['Data', 'Espécie', 'Pix', 'Crédito', 'Débito', 'Total', 'Fiscal', 'Comandas', 'Vendido'],
-    ...r.days.map((d) => [br(d.date), money(d.byMethod.DINHEIRO), money(d.byMethod.PIX), money(d.byMethod.CREDITO), money(d.byMethod.DEBITO), money(d.totalCents), money(d.fiscalCents), d.comandas, money(d.salesCents)]),
+    ['Data', 'Período', 'Espécie', 'Pix', 'Crédito', 'Débito', 'Total', 'Fiscal', 'Comandas', 'Vendido'],
+    ...r.days.map((d) => [br(d.date), d.period ?? 'extra', money(d.byMethod.DINHEIRO), money(d.byMethod.PIX), money(d.byMethod.CREDITO), money(d.byMethod.DEBITO), money(d.totalCents), money(d.fiscalCents), d.comandas, money(d.salesCents)]),
     [],
     ['Caixa', 'Espécie', 'Pix', 'Crédito', 'Débito', 'Total', 'Fiscal', 'Aberturas'],
     ...r.registers.map((x) => [x.name, money(x.byMethod.DINHEIRO), money(x.byMethod.PIX), money(x.byMethod.CREDITO), money(x.byMethod.DEBITO), money(x.totalCents), money(x.fiscalCents), x.sessions]),

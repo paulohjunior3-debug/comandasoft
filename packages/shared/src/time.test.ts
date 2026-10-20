@@ -69,3 +69,18 @@ describe('dias de operação', () => {
     expect(daysBetween('2026-10-01', '2026-10-31')).toBe(31);
   });
 });
+
+describe('semana do bar e períodos', () => {
+  it('fecha na segunda, começa na terça: terça = 1 … domingo = 6', async () => {
+    const { periodOf, periodTable, suggestedBusinessDate, periodLabel } = await import('./period');
+    const week = { weekStartDay: 2, closedDays: [1] };
+    expect(periodTable(week).map((d) => d.weekday)).toEqual([2, 3, 4, 5, 6, 0]);
+    expect(periodOf('2026-10-20', week)).toBe(1); // terça
+    expect(periodOf('2026-10-25', week)).toBe(6); // domingo
+    expect(periodOf('2026-10-19', week)).toBeNull(); // segunda: fechado
+    expect(periodLabel(3, '2026-10-22')).toBe('Período 3 (quinta)');
+    // 00:30 de quarta em Brasília ainda é o movimento de terça; 16h de quarta é quarta.
+    expect(suggestedBusinessDate(new Date('2026-10-21T03:30:00Z'))).toBe('2026-10-20');
+    expect(suggestedBusinessDate(new Date('2026-10-21T19:00:00Z'))).toBe('2026-10-21');
+  });
+});

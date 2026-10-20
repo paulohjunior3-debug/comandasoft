@@ -10,6 +10,8 @@ export const salesReportQuerySchema = z
     from: isoDate,
     to: isoDate,
     registerId: z.string().uuid('Caixa inválido.').optional(),
+    /** Só um período da semana do bar (ex.: 5 = todos os sábados do intervalo). */
+    period: z.coerce.number().int().min(1).max(7).optional(),
   })
   .refine((q) => q.from <= q.to, { message: 'A data inicial é depois da final.', path: ['to'] })
   .refine((q) => daysBetween(q.from, q.to) <= 366, { message: 'Escolha um período de até 1 ano.', path: ['to'] });
@@ -31,6 +33,7 @@ export interface SalesReport {
   from: string;
   to: string;
   registerId: string | null;
+  period: number | null;
   generatedAt: string;
   /** Entradas do período (pagamentos válidos, sem os estornados). */
   received: ReceivedTotals;
@@ -53,12 +56,14 @@ export interface SalesReport {
    */
   fiscal: { requests: number; automatic: number; comandas: number; requestedCents: number; withoutNoteCents: number; pending: number };
   cash: { sessions: number; openSessions: number; openingFloatCents: number; suprimentoCents: number; sangriaCents: number; differenceCents: number };
-  days: (ReceivedTotals & { date: string; comandas: number; salesCents: number })[];
+  days: (ReceivedTotals & { date: string; period: number | null; comandas: number; salesCents: number })[];
   registers: (ReceivedTotals & { registerId: string; name: string; sessions: number })[];
   sessions: {
     id: string;
     registerName: string;
+    /** Dia do movimento e período da abertura. */
     date: string;
+    period: number | null;
     openedAt: string;
     closedAt: string | null;
     openedBy: string;

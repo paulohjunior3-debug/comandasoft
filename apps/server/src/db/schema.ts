@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -346,6 +347,10 @@ export const cashSessions = pgTable(
     tablesInService: integer(),
     couvertCents: integer().notNull().default(0),
     couvertStartAt: timestamp({ withTimezone: true }),
+    /** Dia do movimento (AAAA-MM-DD): o turno que passa da meia-noite continua no dia em que abriu. */
+    businessDate: date({ mode: 'string' }).notNull(),
+    /** Período da semana do bar (Ter = 1 … Dom = 6). null = dia extra. */
+    period: integer(),
     closedBy: uuid().references(() => users.id),
     closedAt: timestamp({ withTimezone: true }),
     expectedJson: jsonb(),

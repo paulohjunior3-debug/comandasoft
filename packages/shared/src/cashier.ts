@@ -73,6 +73,9 @@ export interface DayRules {
   /** Couvert por pessoa e a partir de quando. 0 = sem couvert hoje. */
   couvertCents: number;
   couvertStartAt: string | null;
+  /** Dia do movimento e período (Ter = 1 … Dom = 6; null = dia extra). */
+  businessDate: string;
+  period: number | null;
 }
 
 // ---------- Sessão de caixa ----------
@@ -87,6 +90,10 @@ export const openCashSessionSchema = z.object({
   tablesInService: z.number().int().min(1, 'Ao menos 1 mesa').max(999).optional(),
   /** Couvert do dia: valor por pessoa e horário de início. Ausente = sem couvert. */
   couvert: z.object({ amountCents: positiveCents, startTime: time }).nullish(),
+  /** Dia do movimento (o turno que passa da meia-noite continua nele). Padrão: sugerido pelo servidor. */
+  businessDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Dia do movimento inválido.').optional(),
+  /** Período da semana do bar (Ter = 1 … Dom = 6). null = dia extra. Padrão: pela semana configurada. */
+  period: z.number().int().min(1, 'Período inválido').max(7, 'Período inválido').nullish(),
 });
 export type OpenCashSessionInput = z.input<typeof openCashSessionSchema>;
 
@@ -130,6 +137,9 @@ export interface CashSessionSummary {
   registerName: string;
   fiscalMode: FiscalMode;
   expectedCloseAt: string | null;
+  /** Dia do movimento e período desta abertura. */
+  businessDate: string;
+  period: number | null;
   openedAt: string;
   openedBy: string;
   openingFloatCents: number;

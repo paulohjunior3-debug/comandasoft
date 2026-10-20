@@ -1,6 +1,4 @@
 import {
-  localDate,
-  localDayRange,
   PAYMENT_METHODS,
   type ComandaTotals,
   type MethodTotals,
@@ -8,7 +6,7 @@ import {
   type SalesReport,
   type SalesReportQuery,
 } from '@sistema-bar/shared';
-import { and, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, eq, gte, inArray, lte } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   cashMovements,
@@ -35,11 +33,11 @@ function addPayment(t: ReceivedTotals, method: keyof MethodTotals, cents: number
 }
 
 /**
- * Relatório de vendas e entradas (SPEC 5.9). O "dia" é o dia de operação: a data (Brasília)
- * em que o caixa abriu. Um turno que abre às 16h e fecha à 01h conta inteiro no dia da abertura.
+ * Relatório de vendas e entradas (SPEC 5.9). O "dia" é o dia do movimento informado na abertura
+ * do caixa: um turno que abre às 16h e fecha à 01h conta inteiro nele. Filtro opcional por
+ * período da semana do bar (Ter = 1 … Dom = 6).
  */
 export async function buildSalesReport(db: Queryable, query: SalesReportQuery): Promise<SalesReport> {
-  const { start, end } = localDayRange(query.from, query.to);
   const closer = alias(users, 'closer');
 
   const sessionRows = await db
@@ -50,16 +48,17 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     .leftJoin(closer, eq(closer.id, cashSessions.closedBy))
     .where(
       and(
-        gte(cashSessions.openedAt, start),
-        lt(cashSessions.openedAt, end),
+        gte(cashSessions.businessDate, query.from),
+        lte(cashSessions.businessDate, query.to),
         query.registerId ? eq(cashSessions.registerId, query.registerId) : undefined,
+        query.period ? eq(cashSessions.period, query.period) : undefined,
       ),
     )
     .orderBy(cashSessions.openedAt);
 
   const sessionIds = sessionRows.map((r) => r.s.id);
   const sessionById = new Map(sessionRows.map((r) => [r.s.id, r]));
-  const dayOf = (sessionId: string) => localDate(sessionById.get(sessionId)!.s.openedAt);
+  const dayOf = (sessionId: string) => sessionById.get(sessionId)!.s.businessDate;
 
   const [paymentRows, movementRows, fiscalRows] = sessionIds.length
     ? await Promise.all([
@@ -73,9 +72,10 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
   const received = zeroReceived();
   const days = new Map<string, SalesReport['days'][number]>();
   const registers = new Map<string, SalesReport['registers'][number]>();
-  const dayEntry = (date: string) => {
+  const dayEntry = (date: string, period: number | null = null) => {
     let d = days.get(date);
-    if (!d) days.set(date, (d = { date, comandas: 0, salesCents: 0, ...zeroReceived() }));
+    if (!d) days.set(date, (d = { date, period, comandas: 0, salesCents: 0, ...zeroReceived() }));
+    if (d.period === null && period !== null) d.period = period;
     return d;
   };
   const registerEntry = (sessionId: string) => {
@@ -85,7 +85,7 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     return e;
   };
   for (const r of sessionRows) {
-    dayEntry(localDate(r.s.openedAt));
+    dayEntry(r.s.businessDate, r.s.period);
     registerEntry(r.s.id).sessions += 1;
   }
 
@@ -219,6 +219,7 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     from: query.from,
     to: query.to,
     registerId: query.registerId ?? null,
+    period: query.period ?? null,
     generatedAt: new Date().toISOString(),
     received,
     refunds,
@@ -230,7 +231,8 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     sessions: sessionRows.map((r) => ({
       id: r.s.id,
       registerName: r.registerName,
-      date: localDate(r.s.openedAt),
+      date: r.s.businessDate,
+      period: r.s.period,
       openedAt: r.s.openedAt.toISOString(),
       closedAt: r.s.closedAt?.toISOString() ?? null,
       openedBy: r.openedBy,

@@ -1,4 +1,4 @@
-import { centsToInput, parseBRL, type Printer, type Settings } from '@sistema-bar/shared';
+import { centsToInput, parseBRL, periodTable, WEEKDAY_NAMES, WEEKDAY_SHORT, type Printer, type Settings } from '@sistema-bar/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, ErrorBanner, Loading, PageHeader, SelectField, TextField, Toggle } from '../../components/ui';
 import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
@@ -56,6 +56,46 @@ export function SettingsPage() {
             }}
             hint="Valor sugerido na abertura do caixa. Se vai ter couvert e a partir de que horas é decidido em cada abertura."
           />
+        </Section>
+
+        <Section title="Semana do bar (períodos)">
+          <p className="text-sm text-slate-400">
+            Cada dia de funcionamento recebe um número de período, que vem preenchido na abertura do caixa e serve de filtro nos
+            relatórios.
+          </p>
+          <SelectField label="A semana começa na" value={form.weekStartDay} onChange={(e) => set('weekStartDay', Number(e.target.value))}>
+            {WEEKDAY_NAMES.map((d, i) => (
+              <option key={d} value={i}>
+                {d}
+              </option>
+            ))}
+          </SelectField>
+          <div>
+            <span className="mb-1 block text-sm text-slate-300">Dias em que o bar fecha</span>
+            <div className="flex flex-wrap gap-2">
+              {WEEKDAY_SHORT.map((d, i) => {
+                const closed = form.closedDays.includes(i);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={closed}
+                    onClick={() => set('closedDays', closed ? form.closedDays.filter((x) => x !== i) : [...form.closedDays, i])}
+                    className={`rounded-lg px-3 py-1.5 text-sm ${closed ? 'bg-red-950 text-red-300 line-through' : 'bg-slate-800 text-slate-300'}`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-300">
+            {periodTable(form).length
+              ? periodTable(form)
+                  .map((p) => `${WEEKDAY_SHORT[p.weekday]} = ${p.period}`)
+                  .join(' · ')
+              : 'Marque pelo menos um dia aberto.'}
+          </p>
         </Section>
 
         <Section title="Caixa">

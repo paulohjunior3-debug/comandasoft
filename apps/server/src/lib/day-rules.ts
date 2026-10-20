@@ -26,5 +26,7 @@ export async function getDayRules(db: Queryable): Promise<DayRules | null> {
     tablesInService: s.tablesInService,
     couvertCents: s.couvertCents,
     couvertStartAt: s.couvertStartAt?.toISOString() ?? null,
+    businessDate: s.businessDate,
+    period: s.period,
   };
 }

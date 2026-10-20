@@ -79,7 +79,7 @@ export function CashierPage() {
             aberto às {formatTime(s.openedAt)} por {s.openedBy}
             {s.expectedCloseAt && ` · fecha às ${formatLocalTime(s.expectedCloseAt)}`} · gaveta{' '}
             <strong className="text-slate-200">{formatBRL(s.expectedCashCents)}</strong>
-            {rules && <span className="block text-xs text-slate-500">Hoje: {describeRules(rules)}</span>}
+            {rules && <span className="block text-xs text-slate-500">Movimento: {describeRules(rules)}</span>}
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">

@@ -5,6 +5,9 @@ import {
   parseBRL,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
+  periodLabel,
+  WEEKDAY_NAMES,
+  weekdayOf,
   type CashClosePreview,
   type CashCloseResult,
   type CashMovementType,
@@ -14,7 +17,7 @@ import {
 } from '@sistema-bar/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Button, ErrorBanner, Loading, Modal, TextField, Toggle } from '../../components/ui';
+import { Button, ErrorBanner, Loading, Modal, SelectField, TextField, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { errorMessage, useApiMutation } from '../../lib/queries';
 
@@ -22,11 +25,17 @@ export interface DayRulesResponse {
   rules: DayRules | null;
   defaultCouvertCents: number;
   activeTables: number;
+  /** Dia do movimento e período sugeridos para o primeiro caixa do dia. */
+  suggested: { businessDate: string; period: number | null };
+  /** Numeração da semana do bar (Configurações): [{ period: 1, weekday: 2 }, …]. */
+  periods: { period: number; weekday: number }[];
 }
+
+const brDate = (d: string) => d.split('-').reverse().join('/');
 
 /** Resumo das regras do dia: "Turno até 01:00 · 20 mesas · Couvert R$ 15,00 desde 14:00". */
 export function describeRules(rules: DayRules): string {
-  const parts: string[] = [];
+  const parts: string[] = [`${periodLabel(rules.period, rules.businessDate)} · ${brDate(rules.businessDate)}`];
   if (rules.expectedCloseAt) parts.push(`turno até ${formatLocalTime(rules.expectedCloseAt)}`);
   if (rules.tablesInService) parts.push(`${rules.tablesInService} mesas`);
   parts.push(rules.couvertCents ? `couvert ${formatBRL(rules.couvertCents)}/pessoa desde ${formatLocalTime(rules.couvertStartAt!)}` : 'sem couvert');
@@ -46,12 +55,18 @@ export function OpenCashForm({ registerId, registerName }: { registerId: string;
   const [hasCouvert, setHasCouvert] = useState(false);
   const [couvert, setCouvert] = useState('');
   const [couvertFrom, setCouvertFrom] = useState('');
+  const [businessDate, setBusinessDate] = useState('');
+  const [period, setPeriod] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!day.data) return;
     if (day.data.activeTables && !tables) setTables(String(day.data.activeTables));
     if (day.data.defaultCouvertCents && !couvert) setCouvert(centsToInput(day.data.defaultCouvertCents));
+    if (!businessDate) {
+      setBusinessDate(day.data.suggested.businessDate);
+      setPeriod(day.data.suggested.period ? String(day.data.suggested.period) : 'extra');
+    }
   }, [day.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rules = day.data?.rules ?? null;
@@ -63,6 +78,8 @@ export function OpenCashForm({ registerId, registerName }: { registerId: string;
     const body: OpenCashSessionInput = { registerId, openingFloatCents: floatCents };
     if (closeTime) body.expectedCloseTime = closeTime;
     if (firstOfDay) {
+      if (businessDate) body.businessDate = businessDate;
+      body.period = period && period !== 'extra' ? Number(period) : null;
       if (tables) {
         const n = Number(tables);
         if (!Number.isInteger(n) || n < 1) return setError('Número de mesas inválido.');
@@ -84,7 +101,7 @@ export function OpenCashForm({ registerId, registerName }: { registerId: string;
       <div>
         <h2 className="text-xl font-semibold">Abrir {registerName}</h2>
         <p className="text-sm text-slate-400">
-          {firstOfDay ? 'Primeiro caixa do dia: defina o turno, as mesas e o couvert.' : 'As regras do dia já foram definidas.'}
+          {firstOfDay ? 'Primeiro caixa do dia: defina o dia, o turno, as mesas e o couvert.' : 'As regras do dia já foram definidas.'}
         </p>
       </div>
       <ErrorBanner message={error ?? errorMessage(open.error ?? day.error)} />
@@ -109,6 +126,29 @@ export function OpenCashForm({ registerId, registerName }: { registerId: string;
             </p>
           ) : (
             <>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  label="Dia do movimento"
+                  type="date"
+                  value={businessDate}
+                  onChange={(e) => {
+                    const d = e.target.value;
+                    setBusinessDate(d);
+                    // Muda o dia: o período acompanha a semana do bar (dá para trocar depois).
+                    const p = d ? day.data?.periods.find((x) => x.weekday === weekdayOf(d)) : undefined;
+                    setPeriod(p ? String(p.period) : 'extra');
+                  }}
+                  hint="Abrindo de madrugada pelo movimento de ontem? Deixe ontem."
+                />
+                <SelectField label="Período" value={period} onChange={(e) => setPeriod(e.target.value)}>
+                  {day.data?.periods.map((p) => (
+                    <option key={p.period} value={p.period}>
+                      Período {p.period} ({WEEKDAY_NAMES[p.weekday]})
+                    </option>
+                  ))}
+                  <option value="extra">Dia extra (sem número)</option>
+                </SelectField>
+              </div>
               <TextField
                 label="Mesas em funcionamento hoje"
                 inputMode="numeric"

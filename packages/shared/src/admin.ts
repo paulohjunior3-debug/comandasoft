@@ -244,6 +244,12 @@ export const settingsSchema = z.object({
     .transform((v) => v.replace(/\/$/, '')),
   /** Nome do Wi-Fi para os clientes, impresso no cartão do QR. */
   guestWifiName: z.string().trim().max(60),
+  /** Semana do bar: dia do Período 1 (0 = domingo … 6 = sábado) e dias em que não abre. */
+  weekStartDay: z.number().int().min(0).max(6),
+  closedDays: z
+    .array(z.number().int().min(0).max(6))
+    .max(6, 'O bar precisa abrir pelo menos um dia na semana.')
+    .transform((d) => [...new Set(d)].sort()),
 }).refine((s) => s.alertRedMinutes > s.alertYellowMinutes, {
   message: 'O tempo do vermelho deve ser maior que o do amarelo',
   path: ['alertRedMinutes'],
@@ -263,4 +269,6 @@ export const DEFAULT_SETTINGS: Settings = {
   cashierPrinterId: null,
   qrBaseUrl: '',
   guestWifiName: '',
+  weekStartDay: 1,
+  closedDays: [],
 };

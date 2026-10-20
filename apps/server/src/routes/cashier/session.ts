@@ -5,10 +5,15 @@ import {
   couvertStart,
   formatBRL,
   formatLocalTime,
+  localDate,
   nextLocalTime,
   openCashSessionSchema,
   PAYMENT_METHOD_LABELS,
   PAYMENT_METHODS,
+  periodLabel,
+  periodOf,
+  periodTable,
+  suggestedBusinessDate,
   type CashClosePreview,
   type CashCloseResult,
   type CashRegister,
@@ -77,6 +82,8 @@ export async function sessionSummary(db: Queryable, session: typeof cashSessions
     registerName: register.name,
     fiscalMode: register.fiscalMode,
     expectedCloseAt: session.expectedCloseAt?.toISOString() ?? null,
+    businessDate: session.businessDate,
+    period: session.period,
     openedAt: session.openedAt.toISOString(),
     openedBy: opener?.name ?? '',
     openingFloatCents: session.openingFloatCents,
@@ -124,7 +131,15 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
   app.get('/day-rules', async () => {
     const settings = await getSettings(db);
     const [{ n }] = (await db.select({ n: count() }).from(diningTables).where(eq(diningTables.active, true))) as [{ n: number }];
-    return { rules: await getDayRules(db), defaultCouvertCents: settings.couvertCents, activeTables: n };
+    // Sugestão do dia do movimento e do período para o primeiro caixa (os outros herdam das regras).
+    const businessDate = suggestedBusinessDate();
+    return {
+      rules: await getDayRules(db),
+      defaultCouvertCents: settings.couvertCents,
+      activeTables: n,
+      suggested: { businessDate, period: periodOf(businessDate, settings) },
+      periods: periodTable(settings),
+    };
   });
 
   app.get('/', async (request) => {
@@ -148,6 +163,17 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
     }
     const existingRules = await getDayRules(db);
     const now = new Date();
+    const settings = await getSettings(db);
+    // Dia do movimento: o do primeiro caixa aberto; senão o informado (hoje ou ontem) ou o sugerido.
+    const businessDate = existingRules?.businessDate ?? input.businessDate ?? suggestedBusinessDate(now);
+    if (!existingRules && input.businessDate) {
+      const today = localDate(now);
+      const yesterday = localDate(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+      if (businessDate !== today && businessDate !== yesterday) {
+        throw new HttpError(400, 'VALIDATION', 'O dia do movimento deve ser hoje ou ontem.');
+      }
+    }
+    const period = existingRules ? existingRules.period : input.period !== undefined ? input.period : periodOf(businessDate, settings);
     const dayRules = existingRules
       ? null // outro caixa já definiu as regras do dia
       : {
@@ -156,7 +182,6 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
           couvertCents: input.couvert?.amountCents ?? 0,
           couvertStartAt: input.couvert ? couvertStart(now, input.couvert.startTime) : null,
         };
-    const settings = await getSettings(db);
 
     const session = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -171,15 +196,17 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
           tablesInService: dayRules?.tablesInService ?? null,
           couvertCents: dayRules?.couvertCents ?? 0,
           couvertStartAt: dayRules?.couvertStartAt ?? null,
+          businessDate,
+          period: period ?? null,
         })
         .returning();
       await audit(tx, request, {
         action: 'CAIXA_ABERTO',
         entity: 'cash_session',
         entityId: row!.id,
-        after: { register: register.name, openingFloatCents: input.openingFloatCents, dayRules },
+        after: { register: register.name, openingFloatCents: input.openingFloatCents, businessDate, period, dayRules },
       });
-      const lines = [`Fundo de troco`];
+      const lines = [`Fundo de troco`, `${periodLabel(period ?? null, businessDate)} · ${businessDate.split('-').reverse().join('/')}`];
       if (dayRules?.expectedCloseAt) lines.push(`Turno até ${formatLocalTime(dayRules.expectedCloseAt)}`);
       if (dayRules?.tablesInService) lines.push(`${dayRules.tablesInService} mesas`);
       if (dayRules?.couvertCents) lines.push(`Couvert ${formatBRL(dayRules.couvertCents)} desde ${formatLocalTime(dayRules.couvertStartAt!)}`);
