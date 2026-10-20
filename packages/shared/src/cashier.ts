@@ -180,6 +180,31 @@ export const lookupSchema = z
   .refine((v) => v.tableNumber !== undefined || v.cpf !== undefined, 'Informe a mesa ou o CPF');
 export type LookupInput = z.input<typeof lookupSchema>;
 
+/** Busca pelo nome do cliente entre as comandas abertas (sem acento, parte do nome). */
+export const nameSearchSchema = z.object({ name: z.string().trim().min(2, 'Digite ao menos 2 letras do nome').max(60) });
+
+export interface NameSearchHit {
+  comandaId: string;
+  customerName: string;
+  tableId: string;
+  tableNumber: number;
+  status: ComandaStatus;
+}
+
+/** Transferência (caixa): comandas para outra mesa, ou a mesa inteira. */
+export const transferSchema = z.object({
+  comandaIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma comanda').max(50),
+  toTableNumber: z.number().int().min(1, 'Informe a mesa de destino'),
+});
+export type TransferInput = z.infer<typeof transferSchema>;
+
+export interface TransferResult {
+  moved: number;
+  fromTableNumbers: number[];
+  toTableId: string;
+  toTableNumber: number;
+}
+
 export interface CashierComanda {
   id: string;
   number: number;
@@ -227,6 +252,9 @@ export interface BillItem {
   paidFraction: { num: number; den: number };
   /** Item cancelado (valor zerado; aparece riscado). */
   canceled: boolean;
+  /** Quando o pedido chegou e quem lançou (garçom, ou o caixa/gerente que lançou). */
+  orderedAt: string;
+  waiterName: string;
 }
 
 export interface BillAdjustment {

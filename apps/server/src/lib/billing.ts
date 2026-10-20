@@ -64,10 +64,12 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
         amountCents: orderItemShares.amountCents,
         sharedWith: shareCount.n,
         receivedAt: orders.receivedAt,
+        waiterName: users.name,
       })
       .from(orderItemShares)
       .innerJoin(orderItems, eq(orderItems.id, orderItemShares.orderItemId))
       .innerJoin(orders, eq(orders.id, orderItems.orderId))
+      .innerJoin(users, eq(users.id, orders.userId))
       .innerJoin(shareCount, eq(shareCount.orderItemId, orderItems.id))
       .where(inArray(orderItemShares.comandaId, comandaIds))
       .orderBy(orders.receivedAt, orderItems.createdAt),
@@ -126,6 +128,8 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       paidCents: paid.reduce((s, p) => s + p.cents, 0),
       paidFraction,
       canceled: r.status === 'CANCELADO',
+      orderedAt: r.receivedAt.toISOString(),
+      waiterName: r.waiterName,
     };
   });
 

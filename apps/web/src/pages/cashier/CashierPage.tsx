@@ -10,6 +10,7 @@ import {
   type DayRules,
   type FiscalRequestResult,
   type LookupResult,
+  type NameSearchHit,
   type PrintQueueResponse,
 } from '@sistema-bar/shared';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -184,77 +185,130 @@ function Workspace({ registerId }: { registerId: string }) {
   const [query, setQuery] = useState('');
   const [finalizing, setFinalizing] = useState<FinalizeInfo | null>(null);
 
+  const [hits, setHits] = useState<NameSearchHit[] | null>(null);
+  const open = (tableId: string, preselect: string[] | null) => {
+    setCurrent({ tableId, preselect });
+    setQuery('');
+    setHits(null);
+  };
+
   const lookup = useMutation({
     mutationFn: (body: object) => api<LookupResult>('/cashier/lookup', { method: 'POST', body: JSON.stringify(body) }),
-    onSuccess: (r) => {
-      setCurrent({ tableId: r.table.id, preselect: r.matchedComandaId ? [r.matchedComandaId] : null });
-      setQuery('');
+    onSuccess: (r) => open(r.table.id, r.matchedComandaId ? [r.matchedComandaId] : null),
+  });
+  const byName = useMutation({
+    mutationFn: (name: string) => api<NameSearchHit[]>('/cashier/search', { method: 'POST', body: JSON.stringify({ name }) }),
+    onSuccess: (list) => {
+      // Um só resultado: abre direto na comanda; vários: mostra a lista para escolher.
+      if (list.length === 1) open(list[0]!.tableId, [list[0]!.comandaId]);
+      else setHits(list);
     },
   });
 
   const search = (e: FormEvent) => {
     e.preventDefault();
-    const digits = onlyDigits(query);
-    if (digits.length === 11 && isValidCpf(digits)) lookup.mutate({ cpf: digits });
+    lookup.reset();
+    byName.reset();
+    setHits(null);
+    const text = query.trim();
+    const digits = onlyDigits(text);
+    // Tem letra: é nome. Só números: mesa (até 4 dígitos) ou CPF (11).
+    if (/\p{L}/u.test(text)) byName.mutate(text);
+    else if (digits.length === 11 && isValidCpf(digits)) lookup.mutate({ cpf: digits });
     else if (digits.length > 0 && digits.length <= 4) lookup.mutate({ tableNumber: Number(digits) });
-    else lookup.reset();
   };
 
   const table = tables.data?.find((t) => t.id === current?.tableId);
+  const list = tables.data ?? [];
 
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
       <aside className="space-y-3">
         <form onSubmit={search} className="space-y-2">
-          <label htmlFor="busca" className="block text-sm text-slate-300">Mesa ou CPF do cliente</label>
+          <label htmlFor="busca" className="block text-sm text-slate-300">Mesa, nome ou CPF do cliente</label>
           <div className="flex gap-2">
             <input
               id="busca"
               autoFocus
-              inputMode="numeric"
-              placeholder="Ex.: 10 ou 529.982.247-25"
+              autoComplete="off"
+              placeholder="Ex.: 10, Ana ou 529.982.247-25"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2.5 text-base outline-none focus:border-amber-500"
             />
-            <Button variant="primary" type="submit" disabled={lookup.isPending}>Buscar</Button>
+            <Button variant="primary" type="submit" disabled={lookup.isPending || byName.isPending}>Buscar</Button>
           </div>
           <ErrorBanner
             message={
               lookup.isError
                 ? errorMessage(lookup.error)
-                : query && onlyDigits(query).length > 4 && onlyDigits(query).length === 11 && !isValidCpf(query)
-                  ? 'CPF inválido.'
-                  : null
+                : byName.isError
+                  ? errorMessage(byName.error)
+                  : !/\p{L}/u.test(query) && onlyDigits(query).length === 11 && !isValidCpf(query)
+                    ? 'CPF inválido.'
+                    : null
             }
           />
         </form>
 
-        <h2 className="pt-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Mesas abertas</h2>
+        {hits && (
+          <div className="rounded-xl border border-slate-700 bg-slate-900 p-2">
+            {hits.length === 0 ? (
+              <p className="p-2 text-sm text-slate-400">Nenhuma comanda aberta com esse nome.</p>
+            ) : (
+              <ul className="space-y-1">
+                {hits.map((h) => (
+                  <li key={h.comandaId}>
+                    <button onClick={() => open(h.tableId, [h.comandaId])} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left hover:bg-slate-800">
+                      <span className="truncate">{h.customerName}</span>
+                      <span className="shrink-0 text-sm text-slate-400">Mesa {h.tableNumber}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-baseline justify-between pt-2">
+          <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Mesas abertas ({list.length})</h2>
+        </div>
         {tables.isLoading ? (
           <Loading />
-        ) : tables.data?.length === 0 ? (
+        ) : list.length === 0 ? (
           <p className="text-sm text-slate-500">Nenhuma mesa com comanda aberta.</p>
         ) : (
-          <ul className="space-y-1.5">
-            {tables.data?.map((t) => (
-              <li key={t.id}>
-                <button
-                  onClick={() => setCurrent({ tableId: t.id, preselect: null })}
-                  className={`w-full rounded-xl border p-3 text-left ${
-                    current?.tableId === t.id ? 'border-amber-500 bg-amber-500/10' : t.closingRequested ? 'border-sky-600 bg-sky-950' : 'border-slate-800 bg-slate-900'
-                  }`}
-                >
-                  <span className="flex items-baseline justify-between">
-                    <span className="text-lg font-semibold">Mesa {t.number}</span>
-                    <span className="font-medium">{formatBRL(t.totals.remainingCents)}</span>
-                  </span>
-                  <span className="block truncate text-sm text-slate-400">{t.comandas.map((c) => c.customerName).join(', ')}</span>
-                  {t.closingRequested && <span className="text-xs font-medium text-sky-300">Pediu a conta</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className="grid grid-cols-6 gap-1.5">
+              {list.map((t) => {
+                const selected = current?.tableId === t.id;
+                const empty = t.totals.itemsCents === 0;
+                const tone = t.closingRequested
+                  ? 'border-sky-500 bg-sky-600/80 text-white'
+                  : empty
+                    ? 'border-slate-700 bg-slate-800 text-slate-300'
+                    : 'border-emerald-700 bg-emerald-800/80 text-emerald-50';
+                return (
+                  <li key={t.id}>
+                    <button
+                      onClick={() => open(t.id, null)}
+                      title={`Mesa ${t.number} · ${t.comandas.map((c) => c.customerName).join(', ')} · resta ${formatBRL(t.totals.remainingCents)}`}
+                      aria-label={`Mesa ${t.number}${t.closingRequested ? ', pediu a conta' : ''}`}
+                      aria-pressed={selected}
+                      className={`flex h-10 w-full items-center justify-center rounded-md border text-sm font-bold tabular-nums ${tone} ${selected ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950' : ''}`}
+                    >
+                      {t.number}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
+              <Legend className="bg-emerald-700" label={`Consumindo (${list.filter((t) => !t.closingRequested && t.totals.itemsCents > 0).length})`} />
+              <Legend className="bg-sky-600" label={`Pediu a conta (${list.filter((t) => t.closingRequested).length})`} />
+              <Legend className="bg-slate-700" label={`Sem lançamento (${list.filter((t) => !t.closingRequested && t.totals.itemsCents === 0).length})`} />
+            </p>
+          </>
         )}
       </aside>
 
@@ -267,15 +321,25 @@ function Workspace({ registerId }: { registerId: string }) {
             preselect={current?.preselect ?? null}
             onEmpty={() => setCurrent(null)}
             onFinalize={setFinalizing}
+            onTransferred={(tableId) => setCurrent({ tableId, preselect: null })}
           />
         ) : (
           <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-700 text-slate-500">
-            Busque pela mesa ou pelo CPF, ou escolha uma mesa ao lado.
+            Busque pela mesa, pelo nome ou pelo CPF, ou escolha uma mesa ao lado.
           </div>
         )}
       </section>
       {finalizing && <FinalizeModal registerId={registerId} info={finalizing} onClose={() => setFinalizing(null)} />}
     </div>
+  );
+}
+
+function Legend({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`size-2.5 rounded-sm ${className}`} />
+      {label}
+    </span>
   );
 }
 

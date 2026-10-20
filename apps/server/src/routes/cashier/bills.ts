@@ -2,11 +2,16 @@ import {
   billRequestSchema,
   createAdjustmentSchema,
   lookupSchema,
+  matchesSearch,
+  nameSearchSchema,
   removeAdjustmentSchema,
   sumTotals,
+  transferSchema,
   type Bill,
   type CashierTable,
   type LookupResult,
+  type NameSearchHit,
+  type TransferResult,
 } from '@sistema-bar/shared';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -56,7 +61,8 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
           closingRequested: list.some((c) => c.status === 'EM_FECHAMENTO'),
         };
       })
-      .sort((a, b) => Number(b.closingRequested) - Number(a.closingRequested) || a.number - b.number);
+      // Ordem fixa pelo número: no quadro do caixa cada mesa fica sempre no mesmo lugar (a cor diz o status).
+      .sort((a, b) => a.number - b.number);
   }
 
   app.get('/tables', async () => openTables());
@@ -90,6 +96,69 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
       throw new HttpError(404, 'NOT_FOUND', `A mesa ${t?.number ?? ''} não tem comandas abertas.`);
     }
     return { table, matchedComandaId };
+  });
+
+  /** Busca pelo nome do cliente: "ana" acha "Ana Paula" e "Ána"; devolve em que mesa está. */
+  app.post('/search', async (request): Promise<NameSearchHit[]> => {
+    const { name } = nameSearchSchema.parse(request.body);
+    const rows = await db
+      .select({ comandaId: comandas.id, customerName: comandas.customerName, tableId: diningTables.id, tableNumber: diningTables.number, status: comandas.status })
+      .from(comandas)
+      .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+      .where(inArray(comandas.status, [...OPEN_STATUSES]))
+      .orderBy(asc(diningTables.number), asc(comandas.customerName));
+    return rows.filter((r) => matchesSearch(r.customerName, name)).slice(0, 30);
+  });
+
+  /**
+   * Transferência: uma ou mais comandas (ou todas as da mesa) vão para outra mesa, com tudo o
+   * que já foi lançado e pago. O nome não pode repetir uma comanda aberta na mesa de destino.
+   */
+  app.post('/transfer', async (request): Promise<TransferResult> => {
+    const input = transferSchema.parse(request.body);
+    const [dest] = await db.select().from(diningTables).where(eq(diningTables.number, input.toTableNumber));
+    if (!dest) throw new HttpError(404, 'NOT_FOUND', `Mesa ${input.toTableNumber} não existe.`);
+    if (!dest.active) throw new HttpError(409, 'TABLE_INACTIVE', `A mesa ${dest.number} está desativada.`);
+
+    const ids = [...new Set(input.comandaIds)];
+    const moving = await db
+      .select({ c: comandas, tableNumber: diningTables.number })
+      .from(comandas)
+      .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+      .where(inArray(comandas.id, ids));
+    if (moving.length !== ids.length) throw notFound('Comanda');
+    const closed = moving.filter((m) => !(OPEN_STATUSES as readonly string[]).includes(m.c.status));
+    if (closed.length) throw new HttpError(409, 'COMANDA_NOT_OPEN', `A comanda de ${closed[0]!.c.customerName} já foi encerrada.`);
+    if (moving.every((m) => m.c.tableId === dest.id)) throw new HttpError(409, 'SAME_TABLE', `Já está na mesa ${dest.number}.`);
+
+    // Nomes repetidos na mesa de destino: avisa antes, com o nome, em vez do erro do banco.
+    const there = await db
+      .select({ name: comandas.customerName })
+      .from(comandas)
+      .where(and(eq(comandas.tableId, dest.id), inArray(comandas.status, [...OPEN_STATUSES])));
+    const taken = new Set(there.map((t) => t.name.toLowerCase()));
+    const clash = moving.find((m) => m.c.tableId !== dest.id && taken.has(m.c.customerName.toLowerCase()));
+    if (clash) {
+      throw new HttpError(
+        409,
+        'DUPLICATE_NAME',
+        `Já existe "${clash.c.customerName}" aberta na mesa ${dest.number}. Peça ao garçom para diferenciar o nome (ex.: sobrenome) antes de transferir.`,
+      );
+    }
+
+    const toMove = moving.filter((m) => m.c.tableId !== dest.id);
+    const fromTableNumbers = [...new Set(toMove.map((m) => m.tableNumber))].sort((a, b) => a - b);
+    await db.transaction(async (tx) => {
+      await tx.update(comandas).set({ tableId: dest.id }).where(inArray(comandas.id, toMove.map((m) => m.c.id)));
+      await audit(tx, request, {
+        action: 'TRANSFERENCIA',
+        entity: 'comanda',
+        entityId: toMove.length === 1 ? toMove[0]!.c.id : undefined,
+        before: { mesas: fromTableNumbers },
+        after: { mesa: dest.number, comandas: toMove.map((m) => m.c.customerName) },
+      });
+    });
+    return { moved: toMove.length, fromTableNumbers, toTableId: dest.id, toTableNumber: dest.number };
   });
 
   /** Conta de uma, várias comandas ou da mesa inteira. */

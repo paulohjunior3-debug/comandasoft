@@ -12,6 +12,7 @@ import {
   type CashierTable,
   type CreatePaymentResult,
   type PaymentMethod,
+  type TransferResult,
 } from '@sistema-bar/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -51,18 +52,22 @@ export function BillPanel({
   preselect,
   onEmpty,
   onFinalize,
+  onTransferred,
 }: {
   registerId: string;
   table: CashierTable;
   preselect: string[] | null;
   onEmpty: () => void;
   onFinalize: (info: FinalizeInfo) => void;
+  /** A mesa inteira foi transferida: o caixa passa a mostrar a mesa de destino. */
+  onTransferred: (toTableId: string) => void;
 }) {
   const qc = useQueryClient();
   const pin = usePin();
   const [selected, setSelected] = useState<string[]>(() => preselect ?? table.comandas.map((c) => c.id));
   const [modal, setModal] = useState<'DESCONTO' | 'TAXA_SERVICO_REMOVIDA' | 'COUVERT_REMOVIDO' | null>(null);
   const [canceling, setCanceling] = useState<BillItem | null>(null);
+  const [transferring, setTransferring] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setSelected(preselect ?? table.comandas.map((c) => c.id)), [table.id, preselect]);
@@ -113,6 +118,7 @@ export function BillPanel({
         <h2 className="text-2xl font-semibold">Mesa {table.number}</h2>
         <div className="flex gap-2">
           <Button onClick={() => setSelected(table.comandas.map((c) => c.id))}>Mesa inteira</Button>
+          <Button onClick={() => setTransferring(true)}>Transferir</Button>
           <Button onClick={() => printBill.mutate()} disabled={!ordered.length || printBill.isPending}>Imprimir pré-conta</Button>
         </div>
       </div>
@@ -254,7 +260,11 @@ export function BillPanel({
                 }}
               />
             ) : (
-              <p className="rounded-xl bg-emerald-950 p-4 text-center text-emerald-300">Conta quitada.</p>
+              b.totals.totalCents === 0 && b.totals.paidCents === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-700 p-4 text-center text-slate-400">Nada lançado ainda.</p>
+              ) : (
+                <p className="rounded-xl bg-emerald-950 p-4 text-center text-emerald-300">Conta quitada.</p>
+              )
             )}
           </div>
         </div>
@@ -271,6 +281,23 @@ export function BillPanel({
               setModal(null);
             })
           }
+        />
+      )}
+      {transferring && (
+        <TransferModal
+          table={table}
+          initial={ordered.length ? ordered : table.comandas.map((c) => c.id)}
+          onClose={() => setTransferring(false)}
+          onDone={(r, all) => {
+            setTransferring(false);
+            refresh();
+            const names = table.comandas.filter((c) => r.movedIds.includes(c.id)).map((c) => c.customerName);
+            if (all) onTransferred(r.toTableId);
+            else {
+              setSelected((s) => s.filter((id) => !r.movedIds.includes(id)));
+              setNotice(`${names.join(', ')} transferido(s) para a mesa ${r.toTableNumber}.`);
+            }
+          }}
         />
       )}
       {canceling && (
@@ -317,6 +344,10 @@ function ComandaBlock({ comanda: c, bill, onCancelItem }: { comanda: BillComanda
             <span className="flex-1">
               <span className={i.canceled ? 'line-through' : ''}>{i.productName}</span>
               {i.canceled && <span className="ml-2 text-xs text-red-400 no-underline">cancelado</span>}
+              <span className="block text-xs text-slate-500">
+                {formatTime(i.orderedAt)} · {i.waiterName}
+                {i.notes && <span className="text-amber-300/80"> · {i.notes}</span>}
+              </span>
               {i.sharedWith > 1 && <span className="text-slate-500"> · rateado entre {i.sharedWith}</span>}
               {i.paidCents > 0 && (
                 <span className="ml-2 text-xs text-emerald-400">
@@ -745,6 +776,96 @@ function CancelItemModal({
         Fica registrado na auditoria e o setor (bar/cozinha) recebe um aviso de cancelamento. Se você não for gerente, será pedido o PIN de
         um gerente ou do administrador.
       </p>
+    </Modal>
+  );
+}
+
+/**
+ * Transferência: a mesa inteira ou só algumas comandas vão para outra mesa, com tudo o que
+ * já foi lançado e pago. Fica na auditoria.
+ */
+function TransferModal({
+  table,
+  initial,
+  onClose,
+  onDone,
+}: {
+  table: CashierTable;
+  initial: string[];
+  onClose: () => void;
+  onDone: (r: TransferResult & { movedIds: string[] }, all: boolean) => void;
+}) {
+  const [picked, setPicked] = useState<string[]>(initial);
+  const [dest, setDest] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const all = picked.length === table.comandas.length;
+
+  const go = async () => {
+    const n = Number(dest);
+    if (!Number.isInteger(n) || n < 1) return setError('Informe o número da mesa de destino.');
+    if (n === table.number) return setError('Escolha uma mesa diferente desta.');
+    if (!picked.length) return setError('Escolha ao menos uma comanda.');
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api<TransferResult>('/cashier/transfer', {
+        method: 'POST',
+        body: JSON.stringify({ comandaIds: picked, toTableNumber: n }),
+      });
+      onDone({ ...r, movedIds: picked }, all);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Transferir da mesa ${table.number}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" onClick={go} disabled={busy}>
+            {all ? 'Transferir a mesa inteira' : `Transferir ${picked.length} comanda(s)`}
+          </Button>
+        </>
+      }
+    >
+      <ErrorBanner message={error} />
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-slate-300">O que vai para a outra mesa</span>
+        <button type="button" className="text-sm text-amber-400" onClick={() => setPicked(all ? [] : table.comandas.map((c) => c.id))}>
+          {all ? 'Desmarcar todas' : 'Mesa inteira'}
+        </button>
+      </div>
+      <ul className="space-y-1">
+        {table.comandas.map((c) => (
+          <li key={c.id}>
+            <label className="flex cursor-pointer items-center gap-3 rounded-lg bg-slate-800 px-3 py-2">
+              <input
+                type="checkbox"
+                className="size-4 accent-amber-500"
+                checked={picked.includes(c.id)}
+                onChange={(e) => setPicked((p) => (e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id)))}
+              />
+              <span className="flex-1">{c.customerName}</span>
+              <span className="text-sm text-slate-400">{formatBRL(c.totals.remainingCents)}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <TextField
+        label="Mesa de destino"
+        inputMode="numeric"
+        autoFocus
+        value={dest}
+        onChange={(e) => setDest(e.target.value.replace(/\D/g, ''))}
+        onKeyDown={(e) => e.key === 'Enter' && void go()}
+        hint="Pode ser uma mesa livre ou que já tenha comandas. Os itens, pagamentos e descontos vão junto."
+      />
     </Modal>
   );
 }

@@ -155,14 +155,16 @@ describe('lançamento de pedidos', () => {
     expect(job!.payload).toMatchObject({ customers: ['Bia', 'Ana', 'Paulo'] });
   });
 
-  it('recusa produto esgotado e comanda de outra mesa', async () => {
+  it('recusa produto esgotado e comandas de mesas diferentes no mesmo pedido', async () => {
     await admin({ method: 'PATCH', url: `/api/admin/products/${ids.pudim}/sold-out`, payload: { soldOut: true } });
     const sold = await order({ comandaIds: [ids.paulo], items: [{ productId: ids.pudim, qty: 1 }] });
     expect(sold.statusCode).toBe(409);
     expect(sold.json()).toMatchObject({ error: 'SOLD_OUT', message: 'Esgotado: Pudim.' });
     await admin({ method: 'PATCH', url: `/api/admin/products/${ids.pudim}/sold-out`, payload: { soldOut: false } });
 
-    const wrong = await order({ comandaIds: [ids.pauloMesa11], items: [{ productId: ids.fritas, qty: 1 }] });
+    // Comandas de mesas diferentes no mesmo pedido: recusado. (Uma comanda que mudou de mesa
+    // sozinha é aceita e vai para a mesa onde ela está — ver transfer.test.ts.)
+    const wrong = await order({ comandaIds: [ids.paulo, ids.pauloMesa11], items: [{ productId: ids.fritas, qty: 1 }] });
     expect(wrong.statusCode).toBe(400);
   });
 

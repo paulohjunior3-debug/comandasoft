@@ -37,8 +37,8 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
     if (already) return reply.code(200).send(await duplicateResponse(already.id));
 
     const comandaIds = [...new Set(input.comandaIds)];
-    const [table] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
-    if (!table) throw new HttpError(400, 'VALIDATION', 'Mesa inválida.');
+    let [requested] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
+    if (!requested) throw new HttpError(400, 'VALIDATION', 'Mesa inválida.');
 
     const targets = await db
       .select()
@@ -48,9 +48,15 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
     if (comandaIds.some((ref) => !resolve(ref))) {
       throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_FOUND, 'Comanda não encontrada. Lance em outra comanda ou descarte o pedido.');
     }
-    if (targets.some((c) => c.tableId !== table.id)) {
-      throw new HttpError(400, 'VALIDATION', 'Comanda inválida para esta mesa.');
+    if (targets.some((c) => c.tableId !== requested!.id)) {
+      // Pedido feito antes de o caixa transferir a comanda (ex.: na fila do celular sem rede):
+      // se todas estão juntas na mesa nova, o pedido vai para lá (e o cupom sai com a mesa certa).
+      const moved = [...new Set(targets.map((c) => c.tableId))];
+      if (moved.length !== 1) throw new HttpError(400, 'VALIDATION', 'Comanda inválida para esta mesa.');
+      [requested] = await db.select().from(diningTables).where(eq(diningTables.id, moved[0]!));
+      if (!requested) throw new HttpError(400, 'VALIDATION', 'Mesa inválida.');
     }
+    const table = requested;
     const closed = targets.filter((c) => !(OPEN_STATUSES as readonly string[]).includes(c.status));
     if (closed.length) {
       throw new HttpError(
