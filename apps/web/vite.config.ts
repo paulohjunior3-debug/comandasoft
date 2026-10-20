@@ -54,7 +54,7 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         // /m/… é a página do cliente (QR da mesa), servida pelo servidor, fora do app.
-        navigateFallbackDenylist: [/^\/api\//, /^\/m\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/m\//, /^\/fotos\//],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
       devOptions: { enabled: true, type: 'module' },
@@ -76,6 +76,7 @@ export default defineConfig({
     proxy: {
       // xfwd: repassa o IP real do celular (X-Forwarded-For) para a auditoria da API.
       '/api': { target: `http://localhost:${apiPort}`, changeOrigin: false, xfwd: true },
+      '/fotos': { target: `http://localhost:${apiPort}`, changeOrigin: false },
     },
   },
   preview: { host: true, port: 4173, https },

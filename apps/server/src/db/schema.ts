@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import {
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -71,6 +72,12 @@ export const auditLogs = pgTable(
   (t) => [index().on(t.at), index().on(t.entity, t.entityId)],
 );
 
+/** Bytes crus no PostgreSQL (fotos dos produtos). */
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  fromDriver: (v) => (Buffer.isBuffer(v) ? v : Buffer.from(v)),
+});
+
 // ---------- Cadastros (SPEC 5.1) ----------
 
 export const categories = pgTable('categories', {
@@ -111,6 +118,19 @@ export const products = pgTable(
     check('products_price_non_negative', sql`${t.priceCents} >= 0`),
   ],
 );
+
+/**
+ * Foto do produto para o cardápio do cliente (já reduzida no navegador, ~50–150 KB). Fica no
+ * banco para entrar no backup diário junto com o resto; servida em /fotos/<produto>.
+ */
+export const productImages = pgTable('product_images', {
+  productId: uuid()
+    .primaryKey()
+    .references(() => products.id, { onDelete: 'cascade' }),
+  mime: text().notNull(),
+  data: bytea().notNull(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
 
 export const printers = pgTable('printers', {
   id,

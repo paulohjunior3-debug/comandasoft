@@ -1,9 +1,9 @@
-import { productInputSchema, productSoldOutSchema, type Product } from '@sistema-bar/shared';
+import { productImageSchema, productInputSchema, productSoldOutSchema, type Product } from '@sistema-bar/shared';
 import { asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../../app';
-import { categories, products } from '../../db/schema';
+import { categories, productImages, products } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { HttpError, notFound } from '../../lib/errors';
 import { idParams } from './params';
@@ -34,7 +34,8 @@ export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
   });
 
   app.post('/', async (request, reply) => {
-    const data = productInputSchema.parse(request.body);
+    // A foto tem rota própria (PUT /:id/image); o formulário não mexe nela.
+    const { imageUrl: _image, ...data } = productInputSchema.parse(request.body);
     await assertCategory(data.categoryId);
     const row = await db.transaction(async (tx) => {
       const [created] = await tx.insert(products).values(data).returning();
@@ -46,7 +47,7 @@ export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
 
   app.put('/:id', async (request) => {
     const { id } = idParams.parse(request.params);
-    const data = productInputSchema.parse(request.body);
+    const { imageUrl: _image, ...data } = productInputSchema.parse(request.body);
     const before = toProduct(await find(id));
     await assertCategory(data.categoryId);
     const row = await db.transaction(async (tx) => {
@@ -57,6 +58,37 @@ export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
       return updated!;
     });
     return toProduct(row);
+  });
+
+  /** Foto do produto (cardápio do cliente). Chega reduzida pelo navegador; guardada no banco. */
+  app.put('/:id/image', { bodyLimit: 2_000_000 }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const { dataUrl } = productImageSchema.parse(request.body);
+    await find(id);
+    const [, mime, b64] = dataUrl.match(/^data:(image\/[a-z]+);base64,(.*)$/)!;
+    const data = Buffer.from(b64!, 'base64');
+    const now = new Date();
+    const imageUrl = `/fotos/${id}?v=${now.getTime()}`;
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(productImages)
+        .values({ productId: id, mime: mime!, data, updatedAt: now })
+        .onConflictDoUpdate({ target: productImages.productId, set: { mime: mime!, data, updatedAt: now } });
+      await tx.update(products).set({ imageUrl }).where(eq(products.id, id));
+      await audit(tx, request, { action: 'PRODUTO_FOTO_ALTERADA', entity: 'product', entityId: id, after: { bytes: data.length } });
+    });
+    return { imageUrl };
+  });
+
+  app.delete('/:id/image', async (request, reply) => {
+    const { id } = idParams.parse(request.params);
+    await find(id);
+    await db.transaction(async (tx) => {
+      await tx.delete(productImages).where(eq(productImages.productId, id));
+      await tx.update(products).set({ imageUrl: null }).where(eq(products.id, id));
+      await audit(tx, request, { action: 'PRODUTO_FOTO_REMOVIDA', entity: 'product', entityId: id });
+    });
+    return reply.code(204).send();
   });
 
   app.patch('/:id/sold-out', async (request) => {

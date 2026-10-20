@@ -90,6 +90,8 @@ export interface MenuProduct {
   description: string | null;
   priceCents: number;
   soldOut: boolean;
+  /** Foto (/fotos/<id>?v=…), quando cadastrada. */
+  imageUrl: string | null;
 }
 
 // ---------- Pedidos ----------

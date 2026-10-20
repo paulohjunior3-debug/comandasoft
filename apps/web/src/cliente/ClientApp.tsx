@@ -1,13 +1,13 @@
 import {
   formatBRL,
-  matchesSearch,
   PAYMENT_METHOD_LABELS,
   type PublicComandaOption,
   type PublicComandaView,
   type PublicTableInfo,
   type QrUnlockResult,
 } from '@sistema-bar/shared';
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Menu } from './Menu';
 
 // ---------- Comunicação ----------
 
@@ -90,31 +90,47 @@ export function ClientApp({ qrToken }: { qrToken: string }) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-xl flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
-        <div className="flex items-baseline justify-between gap-3 pb-3">
-          <h1 className="truncate text-lg font-semibold">{t.companyName || 'Cardápio'}</h1>
-          <span className="shrink-0 rounded-full bg-slate-800 px-3 py-1 text-sm font-medium">Mesa {t.tableNumber}</span>
+      {/* Abertura: nome do bar e a mesa */}
+      <header className="relative overflow-hidden px-5 pt-[max(1.5rem,env(safe-area-inset-top))] pb-5">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-amber-500/25 via-slate-950 to-slate-950" />
+        <div className="relative flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium tracking-[0.2em] text-amber-300/80 uppercase">Bem-vindo</p>
+            <h1 className="truncate text-2xl font-bold">{t.companyName || 'Cardápio'}</h1>
+          </div>
+          <span className="shrink-0 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-center leading-tight">
+            <span className="block text-[10px] tracking-wider text-amber-300 uppercase">Mesa</span>
+            <span className="block text-xl font-bold text-amber-200">{t.tableNumber}</span>
+          </span>
         </div>
-        <nav className="flex gap-1 pb-2">
-          {(
-            [
-              ['cardapio', 'Cardápio'],
-              ['comanda', 'Minha comanda'],
-            ] as const
-          ).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`flex-1 rounded-lg py-2.5 text-sm font-medium ${tab === key ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
       </header>
 
-      <main className="flex-1 px-4 py-4">
-        {tab === 'cardapio' ? <Menu info={t} /> : <MyComanda qrToken={qrToken} />}
+      {/* Abas fixas ao rolar; altura fixa (h-14) para as categorias do cardápio encostarem logo abaixo */}
+      <nav className="sticky top-0 z-20 flex h-14 items-center gap-1 border-b border-slate-800/80 bg-slate-950/95 px-4 backdrop-blur">
+        {(
+          [
+            ['cardapio', 'Cardápio'],
+            ['comanda', 'Minha comanda'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`flex-1 rounded-full py-2 text-sm font-semibold transition-colors ${tab === key ? 'bg-amber-500 text-slate-950' : 'text-slate-300'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <main className="flex-1 pb-6">
+        {tab === 'cardapio' ? (
+          <Menu info={t} />
+        ) : (
+          <div className="px-4 py-4">
+            <MyComanda qrToken={qrToken} />
+          </div>
+        )}
       </main>
 
       <footer className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-xs text-slate-500">
@@ -123,79 +139,6 @@ export function ClientApp({ qrToken }: { qrToken: string }) {
         Seu CPF é usado só para identificar sua comanda e para a nota fiscal.
       </footer>
     </div>
-  );
-}
-
-// ---------- Cardápio ----------
-
-function Menu({ info }: { info: PublicTableInfo }) {
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState<string | null>(null);
-  const q = search.trim();
-  const sections = useMemo(() => {
-    if (q) {
-      const found = info.menu.flatMap((c) => c.products).filter((p) => matchesSearch(p.name, q));
-      return [{ id: 'busca', name: `Resultado para "${q}"`, color: null, products: found }];
-    }
-    return category ? info.menu.filter((c) => c.id === category) : info.menu;
-  }, [info.menu, q, category]);
-
-  if (!info.menu.length) return <p className="py-10 text-center text-slate-400">Cardápio ainda não cadastrado.</p>;
-
-  return (
-    <div className="space-y-4">
-      <input
-        type="search"
-        placeholder="Buscar no cardápio"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-base outline-none focus:border-amber-500"
-      />
-      {!q && (
-        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
-          <Chip active={!category} onClick={() => setCategory(null)}>
-            Tudo
-          </Chip>
-          {info.menu.map((c) => (
-            <Chip key={c.id} active={category === c.id} onClick={() => setCategory(c.id)}>
-              {c.name}
-            </Chip>
-          ))}
-        </div>
-      )}
-      {sections.map((c) => (
-        <section key={c.id}>
-          <h2 className="mb-2 text-sm font-semibold tracking-wide text-slate-400 uppercase">{c.name}</h2>
-          {c.products.length === 0 ? (
-            <p className="text-sm text-slate-500">Nada encontrado.</p>
-          ) : (
-            <ul className="divide-y divide-slate-800 rounded-xl bg-slate-900">
-              {c.products.map((p) => (
-                <li key={p.id} className="flex items-start justify-between gap-3 px-4 py-3">
-                  <span className="min-w-0">
-                    <span className="block font-medium">{p.name}</span>
-                    {p.description && <span className="block text-sm text-slate-400">{p.description}</span>}
-                  </span>
-                  <span className="shrink-0 font-medium tabular-nums">{formatBRL(p.priceCents)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ))}
-      {info.serviceFeeEnabled && <p className="text-xs text-slate-500">Taxa de serviço de 10% não incluída nos preços.</p>}
-    </div>
-  );
-}
-
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`shrink-0 rounded-full px-3 py-1.5 text-sm whitespace-nowrap ${active ? 'bg-slate-100 font-medium text-slate-950' : 'bg-slate-800 text-slate-300'}`}
-    >
-      {children}
-    </button>
   );
 }
 

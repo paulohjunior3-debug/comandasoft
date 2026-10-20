@@ -280,3 +280,11 @@ export const DEFAULT_SETTINGS: Settings = {
   weekStartDay: 1,
   closedDays: [],
 };
+
+/** Foto do produto: imagem já reduzida no navegador, enviada como data URL (JPEG/WebP/PNG). */
+export const productImageSchema = z.object({
+  dataUrl: z
+    .string()
+    .regex(/^data:image\/(jpeg|webp|png);base64,[A-Za-z0-9+/=]+$/, 'Envie uma imagem JPG, PNG ou WebP.')
+    .max(1_400_000, 'Foto grande demais (máx. 1 MB depois de reduzida).'),
+});

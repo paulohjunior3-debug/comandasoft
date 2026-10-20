@@ -12,6 +12,9 @@ import {
   TextField,
   Toggle,
 } from '../../components/ui';
+import { useQueryClient } from '@tanstack/react-query';
+import { api } from '../../lib/api';
+import { shrinkImage } from '../../lib/image';
 import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
 
 const PATH = '/admin/products';
@@ -113,6 +116,13 @@ export function ProductsPage() {
                   <ul className="divide-y divide-slate-800 rounded-xl bg-slate-900">
                     {items.map((p) => (
                       <li key={p.id} className="flex items-center gap-3 px-4 py-3">
+                        <button onClick={() => setEditing({ product: p })} className="shrink-0" aria-label={`Editar ${p.name}`}>
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt="" loading="lazy" className="size-12 rounded-lg object-cover" />
+                          ) : (
+                            <span className="flex size-12 items-center justify-center rounded-lg bg-slate-800 text-xs text-slate-500">sem foto</span>
+                          )}
+                        </button>
                         <button onClick={() => setEditing({ product: p })} className="min-w-0 flex-1 text-left">
                           <span className={`block truncate font-medium ${p.active ? '' : 'text-slate-500 line-through'}`}>{p.name}</span>
                           <span className="block text-sm text-slate-400">
@@ -165,7 +175,12 @@ function ProductModal({
   const [form, setForm] = useState(() => toForm(product, defaultCategory));
   const [localError, setLocalError] = useState<string | null>(null);
   const [showFiscal, setShowFiscal] = useState(false);
-  const save = useApiMutation([PATH, '/admin/categories']);
+  // Foto: a escolhida agora (ainda não enviada), ou a que já está salva.
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const qc = useQueryClient();
+  const save = useApiMutation<ProductInput, Product>([PATH, '/admin/categories']);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
 
   const submit = () => {
@@ -176,9 +191,40 @@ function ProductModal({
     const body: ProductInput = { ...rest, priceCents };
     save.mutate(
       { method: product ? 'PUT' : 'POST', path: product ? `${PATH}/${product.id}` : PATH, body },
-      { onSuccess: onClose },
+      {
+        // Depois de salvar (o produto novo já tem id), envia ou remove a foto.
+        onSuccess: async (saved) => {
+          const id = product?.id ?? saved.id;
+          try {
+            setPhotoBusy(true);
+            if (photo) await api(`${PATH}/${id}/image`, { method: 'PUT', body: JSON.stringify({ dataUrl: photo }) });
+            else if (removePhoto && product?.imageUrl) await api(`${PATH}/${id}/image`, { method: 'DELETE' });
+            void qc.invalidateQueries({ queryKey: [PATH] });
+            onClose();
+          } catch (err) {
+            setLocalError(`Produto salvo, mas a foto não: ${errorMessage(err)}`);
+          } finally {
+            setPhotoBusy(false);
+          }
+        },
+      },
     );
   };
+
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setPhotoBusy(true);
+      setPhoto(await shrinkImage(file));
+      setRemovePhoto(false);
+      setLocalError(null);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Não foi possível usar esta imagem.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+  const shownPhoto = photo ?? (removePhoto ? null : product?.imageUrl ?? null);
   const remove = () =>
     confirm(`Excluir "${product!.name}"? Se ele já tiver sido vendido, prefira desativar.`) &&
     save.mutate({ method: 'DELETE', path: `${PATH}/${product!.id}` }, { onSuccess: onClose });
@@ -191,7 +237,7 @@ function ProductModal({
         <>
           {product && <Button variant="danger" className="mr-auto" onClick={remove} disabled={save.isPending}>Excluir</Button>}
           <Button onClick={onClose}>Cancelar</Button>
-          <Button variant="primary" onClick={submit} disabled={save.isPending}>Salvar</Button>
+          <Button variant="primary" onClick={submit} disabled={save.isPending || photoBusy}>Salvar</Button>
         </>
       }
     >
@@ -204,6 +250,34 @@ function ProductModal({
         ))}
       </SelectField>
       <TextField label="Nome" value={form.name} onChange={(e) => set('name', e.target.value)} autoFocus={!product} />
+      <div className="flex items-center gap-3">
+        {shownPhoto ? (
+          <img src={shownPhoto} alt="" className="size-24 rounded-xl object-cover" />
+        ) : (
+          <span className="flex size-24 items-center justify-center rounded-xl border border-dashed border-slate-700 text-center text-xs text-slate-500">
+            sem foto
+          </span>
+        )}
+        <div className="space-y-2">
+          <label className="inline-block cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-800">
+            {photoBusy ? 'Preparando…' : shownPhoto ? 'Trocar foto' : 'Escolher foto'}
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => void pickPhoto(e.target.files?.[0])} />
+          </label>
+          {shownPhoto && (
+            <button
+              type="button"
+              className="block text-sm text-red-300"
+              onClick={() => {
+                setPhoto(null);
+                setRemovePhoto(true);
+              }}
+            >
+              Remover foto
+            </button>
+          )}
+          <p className="text-xs text-slate-500">Aparece no cardápio do cliente (QR). A foto é reduzida automaticamente.</p>
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <TextField label="Preço (R$)" inputMode="decimal" placeholder="0,00" value={form.price} onChange={(e) => set('price', e.target.value)} />
         <TextField label="Código interno" value={form.sku} onChange={(e) => set('sku', e.target.value)} hint="Opcional" />

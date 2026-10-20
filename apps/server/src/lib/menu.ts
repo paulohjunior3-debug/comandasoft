@@ -19,7 +19,7 @@ export async function loadMenu(db: Queryable, { hideSoldOut = false } = {}): Pro
       entry = { id: c.id, name: c.name, color: c.color, products: [] };
       menu.set(c.id, entry);
     }
-    entry.products.push({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents, soldOut: p.soldOut });
+    entry.products.push({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents, soldOut: p.soldOut, imageUrl: p.imageUrl });
   }
   return [...menu.values()];
 }

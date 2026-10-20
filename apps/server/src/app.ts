@@ -11,6 +11,7 @@ import { appVersion, paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { createSecretBox, type SecretBox } from './lib/secret-box';
 import { installErrorHandler } from './lib/error-handler';
+import { productImageRoutes } from './lib/product-images';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
 import { createPrintWorker, type PrintWorker } from './printing/worker';
 import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from './printing/windows-printers';
@@ -95,6 +96,7 @@ export async function buildApp({
   });
 
   await app.register(cookie);
+  await app.register((r) => productImageRoutes(r, db));
   await app.register(rateLimit, { global: false });
 
   await app.register(

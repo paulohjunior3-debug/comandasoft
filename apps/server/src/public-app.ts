@@ -6,6 +6,7 @@ import Fastify, { type FastifyServerOptions } from 'fastify';
 import { createTokenService } from './auth/tokens';
 import type { Db } from './db/client';
 import { installErrorHandler } from './lib/error-handler';
+import { productImageRoutes } from './lib/product-images';
 import { paths } from './paths';
 import { publicRoutes } from './routes/public';
 
@@ -32,6 +33,7 @@ export async function buildPublicApp({ db, jwtSecret, fastify, webDist = paths.w
   });
   await app.register(rateLimit, { global: false });
   await app.register((pub) => publicRoutes(pub, { db, tokens: createTokenService(jwtSecret) }), { prefix: '/api/public' });
+  await app.register((r) => productImageRoutes(r, db));
 
   const servesWeb = webDist !== false && existsSync(join(webDist, 'cliente.html'));
   if (servesWeb) {
