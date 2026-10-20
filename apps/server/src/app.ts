@@ -10,6 +10,7 @@ import type { Db } from './db/client';
 import { appVersion, paths } from './paths';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { createSecretBox, type SecretBox } from './lib/secret-box';
+import { certificatePageRoutes } from './lib/certificate-page';
 import { installErrorHandler } from './lib/error-handler';
 import { productImageRoutes } from './lib/product-images';
 import { emulatorTransport, type PrintTransport } from './printing/transport';
@@ -56,6 +57,8 @@ export interface BuildAppOptions {
   listInstalledPrinters?: ListInstalledPrinters;
   /** Porta do servidor do QR do cliente, para sugerir o endereço impresso no QR. */
   publicPort?: number | null;
+  /** Certificado de confiança (público) servido em /certificado. */
+  caCertPath?: string;
 }
 
 const defaultWebDist = paths.webDist;
@@ -71,6 +74,7 @@ export async function buildApp({
   listInstalledPrinters = cachedLister(listWindowsPrinters),
   printTransport = emulatorTransport(defaultEmulatorDir),
   publicPort = null,
+  caCertPath = paths.fromHome('certs/rootCA.crt'),
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
@@ -97,6 +101,9 @@ export async function buildApp({
 
   await app.register(cookie);
   await app.register((r) => productImageRoutes(r, db));
+  // Página do certificado também no HTTPS (abre depois do aviso "Continuar"), para celulares
+  // cuja rede não alcança a porta do QR.
+  await app.register((r) => certificatePageRoutes(r, { caCertPath, mainPort: null, sameOrigin: true }));
   await app.register(rateLimit, { global: false });
 
   await app.register(

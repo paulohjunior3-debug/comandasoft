@@ -7,7 +7,10 @@ import type { FastifyInstance } from 'fastify';
  * seguro" e só cria atalho, em vez de instalar como app. Servida no servidor do QR (HTTP),
  * que abre sem aviso de certificado.
  */
-export async function certificatePageRoutes(app: FastifyInstance, { caCertPath, mainPort }: { caCertPath: string; mainPort: number | null }) {
+export async function certificatePageRoutes(
+  app: FastifyInstance,
+  { caCertPath, mainPort, sameOrigin = false }: { caCertPath: string; mainPort: number | null; sameOrigin?: boolean },
+) {
   app.get('/certificado/sistema-bar.crt', { logLevel: 'warn' }, (_request, reply) => {
     if (!existsSync(caCertPath)) return reply.code(404).send({ error: 'NOT_FOUND', message: 'Certificado não encontrado neste computador.' });
     return reply
@@ -18,14 +21,17 @@ export async function certificatePageRoutes(app: FastifyInstance, { caCertPath, 
 
   app.get('/certificado', { logLevel: 'warn' }, (request, reply) => {
     const host = request.hostname.replace(/:\d+$/, '');
-    const appUrl = mainPort ? `https://${host}:${mainPort}` : null;
+    // No próprio sistema (HTTPS) o link é a raiz; no servidor do QR, o endereço do sistema.
+    const appUrl = sameOrigin ? '/' : mainPort ? `https://${host}:${mainPort}` : null;
     const has = existsSync(caCertPath);
     return reply.header('content-type', 'text/html; charset=utf-8').send(page(appUrl, has));
   });
 }
 
 function page(appUrl: string | null, has: boolean): string {
-  const open = appUrl ? `<a class="btn sec" href="${appUrl}">Abrir o sistema</a><p class="hint">${appUrl}</p>` : '';
+  const open = appUrl
+    ? `<a class="btn sec" href="${appUrl}">Abrir o sistema</a>${appUrl.startsWith('http') ? `<p class="hint">${appUrl}</p>` : ''}`
+    : '';
   return `<!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Instalar o Sistema Bar no celular</title>

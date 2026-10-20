@@ -54,7 +54,7 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         // /m/… é a página do cliente (QR da mesa), servida pelo servidor, fora do app.
-        navigateFallbackDenylist: [/^\/api\//, /^\/m\//, /^\/fotos\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/m\//, /^\/fotos\//, /^\/certificado/],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
       devOptions: { enabled: true, type: 'module' },

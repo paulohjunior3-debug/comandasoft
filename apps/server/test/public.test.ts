@@ -160,6 +160,11 @@ describe('QR da mesa (servidor do cliente)', () => {
     expect((await missing.inject({ method: 'GET', url: '/certificado/sistema-bar.crt' })).statusCode).toBe(404);
     expect((await missing.inject({ method: 'GET', url: '/certificado' })).body).toContain('não foi encontrado');
     await missing.close();
+
+    // Também no próprio sistema (HTTPS), sem login, com o link para a raiz.
+    const main = await ctx.app.inject({ method: 'GET', url: '/certificado' });
+    expect(main.statusCode).toBe(200);
+    expect(main.body).toContain('href="/"');
   });
 
   it('o admin recebe a porta e os endereços sugeridos para imprimir o QR', async () => {
