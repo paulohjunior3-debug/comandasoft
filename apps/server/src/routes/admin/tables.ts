@@ -1,5 +1,4 @@
 import { randomBytes } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
 import { tableBulkInputSchema, tableInputSchema, type DiningTable, type QrInfo } from '@sistema-bar/shared';
 import { asc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -7,6 +6,7 @@ import type { AppDeps } from '../../app';
 import { diningTables } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { notFound } from '../../lib/errors';
+import { lanAddresses } from '../../lib/network';
 import { idParams } from './params';
 
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -18,14 +18,6 @@ export function newQrToken(): string {
 }
 
 const toTable = ({ createdAt: _c, updatedAt: _u, ...t }: typeof diningTables.$inferSelect): DiningTable => t;
-
-/** IPv4 da rede local deste PC (Wi-Fi/cabo), para sugerir o endereço do QR. */
-function lanAddresses(): string[] {
-  return Object.values(networkInterfaces())
-    .flat()
-    .filter((n) => n && n.family === 'IPv4' && !n.internal && !n.address.startsWith('169.254.'))
-    .map((n) => n!.address);
-}
 
 export async function tableRoutes(app: FastifyInstance, { db, publicPort }: AppDeps) {
   /** Para a impressão dos QR: porta do servidor do cliente e endereços sugeridos. */

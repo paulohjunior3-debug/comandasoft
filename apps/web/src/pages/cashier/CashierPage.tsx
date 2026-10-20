@@ -22,7 +22,7 @@ import { useAuth } from '../../lib/auth';
 import { formatTime } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { BillPanel, type FinalizeInfo } from './BillPanel';
-import { CounterSaleModal, CouvertModal, OpenTableModal } from './CashierActions';
+import { CounterSaleModal, CouvertModal, InstallQrModal, OpenTableModal } from './CashierActions';
 import { usePin } from './usePin';
 import { CloseCashModal, describeRules, MovementModal, OpenCashForm } from './CashModals';
 
@@ -151,10 +151,13 @@ function SessionActions({ registerId }: { registerId: string }) {
   const [movement, setMovement] = useState<CashMovementType | null>(null);
   const [closing, setClosing] = useState(false);
   const [couvert, setCouvert] = useState(false);
+  const [install, setInstall] = useState(false);
   const pin = usePin();
   const qc = useQueryClient();
   return (
     <>
+      <Button onClick={() => setInstall(true)} title="QR para instalar o app nos celulares da equipe">📱 Celulares</Button>
+      {install && <InstallQrModal onClose={() => setInstall(false)} />}
       <Button onClick={() => setCouvert(true)}>Couvert</Button>
       {couvert && (
         <CouvertModal

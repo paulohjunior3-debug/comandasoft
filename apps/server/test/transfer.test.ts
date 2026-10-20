@@ -115,3 +115,13 @@ describe('caixa: transferência', () => {
     expect((await garcom({ method: 'POST', url: '/api/cashier/transfer', payload: { comandaIds: [ids.bia], toTableNumber: 3 } })).statusCode).toBe(403);
   });
 });
+
+describe('caixa: QR para instalar o app nos celulares', () => {
+  it('informa os IPs deste PC na rede (só para o caixa)', async () => {
+    const res = await caixa({ method: 'GET', url: '/api/cashier/lan-addresses' });
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.json().addresses)).toBe(true);
+    expect(res.json().addresses.every((a: string) => /^\d+\.\d+\.\d+\.\d+$/.test(a) && a !== '127.0.0.1')).toBe(true);
+    expect((await garcom({ method: 'GET', url: '/api/cashier/lan-addresses' })).statusCode).toBe(403);
+  });
+});

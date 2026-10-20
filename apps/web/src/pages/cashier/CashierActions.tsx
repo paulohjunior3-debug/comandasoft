@@ -16,7 +16,8 @@ import {
   type MenuProduct,
 } from '@sistema-bar/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import QRCode from 'qrcode';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { maskCpf, maskPhone } from '../../lib/format';
@@ -561,6 +562,60 @@ export function CouvertModal({ pin, onClose, onChanged }: { pin: ReturnType<type
             Quem abre comanda com o couvert ativo paga. Quem já estava paga se continuar na mesa 15 minutos depois do início.
             {s.mode === 'UMA_VEZ' ? ' Com vários shows no dia, cada pessoa paga uma vez só.' : ' Com vários shows no dia, cobra a cada show.'} Gerente e admin não precisam de PIN.
           </p>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+/**
+ * QR para os celulares da equipe abrirem a página /certificado (instalar o certificado e o app).
+ * Usa o IP deste PC na rede, na mesma porta do sistema: o caixa costuma abrir por "localhost".
+ */
+export function InstallQrModal({ onClose }: { onClose: () => void }) {
+  const lan = useQuery({ queryKey: ['/cashier/lan-addresses'], queryFn: () => api<{ addresses: string[] }>('/cashier/lan-addresses') });
+  const here = window.location.hostname;
+  const addresses = useMemo(() => {
+    const list = lan.data?.addresses ?? [];
+    return list.includes(here) ? [here, ...list.filter((a) => a !== here)] : list;
+  }, [lan.data, here]);
+  const [chosen, setChosen] = useState<string | null>(null);
+  const ip = chosen ?? addresses[0] ?? null;
+  const port = window.location.port ? `:${window.location.port}` : '';
+  const url = ip ? `https://${ip}${port}/certificado` : null;
+  const [svg, setSvg] = useState('');
+  useEffect(() => {
+    if (!url) return;
+    void QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } }).then(setSvg);
+  }, [url]);
+
+  return (
+    <Modal title="Instalar o app no celular" onClose={onClose} footer={<Button variant="primary" onClick={onClose}>Fechar</Button>}>
+      <ErrorBanner message={errorMessage(lan.error)} />
+      {lan.isLoading ? (
+        <Loading />
+      ) : !url ? (
+        <p className="text-sm text-slate-400">Este computador não está conectado a nenhuma rede.</p>
+      ) : (
+        <>
+          <div className="mx-auto w-60 rounded-xl bg-white p-3" aria-label={`QR Code para ${url}`} dangerouslySetInnerHTML={{ __html: svg }} />
+          <p className="text-center font-mono text-sm text-slate-300">{url}</p>
+          {addresses.length > 1 && (
+            <div className="flex flex-wrap justify-center gap-1">
+              <span className="text-xs text-slate-500">Não abriu? Tente outro endereço:</span>
+              {addresses.map((a) => (
+                <button key={a} onClick={() => setChosen(a)} className={`rounded px-2 py-0.5 text-xs ${a === ip ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-300'}`}>
+                  {a}
+                </button>
+              ))}
+            </div>
+          )}
+          <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-300">
+            <li>No celular (na Wi-Fi do bar), aponte a câmera para o QR e abra o link.</li>
+            <li>Se aparecer "Sua conexão não é particular": toque em <b>Avançado</b> → <b>Continuar</b>.</li>
+            <li>Toque em <b>Baixar o certificado</b> e siga os passos da página.</li>
+            <li>Depois, toque em <b>Abrir o sistema</b> e instale o app pelo menu do Chrome.</li>
+          </ol>
         </>
       )}
     </Modal>
