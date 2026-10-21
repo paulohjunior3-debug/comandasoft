@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { maskName, type PublicComandaOption, type PublicComandaView, type PublicTableInfo } from '@sistema-bar/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { desc, eq } from 'drizzle-orm';
+import { qrUnlockAttempts } from '../src/db/schema';
 import { buildPublicApp } from '../src/public-app';
 import { createTestContext, type TestContext } from './helpers';
 
@@ -166,6 +168,28 @@ describe('QR da mesa (servidor do cliente)', () => {
     const main = await ctx.app.inject({ method: 'GET', url: '/certificado' });
     expect(main.statusCode).toBe(200);
     expect(main.body).toContain('href="/"');
+  });
+
+  it('pelo túnel da Cloudflare (4G): usa o IP real do aparelho e não expõe a página do certificado', async () => {
+    const tunnel = { 'cf-connecting-ip': '177.10.20.30' };
+    // A conexão do túnel chega pelo localhost (o cloudflared roda no próprio PC).
+    expect((await pub.inject({ method: 'GET', url: '/certificado', headers: tunnel })).statusCode).toBe(404);
+    expect((await pub.inject({ method: 'GET', url: '/certificado/sistema-bar.crt', headers: tunnel })).statusCode).toBe(404);
+    expect((await pub.inject({ method: 'GET', url: `/api/public/m/${qr}`, headers: tunnel })).statusCode).toBe(200);
+
+    await garcom({ method: 'POST', url: `/api/waiter/comandas/${ids.ana}/qr-release` });
+    await pub.inject({ method: 'POST', url: `/api/public/m/${qr}/comandas/${ids.ana}/unlock`, payload: { pin: '0000' }, headers: tunnel });
+    // Um aparelho da rede local não consegue se passar por outro mandando o cabeçalho.
+    await pub.inject({
+      method: 'POST',
+      url: `/api/public/m/${qr}/comandas/${ids.ana}/unlock`,
+      payload: { pin: '0000' },
+      headers: { 'cf-connecting-ip': '8.8.8.8' },
+      remoteAddress: '192.168.0.50',
+    });
+    const attempts = await ctx.db.select().from(qrUnlockAttempts).where(eq(qrUnlockAttempts.comandaId, ids.ana)).orderBy(desc(qrUnlockAttempts.createdAt)).limit(2);
+    expect(attempts.map((a) => a.ip).sort()).toEqual(['177.10.20.30', '192.168.0.50']);
+    await garcom({ method: 'POST', url: `/api/waiter/comandas/${ids.ana}/qr-release` });
   });
 
   it('o admin recebe a porta e os endereços sugeridos para imprimir o QR', async () => {

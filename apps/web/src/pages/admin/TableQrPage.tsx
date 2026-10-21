@@ -77,7 +77,7 @@ export function TableQrPage() {
                   setBaseUrl(e.target.value);
                 }}
                 placeholder="http://192.168.0.10:8080"
-                hint="IP deste PC na rede do bar. Fixe esse IP no roteador: se ele mudar, os QR impressos param de funcionar."
+                hint="Pela internet (4G do cliente): https://seu-endereco da Cloudflare (veja o LEIA-ME). Só na Wi-Fi do bar: o IP deste PC com a porta; fixe o IP no roteador."
               />
               {(info.data?.suggestedBaseUrls.length ?? 0) > 1 && (
                 <div className="mt-1 flex flex-wrap gap-1">

@@ -35,6 +35,13 @@ if ((Test-Path $trava) -and ((Get-Item $trava).LastWriteTime -gt (Get-Date).AddM
 # Acabou de reiniciar: dá tempo de o servidor subir (migrations, conexão com o banco).
 if ($estado.ultimoReinicio -and ([datetime]$estado.ultimoReinicio) -gt (Get-Date).AddMinutes(-3)) { exit 0 }
 
+# Túnel do cardápio pela internet (se instalado): parado, liga de novo.
+$tunel = Get-Service -Name 'Cloudflared' -ErrorAction SilentlyContinue
+if ($tunel -and $tunel.Status -ne 'Running') {
+  Registrar "Túnel do cardápio (Cloudflared) parado ($($tunel.Status)); ligando"
+  try { Start-Service -Name 'Cloudflared' } catch { Registrar "Erro ao ligar o túnel: $($_.Exception.Message)" }
+}
+
 $porta = Porta-Sistema $Destino
 $saude = Saude-Servidor $porta 10
 if ($saude -eq 'ok') {

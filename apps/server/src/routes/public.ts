@@ -19,6 +19,7 @@ import type { Db } from '../db/client';
 import { comandas, diningTables, orderItems, orderItemShares, orders, qrUnlockAttempts } from '../db/schema';
 import { audit } from '../lib/audit';
 import { loadBill } from '../lib/billing';
+import { clientIp } from '../lib/client-ip';
 import { HttpError } from '../lib/errors';
 import { loadMenu } from '../lib/menu';
 import { getSettings } from '../lib/settings';
@@ -97,7 +98,7 @@ export async function publicRoutes(app: FastifyInstance, { db, tokens }: PublicD
       // PIN: 4 últimos do telefone (ou 3 do CPF nas comandas antigas). Sem nenhum dos dois, nunca libera.
       const expected = qrPinOf(c);
       const ok = expected !== null && pin.length === expected.length && timingSafeEqual(Buffer.from(pin), Buffer.from(expected));
-      await db.insert(qrUnlockAttempts).values({ comandaId: c.id, ok, ip: request.ip });
+      await db.insert(qrUnlockAttempts).values({ comandaId: c.id, ok, ip: clientIp(request) });
       if (ok) return { token: await tokens.signQr(c.id), expiresInSeconds: QR_TOKEN_TTL_SECONDS };
 
       const since = new Date(Date.now() - QR_WRONG_PIN_WINDOW_MINUTES * 60 * 1000);
