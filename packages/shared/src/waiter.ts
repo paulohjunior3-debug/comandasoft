@@ -61,6 +61,22 @@ export interface TableMapEntry {
   totalCents: number;
   /** Último pedido, "atendi a mesa" ou abertura de comanda. null se a mesa está livre. */
   lastAttendedAt: string | null;
+  /** Conta (pré-conta) impressa e ainda não tirada do vermelho. */
+  billAlert: boolean;
+  /** Já houve pagamento nesta ocupação e a mesa continua com comanda aberta (estrela). */
+  partialPaid: boolean;
+}
+
+/**
+ * Cor da mesa (caixa e garçom): vermelho = conta impressa (até alguém tirar do vermelho);
+ * amarelo = sem atendimento há mais de N minutos; verde = em atendimento.
+ */
+export type TableTone = 'verde' | 'amarelo' | 'vermelho';
+
+export function tableTone(t: { billAlert: boolean; lastAttendedAt: string | null }, nowMs: number, yellowMinutes: number): TableTone {
+  if (t.billAlert) return 'vermelho';
+  if (!t.lastAttendedAt) return 'verde';
+  return nowMs - Date.parse(t.lastAttendedAt) >= yellowMinutes * 60_000 ? 'amarelo' : 'verde';
 }
 
 export interface TableMapResponse {
@@ -73,6 +89,10 @@ export interface TableMapResponse {
 export interface TableDetail {
   table: { id: string; number: number; area: string | null };
   comandas: ComandaSummary[];
+  /** Conta impressa e ainda não tirada do vermelho. */
+  billAlert: boolean;
+  /** Já houve pagamento nesta ocupação (pago parcial). */
+  partialPaid: boolean;
 }
 
 export const tableVisitSchema = z.object({ clientUuid });

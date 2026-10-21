@@ -10,7 +10,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Loading, Modal, TextField } from '../../components/ui';
-import { ApiRequestError } from '../../lib/api';
+import { api, ApiRequestError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { maskCpf, maskPhone } from '../../lib/format';
 import { useCachedQuery } from '../../lib/offline/cache';
@@ -66,6 +66,10 @@ export function TablePage() {
           detail.isLoading && <Loading />
         ) : (
           <>
+            {t.billAlert && <BillAlertBanner tableId={t.table.id} partialPaid={t.partialPaid} onCleared={() => void detail.refetch()} />}
+            {!t.billAlert && t.partialPaid && (
+              <p className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-amber-300">⭐ Mesa com pagamento parcial: parte já foi paga.</p>
+            )}
             <div className="flex items-baseline justify-between">
               <p className="text-sm text-slate-400">
                 {list.length} comanda(s){t.table.area ? ` · ${t.table.area}` : ''}
@@ -112,6 +116,25 @@ export function TablePage() {
           onCreated={() => setNewComanda(false)}
         />
       )}
+    </div>
+  );
+}
+
+/** Conta impressa: mesa em vermelho até alguém tirar (ex.: só uma pessoa pagou e a mesa continua). */
+function BillAlertBanner({ tableId, partialPaid, onCleared }: { tableId: string; partialPaid: boolean; onCleared: () => void }) {
+  const clear = useMutation({
+    mutationFn: () => api(`/waiter/tables/${tableId}/clear-alert`, { method: 'POST', body: '{}' }),
+    onSuccess: onCleared,
+  });
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-900 px-3 py-2 text-sm text-red-50">
+      <span>
+        🔴 Conta impressa{partialPaid ? ' · ⭐ pago parcial' : ''}
+        {clear.error ? ` · ${errorMessage(clear.error)}` : ''}
+      </span>
+      <Button onClick={() => clear.mutate()} disabled={clear.isPending}>
+        Tirar do vermelho
+      </Button>
     </div>
   );
 }

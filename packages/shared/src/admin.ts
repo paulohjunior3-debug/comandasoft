@@ -274,7 +274,7 @@ export const DEFAULT_SETTINGS: Settings = {
   serviceFeeEnabled: false,
   couvertCents: 0,
   couvertMode: 'UMA_VEZ',
-  alertYellowMinutes: 15,
+  alertYellowMinutes: 20,
   alertRedMinutes: 30,
   companyName: '',
   companyDocument: '',

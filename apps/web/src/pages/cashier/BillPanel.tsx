@@ -93,7 +93,10 @@ export function BillPanel({
 
   const printBill = useMutation({
     mutationFn: () => api('/cashier/bill/print', { method: 'POST', body: JSON.stringify({ comandaIds: ordered, registerId }) }),
-    onSuccess: () => setNotice('Pré-conta enviada para a impressora do caixa.'),
+    onSuccess: () => {
+      setNotice('Pré-conta enviada para a impressora do caixa. A mesa fica vermelha até tirar do vermelho.');
+      void qc.invalidateQueries({ queryKey: ['/cashier/tables'] });
+    },
   });
   const action = useMutation({
     mutationFn: (fn: () => Promise<unknown>) => fn(),
@@ -130,6 +133,17 @@ export function BillPanel({
           <Button onClick={() => printBill.mutate()} disabled={!ordered.length || printBill.isPending}>Imprimir pré-conta</Button>
         </div>
       </div>
+      {table.billAlert && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-red-900 px-3 py-2 text-sm text-red-50">
+          <span>🔴 Conta impressa: mesa em vermelho{table.partialPaid ? ' · ⭐ pago parcial' : ''}. Se a mesa continua consumindo, tire do vermelho.</span>
+          <Button onClick={() => action.mutate(() => api(`/waiter/tables/${table.id}/clear-alert`, { method: 'POST', body: '{}' }))} disabled={action.isPending}>
+            Tirar do vermelho
+          </Button>
+        </div>
+      )}
+      {!table.billAlert && table.partialPaid && (
+        <p className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-amber-300">⭐ Pago parcial: parte da mesa já pagou.</p>
+      )}
       <ErrorBanner message={errorMessage(bill.error ?? printBill.error ?? action.error)} />
       {notice && (
         <p className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300" onClick={() => setNotice(null)}>
