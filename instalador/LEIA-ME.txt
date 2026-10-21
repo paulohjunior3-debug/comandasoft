@@ -76,6 +76,20 @@ SE O SISTEMA TRAVAR NO MEIO DO MOVIMENTO
   celular e é enviado sozinho quando o sistema voltar.
 - Se não voltar: reinicie o computador e chame o suporte.
 
+CARDÁPIO DO QR PELA INTERNET (cliente usa o 4G, sem a Wi-Fi do bar)
+--------------------------------------------------------------------
+Só o cardápio e a comanda do cliente saem pela internet; caixa, garçom e
+cozinha continuam só na rede local. Precisa de um domínio na Cloudflare.
+1. Cloudflare > Zero Trust > Networks > Tunnels > Create a tunnel
+   (tipo Cloudflared), dê um nome (ex.: bar-do-ze).
+2. Em "Public hostname": subdomínio (ex.: cardapio-bardoze), o seu
+   domínio, Type HTTP, URL  localhost:8080  (a porta do QR do .env).
+3. Copie o token mostrado em "Install connector".
+4. No PC do caixa: dois cliques em CARDAPIO-INTERNET.bat e cole o token.
+5. Administração > Mesas > Imprimir QR Codes > Endereço do QR =
+   https://cardapio-bardoze.seudominio.com.br  > Salvar > reimprima.
+Se a internet do bar cair, só o QR para; o resto do sistema segue normal.
+
 PROBLEMAS
 ---------
 - Log do servidor: C:\SistemaBar\data\logs\servidor.log
