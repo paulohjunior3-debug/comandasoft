@@ -253,6 +253,18 @@ describe('mapa de mesas e fechamento', () => {
     expect(map.tables.find((t: { number: number }) => t.number === 11).status).toBe('EM_FECHAMENTO');
   });
 
+  it('pedir fechamento pelo clientUuid (link do app do garçom) também funciona e chega ao caixa', async () => {
+    const clientUuid = randomUUID();
+    const opened = (await open(ids.mesa12, 'Lia', '', clientUuid)).json();
+    expect(opened.id).toBeTruthy();
+    const res = await garcom({ method: 'POST', url: `/api/waiter/comandas/${clientUuid}/request-close` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: opened.id, status: 'EM_FECHAMENTO' });
+    const caixa = await ctx.as('caixa');
+    const tables = (await caixa({ method: 'GET', url: '/api/cashier/tables' })).json() as { number: number; closingRequested: boolean }[];
+    expect(tables.find((t) => t.number === 12)!.closingRequested).toBe(true);
+  });
+
   it('taxa de serviço aparece na comanda quando o dono liga', async () => {
     const settings = (await admin({ method: 'GET', url: '/api/admin/settings' })).json();
     await admin({ method: 'PUT', url: '/api/admin/settings', payload: { ...settings, serviceFeeEnabled: true } });

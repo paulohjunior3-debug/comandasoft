@@ -29,7 +29,7 @@ export function ComandaPage() {
 
   const askClose = () =>
     confirm(`Pedir o fechamento da comanda de ${name}? O caixa será avisado.`) &&
-    requestClose.mutate({ method: 'POST', path: `${path}/request-close` });
+    requestClose.mutate({ method: 'POST', path: `/waiter/comandas/${c?.id ?? comandaId}/request-close` });
 
   return (
     <div className="min-h-dvh pb-28">
