@@ -237,8 +237,8 @@ export function KitchenPage() {
   const late = tickets.filter((t) => kitchenTone(minutesOf(t)) === 'atrasado').length;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-black text-white" onClick={unlockSound}>
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-800 px-5 py-3">
+    <div className="flex min-h-dvh flex-col bg-black pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)] text-white" onClick={unlockSound}>
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-slate-800 px-5 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
         <h1 className="text-2xl font-bold">Cozinha</h1>
         <p className="text-xl">
           <span className="font-bold tabular-nums">{tickets.length}</span> pedido(s)
@@ -317,7 +317,7 @@ export function KitchenPage() {
         )}
       </main>
 
-      <footer className="flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-800 px-5 py-2 text-sm text-slate-400">
+      <footer className="flex flex-wrap gap-x-6 gap-y-1 border-t border-slate-800 px-5 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] text-sm text-slate-400">
         <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-emerald-600" />Novo (até {KITCHEN_NEW_MINUTES} min)</span>
         <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-slate-600" />Em preparo</span>
         <span><span className="mr-1.5 inline-block size-3 rounded-sm bg-red-600" />{KITCHEN_LATE_MINUTES} min ou mais</span>
@@ -325,7 +325,7 @@ export function KitchenPage() {
       </footer>
 
       {toast && (
-        <p role="status" className="fixed bottom-14 left-1/2 -translate-x-1/2 rounded-xl bg-emerald-600 px-6 py-3 text-xl font-bold shadow-2xl">
+        <p role="status" className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-xl bg-emerald-600 px-6 py-3 text-xl font-bold shadow-2xl">
           ✓ {toast}
         </p>
       )}
