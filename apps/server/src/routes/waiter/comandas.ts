@@ -184,9 +184,11 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
 
   /** Garçom pede o fechamento: comanda fica EM_FECHAMENTO e avisa o caixa (SPEC 5.3). */
   app.post('/:id/request-close', async (request) => {
-    const { id } = idParams.parse(request.params);
-    const [row] = await db.select().from(comandas).where(eq(comandas.id, id));
+    const { id: ref } = idParams.parse(request.params);
+    // Aceita o clientUuid: os links do app do garçom usam esse id (funciona offline).
+    const [row] = await db.select().from(comandas).where(or(eq(comandas.id, ref), eq(comandas.clientUuid, ref)));
     if (!row) throw notFound('Comanda');
+    const id = row.id;
     if (row.status === 'FECHADA' || row.status === 'CANCELADA') {
       throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_OPEN, 'Esta comanda já foi encerrada.');
     }
