@@ -90,7 +90,8 @@ describe('QR da mesa (servidor do cliente)', () => {
     const list: PublicComandaOption[] = (await get(`/api/public/m/${qr}/comandas`)).json();
     expect(list.map((c) => c.maskedName)).toEqual(['Pau*** H.', 'Ana***']);
     expect(list.map((c) => c.pinDigits)).toEqual([4, 4]);
-    expect(JSON.stringify(list)).not.toMatch(/Henrique|725|1234|5678|cpf|phone/i);
+    // Sem os ids (aleatórios, podem conter esses dígitos por acaso).
+    expect(JSON.stringify(list.map(({ id: _id, ...rest }) => rest))).not.toMatch(/Henrique|725|1234|5678|cpf|phone/i);
     expect((await get(`/api/public/m/${otherQr}/comandas`)).json()).toEqual([]);
   });
 
