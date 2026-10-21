@@ -24,7 +24,7 @@ São dois roteadores diferentes:
 - `PRINT_MODE=windows` (impressão real nas impressoras do Windows).
 - Tarefa agendada **"Sistema Bar - Servidor"**: inicia com o Windows e confere a cada 5 minutos se o servidor está no ar. Também existe "Sistema Bar - Backup diario".
 - Regras de firewall: "Sistema Bar - Servidor" e "Sistema Bar - Cliente (QR)", perfis Privado e Público.
-- Certificado: `C:\SistemaBar\certs` (mkcert), emitido para os dois IPs acima. A CA (`rootCA.crt`) está instalada nos celulares da equipe.
+- Certificado: `C:\SistemaBar\certs` (mkcert), emitido para os dois IPs acima e para o IP de casa (192.168.100.236, Wi-Fi "Ap 1006 5.G 2"), desde 21/10/2026. A CA (`rootCA.crt`) está instalada nos celulares da equipe.
 - Notebook: ligado no carregador e fora da economia de energia. Com bateria baixa a tarefa ficou travada em "Na fila".
 
 ## Impressoras (Windows)
