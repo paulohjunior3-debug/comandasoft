@@ -187,6 +187,10 @@ if (-not (Aguardar-Servidor $Porta)) {
 }
 Ok 'Servidor no ar'
 
+Registrar-Vigia $Destino
+Criar-Atalho-Reiniciar $Destino
+Ok 'Vigia ligado (reinicia sozinho se travar); atalho "Reiniciar Sistema Bar" na área de trabalho'
+
 # ---------- Resumo ----------
 # Encerra o registro antes de mostrar a senha do admin, e guarda o log junto da instalação.
 try { Stop-Transcript | Out-Null } catch {}

@@ -86,9 +86,12 @@ const installerFiles = [
   'desinstalar.ps1',
   'comum.ps1',
   'servico.ps1',
+  'vigia.ps1',
+  'reiniciar.ps1',
   'gerar-certificado.ps1',
   'INSTALAR.bat',
   'ATUALIZAR.bat',
+  'REINICIAR.bat',
   'LEIA-ME.txt',
 ];
 for (const f of installerFiles) {

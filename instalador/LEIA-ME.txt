@@ -54,6 +54,19 @@ administrador:  C:\SistemaBar\gerar-certificado.ps1
 e reinicie o PC. Nos celulares, abra o endereço novo e adicione à tela
 inicial de novo.
 
+SE O SISTEMA TRAVAR NO MEIO DO MOVIMENTO
+----------------------------------------
+- O vigia confere o sistema a cada minuto. Se ficar 3 minutos sem
+  responder, reinicia sozinho (e o banco de dados, se for ele o problema).
+  Registro em C:\SistemaBar\data\logs\vigia.log
+- Para reiniciar na hora: dois cliques no atalho "Reiniciar Sistema Bar"
+  na área de trabalho e aceite o pedido de administrador. Leva menos de
+  1 minuto.
+- Nada se perde: pedidos, comandas e pagamentos já estão gravados no
+  banco. O que os garçons lançarem durante o reinício fica guardado no
+  celular e é enviado sozinho quando o sistema voltar.
+- Se não voltar: reinicie o computador e chame o suporte.
+
 PROBLEMAS
 ---------
 - Log do servidor: C:\SistemaBar\data\logs\servidor.log

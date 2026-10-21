@@ -10,11 +10,12 @@ Passo 'Parando o servidor'
 Parar-Servidor $Destino
 
 Passo 'Removendo tarefas e firewall'
-foreach ($t in @($TarefaServidor, $TarefaBackup)) {
+foreach ($t in @($TarefaVigia, $TarefaServidor, $TarefaBackup)) {
   if (Get-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $t -Confirm:$false }
 }
 Get-NetFirewallRule -DisplayName $RegraFirewall -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 Get-NetFirewallRule -DisplayName $RegraFirewallCliente -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Remove-Item -Force (Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) 'Reiniciar Sistema Bar.lnk') -ErrorAction SilentlyContinue
 Ok 'Removido'
 
 Write-Host ''

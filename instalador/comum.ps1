@@ -6,6 +6,7 @@ $ErrorActionPreference = 'Stop'
 
 $TarefaServidor = 'Sistema Bar - Servidor'
 $TarefaBackup = 'Sistema Bar - Backup diario'
+$TarefaVigia = 'Sistema Bar - Vigia'
 $RegraFirewall = 'Sistema Bar - Servidor'
 $RegraFirewallCliente = 'Sistema Bar - Cliente (QR)'
 $PortaClientePadrao = 8080
@@ -153,3 +154,89 @@ function Copiar-Pacote([string]$origem, [string]$destino) {
     Copy-Item -Force $_.FullName (Join-Path $destino $_.Name)
   }
 }
+
+# ---------- Reinício e vigia (sistema travado em produção) ----------
+
+# Arquivo que avisa o vigia que alguém está atualizando ou reiniciando: ele não interfere.
+function Arquivo-Manutencao([string]$destino) { return (Join-Path $destino 'data\manutencao.lock') }
+
+function Iniciar-Manutencao([string]$destino) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $destino 'data') | Out-Null
+  Set-Content -Path (Arquivo-Manutencao $destino) -Value (Get-Date -Format o) -Encoding ASCII
+}
+
+function Encerrar-Manutencao([string]$destino) {
+  Remove-Item -Force (Arquivo-Manutencao $destino) -ErrorAction SilentlyContinue
+}
+
+# Consulta /api/health: 'ok', 'banco' (o servidor responde mas o banco falhou) ou 'sem-resposta'.
+function Saude-Servidor([int]$porta, [int]$segundos = 10) {
+  $resposta = Rodar-Nativo { & curl.exe -sk --max-time $segundos "https://localhost:$porta/api/health" 2>$null }
+  if (-not $resposta) { $resposta = Rodar-Nativo { & curl.exe -s --max-time $segundos "http://localhost:$porta/api/health" 2>$null } }
+  if ($resposta -match '"status":"ok"') { return 'ok' }
+  if ($resposta) { return 'banco' }
+  return 'sem-resposta'
+}
+
+function Servico-PostgreSQL {
+  return Get-Service -Name 'postgresql*' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
+}
+
+# Liga o PostgreSQL se estiver parado; com -Reiniciar, reinicia mesmo ligado (banco travado).
+function Garantir-PostgreSQL([switch]$Reiniciar) {
+  $servico = Servico-PostgreSQL
+  if (-not $servico) { return 'não encontrado' }
+  if ($Reiniciar -and $servico.Status -eq 'Running') {
+    Restart-Service -Name $servico.Name -Force
+    return 'reiniciado'
+  }
+  if ($servico.Status -ne 'Running') {
+    Start-Service -Name $servico.Name
+    $servico.WaitForStatus('Running', (New-TimeSpan -Seconds 60))
+    return 'ligado'
+  }
+  return 'ok'
+}
+
+# Para o servidor, confere o banco e liga de novo. Nada do que foi lançado se perde: cada pedido
+# e pagamento já está gravado no banco, e os celulares reenviam sozinhos o que lançaram nesse meio-tempo.
+function Reiniciar-Sistema([string]$destino, [int]$porta, [switch]$ReiniciarBanco) {
+  Parar-Servidor $destino
+  $banco = Garantir-PostgreSQL -Reiniciar:$ReiniciarBanco
+  Start-ScheduledTask -TaskName $TarefaServidor
+  $voltou = Aguardar-Servidor $porta 120
+  return @{ Banco = $banco; Voltou = $voltou }
+}
+
+function Porta-Sistema([string]$destino) {
+  $porta = [int]((Ler-Env (Join-Path $destino '.env'))['PORT'])
+  if (-not $porta) { $porta = 3000 }
+  return $porta
+}
+
+# Vigia: a cada minuto confere se o sistema responde; travado por 3 minutos seguidos, reinicia sozinho.
+function Registrar-Vigia([string]$destino) {
+  $sistema = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
+  $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  $acao = New-ScheduledTaskAction -Execute $ps -WorkingDirectory $destino `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$destino\vigia.ps1`""
+  $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+  $gatilho.Repetition.Duration = ''
+  $config = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -MultipleInstances IgnoreNew
+  Register-ScheduledTask -TaskName $TarefaVigia -Action $acao -Trigger $gatilho -Principal $sistema -Settings $config `
+    -Description 'Confere a cada minuto se o Sistema Bar responde e reinicia sozinho se travar (log em data\logs\vigia.log).' -Force | Out-Null
+}
+
+# Atalho "Reiniciar Sistema Bar" na área de trabalho de todos os usuários.
+function Criar-Atalho-Reiniciar([string]$destino) {
+  $pasta = [Environment]::GetFolderPath('CommonDesktopDirectory')
+  $shell = New-Object -ComObject WScript.Shell
+  $atalho = $shell.CreateShortcut((Join-Path $pasta 'Reiniciar Sistema Bar.lnk'))
+  $atalho.TargetPath = Join-Path $destino 'REINICIAR.bat'
+  $atalho.WorkingDirectory = $destino
+  $atalho.IconLocation = "$env:SystemRoot\System32\shell32.dll,238"
+  $atalho.Description = 'Reinicia o Sistema Bar sem perder o que já foi lançado'
+  $atalho.Save()
+}
+

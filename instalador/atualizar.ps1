@@ -21,6 +21,9 @@ if (-not $node) { Falhar 'Node.js não encontrado.' }
 $porta = [int]((Ler-Env (Join-Path $Destino '.env'))['PORT'])
 if (-not $porta) { $porta = 3000 }
 
+# O vigia não reinicia nada enquanto a atualização estiver em andamento.
+Iniciar-Manutencao $Destino
+
 Passo 'Backup do banco antes de atualizar'
 Set-Location $Destino
 & $node 'app\cli.mjs' backup --manter 30
@@ -62,6 +65,12 @@ Set-ScheduledTask -TaskName $TarefaServidor -Trigger (Gatilhos-Servidor) | Out-N
 Start-ScheduledTask -TaskName $TarefaServidor
 if (-not (Aguardar-Servidor $porta)) { Falhar "O servidor não respondeu. Veja $Destino\data\logs\servidor.log" }
 Ok "Sistema Bar $nova no ar"
+
+Passo 'Vigia e atalho de reinício'
+Registrar-Vigia $Destino
+Criar-Atalho-Reiniciar $Destino
+Encerrar-Manutencao $Destino
+Ok 'Se travar, reinicia sozinho em até 3 minutos; atalho "Reiniciar Sistema Bar" na área de trabalho'
 
 try { Stop-Transcript | Out-Null } catch {}
 Copy-Item -Force $global:SistemaBarLog (Join-Path $Destino 'data\logs\') -ErrorAction SilentlyContinue
