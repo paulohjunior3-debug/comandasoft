@@ -41,6 +41,15 @@ PRIMEIROS AJUSTES (como admin, no navegador do PC)
   depois cadastre no sistema, marque as categorias e use "Imprimir teste".
 - Configurações: escolha a impressora do caixa, taxa de serviço e dados do bar.
 
+LICENÇA
+-------
+No fim da instalação aparece o "código deste computador" (também em
+C:\SistemaBar\MAQUINA.txt e em Administração > Licença). Mande ao suporte
+para receber a licença e cole o texto em Administração > Licença.
+Sem licença, o sistema funciona 15 dias em avaliação. A licença se renova
+sozinha pela internet; se ficar sem renovar, o caixa avisa com 7 dias de
+antecedência. Fechar contas, relatórios e exportações nunca são bloqueados.
+
 ATUALIZAR PARA UMA VERSÃO NOVA
 ------------------------------
 Extraia o novo .zip numa pasta (NÃO dentro de C:\SistemaBar) e dê dois

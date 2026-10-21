@@ -292,6 +292,13 @@ Uma única PWA com rotas por perfil é mais simples de manter do que três apps.
 - Pode funcionar junto com o papel de produção ou substituí-lo (configurável por setor).
 - Exigirá status por item/pedido (`RECEBIDO`, `PRONTO`) e o evento Socket.IO `order.ready`. O modelo de dados atual já deve prever isso para não exigir retrabalho.
 
+### 5.13 Licenciamento
+
+- Licença assinada (Ed25519) por cliente, presa ao computador, com lease de 15 dias renovado sozinho pela internet (servidor de licenças no Cloudflare). Inadimplente: o dono para de renovar e a licença vence sozinha.
+- Aviso 7 dias antes, 3 dias de carência; depois bloqueia **só** abrir caixa, abrir comanda e lançar pedido. Caixa aberto antes do bloqueio segue até fechar (máx. 24 h). Fechar contas, relatórios, exportações e fiscal nunca bloqueiam.
+- Sem licença: 15 dias de avaliação. Relógio atrasado não devolve dias. Tela em Administração > Licença.
+- Detalhes em `docs/licenciamento.md`.
+
 ### 5.12 Fora do escopo atual
 
 - **Controle de estoque e ficha técnica**: fase futura; nada de estoque nas fases 0 a 5.
@@ -454,6 +461,7 @@ Eventos Socket.IO: `table.updated`, `comanda.updated`, `order.created`, `print.s
 | Telefone e CPF | Telefone obrigatório, CPF opcional (20/10/2026). PIN do QR = 4 últimos números do telefone, com rate limit. Ver 5.6. |
 | Impressoras | Rede ou USB, instaladas no Windows do caixa e identificadas pelo nome; dono vincula categorias a impressoras. Ver 5.1 e 5.5. |
 | KDS | Entregue em 21/10/2026: painel em `/cozinha` (perfil Cozinha), num PC com teclado. Impressora marcada "Usar o painel da cozinha" segura o cupom de produção até a cozinha apertar Enter (pronto). Setas navegam. Cores: verde até 10 min, vermelho a partir de 40 min, borda laranja para viagem. O garçom e o caixa marcam "Para viagem" no lançamento. Item cancelado antes do pronto sai do cartão sem cupom de cancelamento. Enter sem querer: Backspace desfaz o último, e a lista "Finalizados" (tecla F, últimas 3 h) volta qualquer pedido para a tela (auditado). |
+| Licenciamento | Aprovado em 21/10/2026: licença assinada presa à máquina, lease de 15 dias renovado pelo Cloudflare Worker, aviso 7 dias, carência 3 dias, avaliação 15 dias. Ver 5.13 e `docs/licenciamento.md`. |
 | Contador | Existe; será consultado para a fase fiscal. |
 | Estoque | Fase futura, fora do escopo atual. |
 

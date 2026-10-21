@@ -240,3 +240,25 @@ function Criar-Atalho-Reiniciar([string]$destino) {
   $atalho.Save()
 }
 
+# Código deste computador para a licença: SHA-256 de "sistema-bar|<MachineGuid>" em 4 grupos de 4,
+# igual ao que o servidor calcula (apps/server/src/licensing/machine.ts) e mostra em Administração > Licença.
+function Codigo-Maquina {
+  $guid = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Cryptography' -Name MachineGuid).MachineGuid
+  $bytes = [Text.Encoding]::UTF8.GetBytes('sistema-bar|' + $guid.Trim().ToLower())
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $hex = -join ($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('X2') })
+  return $hex.Substring(0, 4) + '-' + $hex.Substring(4, 4) + '-' + $hex.Substring(8, 4) + '-' + $hex.Substring(12, 4)
+}
+
+# Grava MAQUINA.txt na instalação (o cliente manda o código ao suporte para receber a licença).
+function Gravar-Codigo-Maquina([string]$destino) {
+  try {
+    $codigo = Codigo-Maquina
+  } catch {
+    Aviso 'Não foi possível ler o código deste computador. Ele aparece em Administração > Licença.'
+    return $null
+  }
+  $texto = "Código deste computador (licença do Sistema Bar): $codigo`r`nMande este código ao suporte para receber a licença."
+  Set-Content -Path (Join-Path $destino 'MAQUINA.txt') -Value $texto -Encoding UTF8
+  return $codigo
+}

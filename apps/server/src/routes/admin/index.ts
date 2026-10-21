@@ -3,6 +3,7 @@ import type { AppDeps } from '../../app';
 import { auditRoutes } from './audit';
 import { categoryRoutes } from './categories';
 import { fiscalRoutes } from './fiscal';
+import { adminLicenseRoutes } from './license';
 import { printerRoutes } from './printers';
 import { productRoutes } from './products';
 import { registerRoutes } from './registers';
@@ -25,4 +26,5 @@ export async function adminRoutes(app: FastifyInstance, deps: AppDeps) {
   await app.register((r) => reportRoutes(r, deps), { prefix: '/reports' });
   await app.register((r) => auditRoutes(r, deps), { prefix: '/audit' });
   await app.register((r) => fiscalRoutes(r, deps), { prefix: '/fiscal' });
+  await app.register((r) => adminLicenseRoutes(r, deps), { prefix: '/license' });
 }

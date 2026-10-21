@@ -10,7 +10,7 @@ import { HttpError, notFound, pgError } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
 import { idParams } from '../admin/params';
 
-export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: AppDeps) {
+export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf, license }: AppDeps) {
   const summaryOf = async (id: string) => {
     const [summary] = await loadComandaSummaries(db, eq(comandas.id, id));
     if (!summary) throw notFound('Comanda');
@@ -45,6 +45,7 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
 
     const [existing] = await db.select({ id: comandas.id }).from(comandas).where(eq(comandas.clientUuid, input.clientUuid));
     if (existing) return reply.code(200).send(await summaryOf(existing.id));
+    await license.assertCanOperate('VENDA');
 
     const [table] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
     if (!table || !table.active) throw new HttpError(400, 'VALIDATION', 'Mesa inválida ou inativa.');

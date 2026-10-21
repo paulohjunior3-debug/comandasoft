@@ -7,6 +7,8 @@ declare const __SISTEMA_BAR_BUNDLE__: boolean | undefined;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bundled = typeof __SISTEMA_BAR_BUNDLE__ !== 'undefined' && __SISTEMA_BAR_BUNDLE__;
+/** Servidor empacotado (instalado na loja): a licença bloqueia de verdade só aqui. */
+export const isBundled = bundled;
 
 /**
  * Raiz do sistema. No desenvolvimento é a raiz do repositório; instalado, é a pasta da

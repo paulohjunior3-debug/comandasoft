@@ -102,7 +102,7 @@ export async function sessionSummary(db: Queryable, session: typeof cashSessions
 
 const registerQuery = z.object({ registerId: z.string().uuid('Escolha o caixa') });
 
-export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker, license }: AppDeps) {
   /** Caixas cadastrados e quem está com cada um aberto (para escolher em qual trabalhar). */
   app.get('/registers', async (): Promise<CashRegister[]> => {
     const rows = await db.select().from(cashRegisters).where(eq(cashRegisters.active, true)).orderBy(asc(cashRegisters.name));
@@ -156,6 +156,7 @@ export async function cashSessionRoutes(app: FastifyInstance, { db, printWorker 
    */
   app.post('/open', async (request, reply) => {
     const input = openCashSessionSchema.parse(request.body);
+    await license.assertCanOperate('CAIXA');
     const register = await getRegister(db, input.registerId);
     if (!register.active) throw new HttpError(409, 'REGISTER_INACTIVE', 'Este caixa está desativado.');
     if (await openSessionOf(db, register.id)) {

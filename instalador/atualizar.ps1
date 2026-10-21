@@ -72,5 +72,8 @@ Criar-Atalho-Reiniciar $Destino
 Encerrar-Manutencao $Destino
 Ok 'Se travar, reinicia sozinho em até 3 minutos; atalho "Reiniciar Sistema Bar" na área de trabalho'
 
+$codigoMaquina = Gravar-Codigo-Maquina $Destino
+if ($codigoMaquina) { Ok "Código deste computador (licença): $codigoMaquina (em MAQUINA.txt e em Administração > Licença)" }
+
 try { Stop-Transcript | Out-Null } catch {}
 Copy-Item -Force $global:SistemaBarLog (Join-Path $Destino 'data\logs\') -ErrorAction SilentlyContinue

@@ -7,7 +7,8 @@ import Fastify, { type FastifyServerOptions } from 'fastify';
 import { createGuards, type Guards } from './auth/guard';
 import { createTokenService, type TokenService } from './auth/tokens';
 import type { Db } from './db/client';
-import { appVersion, paths } from './paths';
+import { appVersion, isBundled, paths } from './paths';
+import { createLicenseService, type LicenseService, type LicenseServiceOptions } from './licensing/service';
 import { createCpfVault, type CpfVault } from './lib/cpf-vault';
 import { createSecretBox, type SecretBox } from './lib/secret-box';
 import { certificatePageRoutes } from './lib/certificate-page';
@@ -20,6 +21,7 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { cashierRoutes } from './routes/cashier';
 import { kitchenRoutes } from './routes/kitchen';
+import { licenseRoutes } from './routes/license';
 import { printRoutes } from './routes/print';
 import { publicRoutes } from './routes/public';
 import { waiterRoutes } from './routes/waiter';
@@ -27,6 +29,7 @@ import { waiterRoutes } from './routes/waiter';
 declare module 'fastify' {
   interface FastifyInstance {
     printWorker: AppDeps['printWorker'];
+    license: LicenseService;
   }
 }
 
@@ -41,6 +44,8 @@ export interface AppDeps {
   publicPort: number | null;
   /** Cofre dos segredos fiscais (CSC, certificado A1). */
   secrets: SecretBox;
+  /** Licença do sistema: estado, bloqueio de abrir caixa/lançar pedido e renovação. */
+  license: LicenseService;
 }
 
 export interface BuildAppOptions {
@@ -60,6 +65,8 @@ export interface BuildAppOptions {
   publicPort?: number | null;
   /** Certificado de confiança (público) servido em /certificado. */
   caCertPath?: string;
+  /** Licença: padrão bloqueia só no servidor empacotado, com as chaves embutidas. */
+  license?: Partial<Omit<LicenseServiceOptions, 'db'>>;
 }
 
 const defaultWebDist = paths.webDist;
@@ -76,9 +83,11 @@ export async function buildApp({
   printTransport = emulatorTransport(defaultEmulatorDir),
   publicPort = null,
   caCertPath = paths.fromHome('certs/rootCA.crt'),
+  license,
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
+  const version = appVersion();
   const deps: AppDeps = {
     db,
     tokens,
@@ -88,14 +97,16 @@ export async function buildApp({
     printWorker: Object.assign(createPrintWorker({ db, transport: printTransport, log: app.log }), { mode: printTransport.mode }),
     publicPort,
     secrets: createSecretBox(cpfSecret, 'fiscal'),
+    license: createLicenseService({ db, enforce: isBundled, version, log: app.log, ...license }),
   };
   app.decorate('printWorker', deps.printWorker);
+  app.decorate('license', deps.license);
   app.addHook('onClose', () => deps.printWorker.stop());
+  app.addHook('onClose', async () => deps.license.stop());
 
   installErrorHandler(app);
 
   // O app aberto no navegador compara com a sua versão e oferece recarregar depois de uma atualização.
-  const version = appVersion();
   app.addHook('onSend', async (_request, reply) => {
     reply.header('x-sistema-bar-versao', version);
   });
@@ -119,6 +130,7 @@ export async function buildApp({
       await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
       await api.register((cashier) => cashierRoutes(cashier, deps), { prefix: '/cashier' });
       await api.register((kitchen) => kitchenRoutes(kitchen, deps), { prefix: '/kitchen' });
+      await api.register((r) => licenseRoutes(r, deps), { prefix: '/license' });
       // QR do cliente também por aqui (testes e quem já está no HTTPS); o caminho normal é o servidor público.
       await api.register((pub) => publicRoutes(pub, deps), { prefix: '/public' });
     },

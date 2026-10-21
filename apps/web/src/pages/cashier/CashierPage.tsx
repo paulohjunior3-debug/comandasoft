@@ -16,6 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
+import { LicenseBanner } from '../../components/LicenseBanner';
 import { Badge, Button, EmptyState, ErrorBanner, Loading, Modal, Toggle } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -93,6 +94,7 @@ export function CashierPage() {
         </div>
       </header>
       <main className="px-4 py-4">
+        <LicenseBanner className="mb-3" />
         <ErrorBanner message={errorMessage(registers.error ?? session.error)} />
         {registers.isLoading ? (
           <Loading />

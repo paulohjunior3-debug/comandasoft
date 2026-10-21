@@ -1,5 +1,6 @@
 import { NavLink, Outlet, Link } from 'react-router';
 import type { FiscalStatus } from '@sistema-bar/shared';
+import { LicenseBanner } from '../../components/LicenseBanner';
 import { useAuth } from '../../lib/auth';
 import { useApiQuery } from '../../lib/queries';
 
@@ -15,6 +16,7 @@ export const ADMIN_SECTIONS = [
   { to: '/admin/configuracoes', label: 'Configurações' },
   { to: '/admin/fiscal', label: 'Fiscal' },
   { to: '/admin/auditoria', label: 'Auditoria' },
+  { to: '/admin/licenca', label: 'Licença' },
 ] as const;
 
 export function AdminLayout() {
@@ -50,6 +52,7 @@ export function AdminLayout() {
         </nav>
       </aside>
       <main className="mx-auto w-full max-w-5xl min-w-0 px-4 py-6 lg:px-8">
+        <LicenseBanner className="mb-4" />
         <CertificateWarning />
         <Outlet />
       </main>

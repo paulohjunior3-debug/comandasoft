@@ -25,7 +25,7 @@ export async function counterTable(db: Db) {
  * Venda no balcão e mesas para o caixa abrir comanda. O lançamento dos itens usa a mesma
  * rota do garçom (/waiter/orders), então sai impresso no bar/cozinha como BALCÃO.
  */
-export async function cashierCounterRoutes(app: FastifyInstance, { db, cpf }: AppDeps) {
+export async function cashierCounterRoutes(app: FastifyInstance, { db, cpf, license }: AppDeps) {
   /** Mesas ativas do salão (para "Abrir mesa" no caixa), com quantas comandas abertas cada uma tem. */
   app.get('/all-tables', async () => {
     const [tables, open] = await Promise.all([
@@ -47,6 +47,7 @@ export async function cashierCounterRoutes(app: FastifyInstance, { db, cpf }: Ap
     const input = counterComandaSchema.parse(request.body);
     const [again] = await db.select({ id: comandas.id, tableId: comandas.tableId }).from(comandas).where(eq(comandas.clientUuid, input.clientUuid));
     if (again) return { comandaId: again.id, tableId: again.tableId };
+    await license.assertCanOperate('VENDA');
 
     const table = await counterTable(db);
     const openHere = await db

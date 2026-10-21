@@ -3,7 +3,7 @@ import type { InstalledPrinter, Role } from '@sistema-bar/shared';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
-import { buildApp } from '../src/app';
+import { buildApp, type BuildAppOptions } from '../src/app';
 import { hashPassword } from '../src/auth/password';
 import { migrationsFolder, type Db } from '../src/db/client';
 import * as schema from '../src/db/schema';
@@ -25,7 +25,7 @@ export interface TestContext {
 }
 
 /** App completo sobre um PostgreSQL em memória (PGlite), com um usuário por perfil. */
-export async function createTestContext(): Promise<TestContext> {
+export async function createTestContext(options: Pick<BuildAppOptions, 'license'> = {}): Promise<TestContext> {
   const pg = new PGlite();
   const db = drizzle(pg, { schema, casing: 'snake_case' }) as unknown as Db;
   await migrate(drizzle(pg), { migrationsFolder });
@@ -58,6 +58,7 @@ export async function createTestContext(): Promise<TestContext> {
     webDist: false,
     listInstalledPrinters: async () => installedPrinters,
     printTransport,
+    ...options,
   });
 
   return {

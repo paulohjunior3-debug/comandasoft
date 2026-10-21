@@ -52,6 +52,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 await app.listen({ port: config.PORT, host: config.HOST });
 await app.printWorker.start();
+app.license.start();
 if (publicApp && config.PUBLIC_PORT) {
   await publicApp.listen({ port: config.PUBLIC_PORT, host: config.HOST });
   app.log.info(`QR do cliente: http na porta ${config.PUBLIC_PORT}`);

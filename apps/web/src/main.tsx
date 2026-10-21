@@ -11,6 +11,7 @@ import { AdminLayout } from './pages/admin/AdminLayout';
 import { AuditPage } from './pages/admin/AuditPage';
 import { CategoriesPage } from './pages/admin/CategoriesPage';
 import { FiscalPage } from './pages/admin/FiscalPage';
+import { LicensePage } from './pages/admin/LicensePage';
 import { ProductFiscalPage } from './pages/admin/ProductFiscalPage';
 import { PrintersPage } from './pages/admin/PrintersPage';
 import { PrintQueuePage } from './pages/admin/PrintQueuePage';
@@ -181,6 +182,7 @@ createRoot(document.getElementById('root')!).render(
               <Route path="fiscal" element={<FiscalPage />} />
               <Route path="fiscal/produtos" element={<ProductFiscalPage />} />
               <Route path="configuracoes" element={<SettingsPage />} />
+              <Route path="licenca" element={<LicensePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

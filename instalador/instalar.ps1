@@ -196,11 +196,17 @@ Ok 'Vigia ligado (reinicia sozinho se travar); atalho "Reiniciar Sistema Bar" na
 try { Stop-Transcript | Out-Null } catch {}
 Copy-Item -Force $logInstalacao (Join-Path $Destino 'data\logs\instalacao.log') -ErrorAction SilentlyContinue
 $ips = @(IPs-Rede-Local)
+$codigoMaquina = Gravar-Codigo-Maquina $Destino
+
 Write-Host ''
 Write-Host '==================== INSTALAÇÃO CONCLUÍDA ====================' -ForegroundColor Green
 Write-Host "Endereço para os celulares e o caixa:"
 foreach ($ip in $ips) { Write-Host "    https://${ip}:$Porta" -ForegroundColor White }
 Write-Host "QR Code das mesas: imprima em Administração > Mesas > Imprimir QR Codes (porta $PortaCliente)."
+if ($codigoMaquina) {
+  Write-Host "Código deste computador (licença): $codigoMaquina" -ForegroundColor White
+  Write-Host "    Mande ao suporte para receber a licença (também em $Destino\MAQUINA.txt). Sem ela, o sistema funciona 15 dias em avaliação."
+}
 if ($senhaAdmin) {
   Write-Host ''
   Write-Host 'Primeiro acesso (anote agora; a senha não será mostrada de novo):' -ForegroundColor Yellow

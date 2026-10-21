@@ -1,0 +1,8 @@
+# Servidor de licenças do Sistema Bar (Cloudflare Worker). Passo a passo em LEIA-ME.md.
+name = "sistema-bar-licencas"
+main = "../apps/server/src/licensing/worker.ts"
+compatibility_date = "2025-09-01"
+
+[[kv_namespaces]]
+binding = "LICENCAS"
+id = "COLE_AQUI_O_ID_DO_KV"

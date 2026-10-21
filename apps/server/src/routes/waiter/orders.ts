@@ -18,7 +18,7 @@ import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError } from '../../lib/errors';
 import type { ProductionTicket } from '../../printing/tickets';
 
-export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker, license }: AppDeps) {
   async function duplicateResponse(orderId: string): Promise<CreateOrderResponse> {
     const [{ n }] = (await db.select({ n: count() }).from(printJobs).where(eq(printJobs.referenceId, orderId))) as [{ n: number }];
     return { orderId, duplicate: true, printJobs: n, unroutedItems: 0 };
@@ -35,6 +35,7 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
     // Reenvio de um pedido já aceito: responde igual, mesmo que a comanda já tenha fechado.
     const [already] = await db.select({ id: orders.id }).from(orders).where(eq(orders.clientUuid, input.clientUuid));
     if (already) return reply.code(200).send(await duplicateResponse(already.id));
+    await license.assertCanOperate('VENDA');
 
     const comandaIds = [...new Set(input.comandaIds)];
     let [requested] = await db.select().from(diningTables).where(eq(diningTables.id, input.tableId));
