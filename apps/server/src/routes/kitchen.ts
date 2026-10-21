@@ -1,9 +1,10 @@
-import type { KitchenPanelResponse, KitchenTicket } from '@sistema-bar/shared';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { KITCHEN_DONE_HOURS, type KitchenDoneTicket, type KitchenPanelResponse, type KitchenTicket } from '@sistema-bar/shared';
+import { and, asc, desc, eq, gte, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { AppDeps } from '../app';
-import { comandas, diningTables, orderItems, orderItemShares, printers, printJobs } from '../db/schema';
+import { comandas, diningTables, orderItems, orderItemShares, printers, printJobs, users } from '../db/schema';
+import { audit } from '../lib/audit';
 import { HttpError } from '../lib/errors';
 import type { ProductionTicket } from '../printing/tickets';
 import { idParams } from './admin/params';
@@ -36,6 +37,23 @@ export async function kitchenRoutes(app: FastifyInstance, { db, guards, printWor
     return { ...payload, tableNumber: table.number, tableLabel: table.isCounter ? 'Balcão' : undefined };
   }
 
+  function toTicket(j: typeof printJobs.$inferSelect, tables: Awaited<ReturnType<typeof currentTables>>): KitchenTicket {
+    const p = withTable(j.payload as ProductionTicket, tables.get(j.referenceId ?? ''));
+    return {
+      id: j.id,
+      printerId: j.printerId,
+      sector: p.sector,
+      tableNumber: p.tableNumber,
+      tableLabel: p.tableLabel ?? null,
+      customers: p.customers,
+      waiter: p.waiter,
+      createdAt: j.createdAt.toISOString(),
+      orderRef: p.orderRef,
+      takeaway: p.takeaway ?? false,
+      items: p.items.map(({ qty, name, notes }) => ({ qty, name, notes })),
+    };
+  }
+
   app.get('/', async (request): Promise<KitchenPanelResponse> => {
     const { printerId } = z.object({ printerId: z.string().uuid().optional() }).parse(request.query);
     const panelPrinters = await db
@@ -50,22 +68,7 @@ export async function kitchenRoutes(app: FastifyInstance, { db, guards, printWor
       .orderBy(asc(printJobs.createdAt));
     const tables = await currentTables([...new Set(jobs.map((j) => j.referenceId).filter((id): id is string => !!id))]);
 
-    const tickets = jobs.map((j): KitchenTicket => {
-      const p = withTable(j.payload as ProductionTicket, tables.get(j.referenceId ?? ''));
-      return {
-        id: j.id,
-        printerId: j.printerId,
-        sector: p.sector,
-        tableNumber: p.tableNumber,
-        tableLabel: p.tableLabel ?? null,
-        customers: p.customers,
-        waiter: p.waiter,
-        createdAt: j.createdAt.toISOString(),
-        orderRef: p.orderRef,
-        takeaway: p.takeaway ?? false,
-        items: p.items.map(({ qty, name, notes }) => ({ qty, name, notes })),
-      };
-    });
+    const tickets = jobs.map((j) => toTicket(j, tables));
     return { now: new Date().toISOString(), printers: panelPrinters, tickets };
   });
 
@@ -87,6 +90,62 @@ export async function kitchenRoutes(app: FastifyInstance, { db, guards, printWor
       .returning({ id: printJobs.id });
     if (!updated) return { ok: true, already: true };
     printWorker.kick();
+    return { ok: true, already: false };
+  });
+
+  /** Finalizados das últimas horas, do mais recente para o mais antigo: para reverter um Enter sem querer. */
+  app.get('/done', async (request): Promise<KitchenDoneTicket[]> => {
+    const { printerId } = z.object({ printerId: z.string().uuid().optional() }).parse(request.query);
+    const since = new Date(Date.now() - KITCHEN_DONE_HOURS * 3_600_000);
+    const rows = await db
+      .select({ job: printJobs, readyByName: users.name })
+      .from(printJobs)
+      .innerJoin(printers, eq(printers.id, printJobs.printerId))
+      .leftJoin(users, eq(users.id, printJobs.readyBy))
+      .where(
+        and(
+          eq(printJobs.type, 'PRODUCAO'),
+          eq(printers.usesPanel, true),
+          gte(printJobs.readyAt, since),
+          printerId ? eq(printJobs.printerId, printerId) : undefined,
+        ),
+      )
+      .orderBy(desc(printJobs.readyAt))
+      .limit(60);
+    const tables = await currentTables([...new Set(rows.map((r) => r.job.referenceId).filter((id): id is string => !!id))]);
+    return rows.map(({ job, readyByName }) => ({
+      ...toTicket(job, tables),
+      readyAt: job.readyAt!.toISOString(),
+      readyBy: readyByName,
+      printed: job.status === 'OK',
+    }));
+  });
+
+  /**
+   * Reverter: o pedido volta para o painel (com o cronômetro de antes). Se o cupom ainda não
+   * saiu, não sai mais; quando marcarem pronto de novo, imprime de novo.
+   */
+  app.post('/tickets/:id/revert', async (request) => {
+    const { id } = idParams.parse(request.params);
+    const [job] = await db.select().from(printJobs).where(eq(printJobs.id, id));
+    if (!job || job.type !== 'PRODUCAO' || !job.readyAt) {
+      if (job?.status === 'PAINEL') return { ok: true, already: true };
+      throw new HttpError(404, 'NOT_FOUND', 'Pedido não encontrado entre os finalizados.');
+    }
+    if (job.status === 'IMPRIMINDO') throw new HttpError(409, 'PRINTING', 'O cupom está saindo agora. Tente de novo em instantes.');
+    const [updated] = await db
+      .update(printJobs)
+      .set({ status: 'PAINEL', readyAt: null, readyBy: null, printedAt: null, attempts: 0, lastError: null, nextAttemptAt: null })
+      .where(and(eq(printJobs.id, id), inArray(printJobs.status, ['PENDENTE', 'OK', 'ERRO'])))
+      .returning({ id: printJobs.id });
+    if (!updated) throw new HttpError(409, 'PRINTING', 'O cupom está saindo agora. Tente de novo em instantes.');
+    const p = job.payload as ProductionTicket;
+    await audit(db, request, {
+      action: 'PAINEL_REVERTIDO',
+      entity: 'print_job',
+      entityId: id,
+      after: { table: p.tableNumber, sector: p.sector, printed: job.status === 'OK' },
+    });
     return { ok: true, already: false };
   });
 }

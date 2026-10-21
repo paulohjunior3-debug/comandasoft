@@ -1,4 +1,12 @@
-import { kitchenTone, KITCHEN_LATE_MINUTES, KITCHEN_NEW_MINUTES, type KitchenPanelResponse, type KitchenTicket } from '@sistema-bar/shared';
+import {
+  kitchenTone,
+  KITCHEN_DONE_HOURS,
+  KITCHEN_LATE_MINUTES,
+  KITCHEN_NEW_MINUTES,
+  type KitchenDoneTicket,
+  type KitchenPanelResponse,
+  type KitchenTicket,
+} from '@sistema-bar/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
@@ -30,6 +38,18 @@ export function KitchenPage() {
     refetchInterval: 3_000,
     refetchIntervalInBackground: true,
   });
+
+  const donePath = `/kitchen/done${printerId ? `?printerId=${printerId}` : ''}`;
+  const finished = useQuery({
+    queryKey: [donePath],
+    queryFn: () => api<KitchenDoneTicket[]>(donePath),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
+  });
+  const [doneOpen, setDoneOpen] = useState(false);
+  const [doneIndex, setDoneIndex] = useState(0);
+  // Último "pronto" desta tela: Backspace desfaz (até 30 s depois).
+  const lastReady = useRef<{ id: string; label: string; at: number } | null>(null);
 
   // Pedidos já marcados nesta tela: somem na hora, sem esperar a próxima consulta.
   const [done, setDone] = useState<Set<string>>(() => new Set());
@@ -97,7 +117,8 @@ export function KitchenPage() {
       // Fica no mesmo lugar da tela: o próximo cartão ocupa a posição do que saiu.
       const next = tickets.filter((x) => x.id !== t.id)[Math.min(index, tickets.length - 2)];
       setSelectedId(next?.id ?? null);
-      setToast(`${placeOf(t)} pronto · imprimindo o cupom`);
+      setToast(`${placeOf(t)} pronto · imprimindo o cupom · Backspace desfaz`);
+      lastReady.current = { id: t.id, label: placeOf(t), at: Date.now() };
       setError(null);
       try {
         await api(`/kitchen/tickets/${t.id}/ready`, { method: 'POST', body: '{}' });
@@ -111,14 +132,39 @@ export function KitchenPage() {
         setError(`Não deu para marcar ${placeOf(t)}: ${errorMessage(err)}`);
       } finally {
         void qc.invalidateQueries({ queryKey: [path] });
+        void qc.invalidateQueries({ queryKey: [donePath] });
       }
     },
-    [tickets, qc, path],
+    [tickets, qc, path, donePath],
   );
+
+  /** Reverter um "pronto": o pedido volta para a tela, já selecionado. */
+  const revert = useCallback(
+    async (id: string, label: string) => {
+      setError(null);
+      try {
+        await api(`/kitchen/tickets/${id}/revert`, { method: 'POST', body: '{}' });
+        setDone((d) => {
+          const copy = new Set(d);
+          copy.delete(id);
+          return copy;
+        });
+        setSelectedId(id);
+        setToast(`${label} voltou para a tela`);
+        if (lastReady.current?.id === id) lastReady.current = null;
+      } catch (err) {
+        setError(`Não deu para voltar ${label}: ${errorMessage(err)}`);
+      } finally {
+        await Promise.all([qc.invalidateQueries({ queryKey: [path] }), qc.invalidateQueries({ queryKey: [donePath] })]);
+      }
+    },
+    [qc, path, donePath],
+  );
+  const doneList = finished.data ?? [];
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 3_000);
+    const t = setTimeout(() => setToast(null), 6_000);
     return () => clearTimeout(t);
   }, [toast]);
 
@@ -129,6 +175,30 @@ export function KitchenPage() {
     const onKey = (e: KeyboardEvent) => {
       unlockSound();
       if (e.target instanceof HTMLSelectElement) return;
+      if (doneOpen) {
+        e.preventDefault();
+        if (e.key === 'Escape' || e.key === 'f' || e.key === 'F') setDoneOpen(false);
+        else if (e.key === 'ArrowDown') setDoneIndex((i) => Math.min(doneList.length - 1, i + 1));
+        else if (e.key === 'ArrowUp') setDoneIndex((i) => Math.max(0, i - 1));
+        else if ((e.key === 'Enter' || e.key === 'NumpadEnter') && !e.repeat && doneList[doneIndex]) {
+          const d = doneList[doneIndex]!;
+          setDoneOpen(false);
+          void revert(d.id, placeOf(d));
+        }
+        return;
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        setDoneIndex(0);
+        setDoneOpen(true);
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        const last = lastReady.current;
+        if (last && Date.now() - last.at < 30_000) void revert(last.id, last.label);
+        return;
+      }
       const cols = grid.current ? getComputedStyle(grid.current).gridTemplateColumns.split(' ').length : 1;
       const move: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols };
       if (e.key in move) {
@@ -149,7 +219,7 @@ export function KitchenPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tickets, selectedIndex, selected, ready, unlockSound]);
+  }, [tickets, selectedIndex, selected, ready, unlockSound, doneOpen, doneList, doneIndex, revert]);
 
   useLayoutEffect(() => {
     if (selected) document.getElementById(`pedido-${selected.id}`)?.scrollIntoView({ block: 'nearest' });
@@ -174,6 +244,16 @@ export function KitchenPage() {
           <span className="font-bold tabular-nums">{tickets.length}</span> pedido(s)
           {late > 0 && <span className="ml-3 rounded bg-red-600 px-2 py-0.5 font-bold">{late} atrasado(s)</span>}
         </p>
+        <button
+          onClick={() => {
+            setDoneIndex(0);
+            setDoneOpen(true);
+          }}
+          className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1 text-base hover:bg-slate-800"
+          title="Pedidos já marcados como prontos (tecla F)"
+        >
+          ✓ Finalizados <span className="font-bold tabular-nums">{doneList.length}</span> <kbd className="ml-1 text-xs text-slate-500">F</kbd>
+        </button>
         {(panel.data?.printers.length ?? 0) > 1 && (
           <select
             value={printerId}
@@ -190,7 +270,9 @@ export function KitchenPage() {
           </select>
         )}
         <div className="ml-auto flex items-center gap-4 text-sm text-slate-400">
-          <span className="hidden lg:inline">← ↑ → ↓ escolher · <b className="text-white">Enter</b> = pronto (imprime o cupom)</span>
+          <span className="hidden lg:inline">
+            ← ↑ → ↓ escolher · <b className="text-white">Enter</b> = pronto · <b className="text-white">Backspace</b> = desfazer
+          </span>
           {!soundOn && <span className="text-amber-400">Aperte uma tecla para ligar o som</span>}
           <span className="text-2xl font-semibold tabular-nums text-white">{clock(serverNow)}</span>
           <button
@@ -247,6 +329,100 @@ export function KitchenPage() {
           ✓ {toast}
         </p>
       )}
+
+      {doneOpen && (
+        <DoneDrawer
+          list={doneList}
+          index={Math.min(doneIndex, Math.max(0, doneList.length - 1))}
+          now={serverNow}
+          onSelect={setDoneIndex}
+          onRevert={(d) => {
+            setDoneOpen(false);
+            void revert(d.id, placeOf(d));
+          }}
+          onClose={() => setDoneOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Lista dos finalizados, na lateral: ↑ ↓ escolhem, Enter volta o pedido para a tela, Esc fecha. */
+function DoneDrawer({
+  list,
+  index,
+  now,
+  onSelect,
+  onRevert,
+  onClose,
+}: {
+  list: KitchenDoneTicket[];
+  index: number;
+  now: number;
+  onSelect: (i: number) => void;
+  onRevert: (d: KitchenDoneTicket) => void;
+  onClose: () => void;
+}) {
+  useLayoutEffect(() => {
+    document.getElementById(`finalizado-${index}`)?.scrollIntoView({ block: 'nearest' });
+  }, [index]);
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/60" onClick={onClose}>
+      <aside
+        role="dialog"
+        aria-label="Pedidos finalizados"
+        onClick={(e) => e.stopPropagation()}
+        className="flex h-full w-full max-w-md flex-col border-l border-slate-700 bg-slate-950"
+      >
+        <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+          <div>
+            <h2 className="text-xl font-bold">Finalizados</h2>
+            <p className="text-sm text-slate-400">Últimas {KITCHEN_DONE_HOURS} horas · ↑ ↓ escolher · Enter = voltar para a tela · Esc fecha</p>
+          </div>
+          <button onClick={onClose} className="rounded border border-slate-700 px-2 py-1 text-sm">
+            Fechar
+          </button>
+        </div>
+        {list.length === 0 ? (
+          <p className="p-6 text-center text-slate-500">Nenhum pedido finalizado ainda.</p>
+        ) : (
+          <ul className="flex-1 overflow-y-auto">
+            {list.map((d, i) => (
+              <li
+                key={d.id}
+                id={`finalizado-${i}`}
+                onClick={() => onSelect(i)}
+                className={`cursor-pointer border-b border-slate-800 px-4 py-3 ${i === index ? 'bg-slate-800 outline-2 -outline-offset-2 outline-white' : ''}`}
+              >
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-xl font-black">
+                    {placeOf(d)}
+                    {d.takeaway && <span className="ml-2 rounded bg-orange-500 px-1.5 text-sm text-black">VIAGEM</span>}
+                  </span>
+                  <span className="text-sm text-slate-400">
+                    há {Math.max(0, Math.floor((now - Date.parse(d.readyAt)) / 60_000))} min{d.readyBy ? ` · ${d.readyBy}` : ''}
+                  </span>
+                </div>
+                <p className="mt-1 text-base text-slate-200">{d.items.map((it) => `${it.qty}× ${it.name}`).join(' · ')}</p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span className={`text-xs ${d.printed ? 'text-slate-500' : 'text-amber-400'}`}>
+                    {d.printed ? 'Cupom impresso' : 'Cupom na fila de impressão'}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRevert(d);
+                    }}
+                    className="rounded-lg bg-amber-500 px-3 py-1 text-sm font-bold text-black"
+                  >
+                    ↩ Voltar para a tela
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
     </div>
   );
 }

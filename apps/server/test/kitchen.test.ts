@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Bill, KitchenPanelResponse } from '@sistema-bar/shared';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { printJobs } from '../src/db/schema';
+import { auditLogs, printJobs } from '../src/db/schema';
 import { createTestContext, type TestContext } from './helpers';
 
 type Inject = Awaited<ReturnType<TestContext['as']>>;
@@ -136,6 +136,52 @@ describe('painel da cozinha', () => {
     await cancel((await billItem(ids.ana, 'Filé à parmegiana')).orderItemId, 1);
     expect((await panel()).tickets).toEqual([]);
     expect((await ready(ticket!.id)).statusCode).toBe(404);
+  });
+
+  it('Enter sem querer: o pedido aparece nos finalizados e volta para a tela', async () => {
+    await ctx.app.printWorker.runOnce();
+    ctx.printed.length = 0;
+    await order(ids.ana, [{ productId: ids.file, qty: 1, notes: 'sem queijo' }]);
+    const [ticket] = (await panel()).tickets;
+    await ready(ticket!.id);
+    await ctx.app.printWorker.runOnce();
+    expect(ctx.printed.map((p) => p.printer)).toEqual(['Cozinha']);
+
+    const done = (await cozinha({ method: 'GET', url: '/api/kitchen/done' })).json();
+    expect(done[0]).toMatchObject({ id: ticket!.id, customers: ['Ana'], printed: true, readyBy: 'cozinha' });
+    expect((await garcom({ method: 'POST', url: `/api/kitchen/tickets/${ticket!.id}/revert`, payload: {} })).statusCode).toBe(403);
+
+    expect((await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${ticket!.id}/revert`, payload: {} })).json()).toEqual({ ok: true, already: false });
+    // Volta com o mesmo cronômetro e sai dos finalizados.
+    const back = (await panel()).tickets.find((t) => t.id === ticket!.id)!;
+    expect(back.createdAt).toBe(ticket!.createdAt);
+    expect((await cozinha({ method: 'GET', url: '/api/kitchen/done' })).json().some((d: { id: string }) => d.id === ticket!.id)).toBe(false);
+    expect((await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${ticket!.id}/revert`, payload: {} })).json()).toEqual({ ok: true, already: true });
+
+    const [log] = await ctx.db.select().from(auditLogs).where(eq(auditLogs.action, 'PAINEL_REVERTIDO'));
+    expect(log).toMatchObject({ entityId: ticket!.id });
+
+    // Pronto de novo: imprime de novo.
+    ctx.printed.length = 0;
+    await ready(ticket!.id);
+    await ctx.app.printWorker.runOnce();
+    expect(ctx.printed.map((p) => p.printer)).toEqual(['Cozinha']);
+    expect(ctx.printed[0]!.preview).toContain('>> SEM QUEIJO');
+  });
+
+  it('reverter antes de imprimir: o cupom não sai', async () => {
+    await order(ids.ana, [{ productId: ids.file, qty: 2 }]);
+    const [ticket] = (await panel()).tickets;
+    await ready(ticket!.id);
+    await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${ticket!.id}/revert`, payload: {} });
+    ctx.printed.length = 0;
+    await ctx.app.printWorker.runOnce();
+    expect(ctx.printed).toEqual([]);
+    expect((await panel()).tickets.map((t) => t.id)).toContain(ticket!.id);
+    // Deixa o painel limpo para o próximo teste.
+    await ready(ticket!.id);
+    await ctx.app.printWorker.runOnce();
+    expect((await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${randomUUID()}/revert`, payload: {} })).statusCode).toBe(404);
   });
 
   it('impressora sem painel continua imprimindo na hora', async () => {

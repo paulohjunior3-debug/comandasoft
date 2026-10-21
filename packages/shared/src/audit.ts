@@ -70,6 +70,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
   TAXA_SERVICO_DESLIGADA: { label: 'Desligou a taxa de serviço', group: 'CONFIGURACOES', sensitive: true },
 
   REIMPRESSAO: { label: 'Reimprimiu cupom', group: 'IMPRESSAO' },
+  PAINEL_REVERTIDO: { label: 'Voltou pedido para o painel da cozinha', group: 'IMPRESSAO' },
 
   TRANSFERENCIA: { label: 'Transferiu comanda de mesa', group: 'VENDAS' },
   ITEM_TRANSFERIDO: { label: 'Moveu item para outra comanda', group: 'CANCELAMENTOS', sensitive: true },

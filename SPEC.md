@@ -453,7 +453,7 @@ Eventos Socket.IO: `table.updated`, `comanda.updated`, `order.created`, `print.s
 | Taxa de serviço | Dono liga/desliga. Ligada = 10%. Ver 5.7. |
 | Telefone e CPF | Telefone obrigatório, CPF opcional (20/10/2026). PIN do QR = 4 últimos números do telefone, com rate limit. Ver 5.6. |
 | Impressoras | Rede ou USB, instaladas no Windows do caixa e identificadas pelo nome; dono vincula categorias a impressoras. Ver 5.1 e 5.5. |
-| KDS | Entregue em 21/10/2026: painel em `/cozinha` (perfil Cozinha), num PC com teclado. Impressora marcada "Usar o painel da cozinha" segura o cupom de produção até a cozinha apertar Enter (pronto). Setas navegam. Cores: verde até 10 min, vermelho a partir de 40 min, borda laranja para viagem. O garçom e o caixa marcam "Para viagem" no lançamento. Item cancelado antes do pronto sai do cartão sem cupom de cancelamento. |
+| KDS | Entregue em 21/10/2026: painel em `/cozinha` (perfil Cozinha), num PC com teclado. Impressora marcada "Usar o painel da cozinha" segura o cupom de produção até a cozinha apertar Enter (pronto). Setas navegam. Cores: verde até 10 min, vermelho a partir de 40 min, borda laranja para viagem. O garçom e o caixa marcam "Para viagem" no lançamento. Item cancelado antes do pronto sai do cartão sem cupom de cancelamento. Enter sem querer: Backspace desfaz o último, e a lista "Finalizados" (tecla F, últimas 3 h) volta qualquer pedido para a tela (auditado). |
 | Contador | Existe; será consultado para a fase fiscal. |
 | Estoque | Fase futura, fora do escopo atual. |
 

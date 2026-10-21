@@ -16,6 +16,17 @@ export interface KitchenTicket {
   items: { qty: number; name: string; notes: string | null }[];
 }
 
+/** Pedido já marcado como pronto (lista "Finalizados", para reverter um Enter sem querer). */
+export interface KitchenDoneTicket extends KitchenTicket {
+  readyAt: string;
+  readyBy: string | null;
+  /** O cupom já saiu no papel (false = ainda na fila de impressão). */
+  printed: boolean;
+}
+
+/** Por quanto tempo um pedido finalizado aparece na lista para reverter. */
+export const KITCHEN_DONE_HOURS = 3;
+
 export interface KitchenPanelResponse {
   /** Hora do servidor, para o cronômetro não depender do relógio da máquina da cozinha. */
   now: string;
