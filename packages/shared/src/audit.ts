@@ -31,6 +31,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
   PAGAMENTO: { label: 'Recebeu pagamento', group: 'VENDAS' },
   CUPOM_FISCAL_SOLICITADO: { label: 'Pediu cupom fiscal', group: 'VENDAS' },
   PEDIDO_PRECO_DIVERGENTE: { label: 'Pedido com preço desatualizado no celular', group: 'VENDAS' },
+  MESA_ALERTA_CONTA_REMOVIDO: { label: 'Tirou a mesa do vermelho (conta impressa)', group: 'VENDAS' },
 
   ITEM_CANCELADO: { label: 'Cancelou item', group: 'CANCELAMENTOS', sensitive: true },
   ESTORNO: { label: 'Estornou pagamento', group: 'CANCELAMENTOS', sensitive: true },

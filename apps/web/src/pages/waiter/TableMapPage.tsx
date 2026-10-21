@@ -1,4 +1,4 @@
-import { formatBRL, type TableMapEntry, type TableMapResponse } from '@sistema-bar/shared';
+import { formatBRL, tableTone, type TableMapEntry, type TableMapResponse } from '@sistema-bar/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
@@ -10,22 +10,19 @@ import { formatElapsed } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { WaiterHeader } from './WaiterHeader';
 
-type Tone = 'free' | 'green' | 'yellow' | 'red' | 'closing';
+type Tone = 'free' | 'green' | 'yellow' | 'red';
 
 const TONES: Record<Tone, { card: string; label: string }> = {
   free: { card: 'border-slate-800 bg-slate-900 text-slate-400', label: 'Livre' },
-  green: { card: 'border-emerald-600 bg-emerald-950 text-emerald-50', label: 'Atendida' },
-  yellow: { card: 'border-amber-500 bg-amber-950 text-amber-50', label: 'Atenção' },
-  red: { card: 'border-red-500 bg-red-950 text-red-50', label: 'Sem atendimento' },
-  closing: { card: 'border-sky-500 bg-sky-950 text-sky-50', label: 'Em fechamento' },
+  green: { card: 'border-emerald-600 bg-emerald-950 text-emerald-50', label: 'Em atendimento' },
+  yellow: { card: 'border-amber-500 bg-amber-950 text-amber-50', label: 'Sem atendimento' },
+  red: { card: 'border-red-500 bg-red-900 text-red-50', label: 'Conta impressa' },
 };
 
-/** Cor da mesa pelo tempo sem atendimento (SPEC 5.3). */
-function toneOf(t: TableMapEntry, minutes: number | null, map: TableMapResponse): Tone {
+/** Cor da mesa: vermelho = conta impressa; amarelo = sem atendimento há N min; verde = em atendimento. */
+function toneOf(t: TableMapEntry, nowMs: number, map: TableMapResponse): Tone {
   if (t.status === 'LIVRE') return 'free';
-  if (t.status === 'EM_FECHAMENTO') return 'closing';
-  if (minutes === null || minutes < map.alertYellowMinutes) return 'green';
-  return minutes < map.alertRedMinutes ? 'yellow' : 'red';
+  return ({ verde: 'green', amarelo: 'yellow', vermelho: 'red' } as const)[tableTone(t, nowMs, map.alertYellowMinutes)];
 }
 
 export function TableMapPage() {
@@ -93,7 +90,7 @@ export function TableMapPage() {
                         : null;
                       const queued = queuedByTable.get(t.id) ?? 0;
                       // Comanda aberta offline: a mesa já conta como ocupada no aparelho.
-                      const tone = TONES[t.status === 'LIVRE' && queued > 0 ? 'green' : toneOf(t, minutes, data)];
+                      const tone = TONES[t.status === 'LIVRE' && queued > 0 ? 'green' : toneOf(t, now + data.clockOffset, data)];
                       return (
                         <Link
                           key={t.id}
@@ -108,11 +105,23 @@ export function TableMapPage() {
                                 ⏳{queued}
                               </span>
                             )}
-                            {t.comandaCount > 0 && (
-                              <span className="rounded-full bg-black/30 px-1.5 py-0.5 text-xs font-semibold" title="Comandas">
-                                👤{t.comandaCount}
-                              </span>
-                            )}
+                            <span className="flex items-center gap-1">
+                              {t.partialPaid && (
+                                <span className="text-base leading-none" title="Pago parcial">
+                                  ⭐
+                                </span>
+                              )}
+                              {t.status === 'EM_FECHAMENTO' && (
+                                <span className="text-base leading-none" title="Pediu a conta">
+                                  🧾
+                                </span>
+                              )}
+                              {t.comandaCount > 0 && (
+                                <span className="rounded-full bg-black/30 px-1.5 py-0.5 text-xs font-semibold" title="Comandas">
+                                  👤{t.comandaCount}
+                                </span>
+                              )}
+                            </span>
                           </div>
                           {t.status !== 'LIVRE' && (
                             <div className="text-left">
@@ -137,12 +146,14 @@ export function TableMapPage() {
 function Legend() {
   return (
     <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
-      {(['free', 'green', 'yellow', 'red', 'closing'] as Tone[]).map((t) => (
+      {(['free', 'green', 'yellow', 'red'] as Tone[]).map((t) => (
         <li key={t} className="flex items-center gap-1.5">
           <span className={`size-3 rounded-sm border-2 ${TONES[t].card}`} />
           {TONES[t].label}
         </li>
       ))}
+      <li>⭐ Pago parcial</li>
+      <li>🧾 Pediu a conta</li>
     </ul>
   );
 }

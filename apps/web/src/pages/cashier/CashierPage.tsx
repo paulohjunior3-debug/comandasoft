@@ -149,6 +149,12 @@ function RegisterPicker({ registers, onChoose, isAdmin }: { registers: CashRegis
   );
 }
 
+const TONE_CLASS = {
+  verde: 'border-emerald-700 bg-emerald-800/80 text-emerald-50',
+  amarelo: 'border-amber-500 bg-amber-500/80 text-slate-950',
+  vermelho: 'border-red-500 bg-red-600 text-white',
+} as const;
+
 function SessionActions({ registerId }: { registerId: string }) {
   const [movement, setMovement] = useState<CashMovementType | null>(null);
   const [closing, setClosing] = useState(false);
@@ -330,31 +336,29 @@ function Workspace({ registerId }: { registerId: string }) {
             <ul className="grid grid-cols-6 gap-1.5">
               {list.map((t) => {
                 const selected = current?.tableId === t.id;
-                const empty = t.totals.itemsCents === 0;
-                const tone = t.closingRequested
-                  ? 'border-sky-500 bg-sky-600/80 text-white'
-                  : empty
-                    ? 'border-slate-700 bg-slate-800 text-slate-300'
-                    : 'border-emerald-700 bg-emerald-800/80 text-emerald-50';
+                const tone = TONE_CLASS[t.tone];
                 return (
                   <li key={t.id}>
                     <button
                       onClick={() => open(t.id, null)}
-                      title={`${t.label} · ${t.comandas.map((c) => c.customerName).join(', ')} · resta ${formatBRL(t.totals.remainingCents)}`}
-                      aria-label={`${t.label}${t.closingRequested ? ', pediu a conta' : ''}`}
+                      title={`${t.label} · ${t.comandas.map((c) => c.customerName).join(', ')} · resta ${formatBRL(t.totals.remainingCents)}${t.partialPaid ? ' · pago parcial' : ''}`}
+                      aria-label={`${t.label}${t.billAlert ? ', conta impressa' : ''}${t.partialPaid ? ', pago parcial' : ''}${t.closingRequested ? ', pediu a conta' : ''}`}
                       aria-pressed={selected}
-                      className={`flex h-10 w-full items-center justify-center rounded-md border text-sm font-bold tabular-nums ${tone} ${selected ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950' : ''}`}
+                      className={`relative flex h-10 w-full items-center justify-center rounded-md border text-sm font-bold tabular-nums ${tone} ${selected ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950' : ''}`}
                     >
                       {t.isCounter ? 'BAL' : t.number}
+                      {t.partialPaid && <span className="absolute -top-1.5 -right-1 text-xs leading-none">⭐</span>}
+                      {t.closingRequested && <span className="absolute -bottom-1.5 -right-1 text-xs leading-none">🧾</span>}
                     </button>
                   </li>
                 );
               })}
             </ul>
             <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
-              <Legend className="bg-emerald-700" label={`Consumindo (${list.filter((t) => !t.closingRequested && t.totals.itemsCents > 0).length})`} />
-              <Legend className="bg-sky-600" label={`Pediu a conta (${list.filter((t) => t.closingRequested).length})`} />
-              <Legend className="bg-slate-700" label={`Sem lançamento (${list.filter((t) => !t.closingRequested && t.totals.itemsCents === 0).length})`} />
+              <Legend className="bg-emerald-700" label={`Em atendimento (${list.filter((t) => t.tone === 'verde').length})`} />
+              <Legend className="bg-amber-500" label={`Sem atendimento (${list.filter((t) => t.tone === 'amarelo').length})`} />
+              <Legend className="bg-red-600" label={`Conta impressa (${list.filter((t) => t.tone === 'vermelho').length})`} />
+              <span>⭐ pago parcial · 🧾 pediu a conta</span>
             </p>
           </>
         )}

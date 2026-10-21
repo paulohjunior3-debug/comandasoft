@@ -126,21 +126,20 @@ export function SettingsPage() {
         <Section title="Mapa de mesas">
           <div className="grid grid-cols-2 gap-3">
             <TextField
-              label="Amarelo após (min)"
+              label="Amarelo: sem atendimento há (min)"
               type="number"
               min={1}
               value={form.alertYellowMinutes}
-              onChange={(e) => set('alertYellowMinutes', Number(e.target.value))}
-            />
-            <TextField
-              label="Vermelho após (min)"
-              type="number"
-              min={1}
-              value={form.alertRedMinutes}
-              onChange={(e) => set('alertRedMinutes', Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setForm((f) => (f ? { ...f, alertYellowMinutes: v, alertRedMinutes: Math.max(f.alertRedMinutes, v + 1) } : f));
+              }}
             />
           </div>
-          <p className="text-xs text-slate-500">Tempo sem atendimento para a mesa mudar de cor no app do garçom.</p>
+          <p className="text-xs text-slate-500">
+            Verde: em atendimento. Amarelo: sem pedido nem "atendi a mesa" há esse tempo. Vermelho: a conta foi impressa (até alguém
+            tocar em "Tirar do vermelho"). ⭐ = parte da mesa já pagou.
+          </p>
         </Section>
 
         <Section title="Estabelecimento (cabeçalho do cupom)">

@@ -237,7 +237,7 @@ describe('usuários', () => {
 describe('configurações', () => {
   it('começa com os padrões e liga a taxa de serviço com auditoria', async () => {
     const initial = (await admin({ method: 'GET', url: '/api/admin/settings' })).json();
-    expect(initial).toMatchObject({ serviceFeeEnabled: false, alertYellowMinutes: 15, alertRedMinutes: 30 });
+    expect(initial).toMatchObject({ serviceFeeEnabled: false, alertYellowMinutes: 20, alertRedMinutes: 30 });
 
     const saved = await admin({ method: 'PUT', url: '/api/admin/settings', payload: { ...initial, serviceFeeEnabled: true } });
     expect(saved.statusCode).toBe(200);

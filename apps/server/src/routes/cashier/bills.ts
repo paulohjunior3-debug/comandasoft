@@ -7,6 +7,7 @@ import {
   removeAdjustmentSchema,
   sumTotals,
   tableLabel,
+  tableTone,
   transferSchema,
   type Bill,
   type CashierTable,
@@ -25,6 +26,7 @@ import { billTicket, enqueueCashierPrint } from '../../lib/cashier-print';
 import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
+import { tableAttention } from '../../lib/table-attention';
 import { z } from 'zod';
 import { idParams } from '../admin/params';
 import { getRegister } from './session';
@@ -33,7 +35,7 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
   /** Mesas com comandas abertas e seus totais; as que pediram a conta vêm primeiro. */
   async function openTables(tableIds?: string[]): Promise<CashierTable[]> {
     const open = await db
-      .select({ id: comandas.id, tableId: comandas.tableId })
+      .select({ id: comandas.id, tableId: comandas.tableId, openedAt: comandas.openedAt })
       .from(comandas)
       .where(
         and(
@@ -44,7 +46,8 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
       .orderBy(asc(comandas.openedAt), asc(comandas.number));
     if (open.length === 0) return [];
     const settings = await getSettings(db);
-    const bill = await loadBill(db, open.map((c) => c.id), settings);
+    const [bill, attention] = await Promise.all([loadBill(db, open.map((c) => c.id), settings), tableAttention(db, open)]);
+    const now = Date.now();
     const tables = await db
       .select()
       .from(diningTables)
@@ -53,6 +56,7 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
     return tables
       .map((t) => {
         const list = bill.comandas.filter((c) => open.find((o) => o.id === c.id)!.tableId === t.id);
+        const a = attention.get(t.id)!;
         return {
           id: t.id,
           number: t.number,
@@ -62,6 +66,10 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
           comandas: list,
           totals: sumTotals(list.map((c) => c.totals)),
           closingRequested: list.some((c) => c.status === 'EM_FECHAMENTO'),
+          lastAttendedAt: a.lastAttendedAt,
+          billAlert: a.billAlert,
+          partialPaid: a.partialPaid,
+          tone: tableTone(a, now, settings.alertYellowMinutes),
         };
       })
       // Ordem fixa pelo número: no quadro do caixa cada mesa fica sempre no mesmo lugar (a cor diz o status).
@@ -188,11 +196,17 @@ export async function cashierBillRoutes(app: FastifyInstance, { db, cpf, printWo
     const settings = await getSettings(db);
     const bill = await loadBill(db, [...new Set(comandaIds)], settings);
     if (bill.comandas.length === 0) throw notFound('Comanda');
+    // A mesa fica vermelha (conta impressa) até alguém tirar do vermelho: o cupom guarda a mesa.
+    const [{ tableId } = { tableId: undefined }] = await db
+      .select({ tableId: comandas.tableId })
+      .from(comandas)
+      .where(inArray(comandas.id, bill.comandas.map((c) => c.id)))
+      .limit(1);
     const printed = await enqueueCashierPrint(
       db,
       settings,
       billTicket(bill, 'PRE_CONTA', settings, register ? `${request.user!.name} · ${register.name}` : request.user!.name),
-      undefined,
+      tableId,
       register?.printerId,
     );
     if (!printed) {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ComandaTotals } from './billing';
 import { isValidCpf, onlyDigits } from './cpf';
-import type { ComandaStatus } from './waiter';
+import type { ComandaStatus, TableTone } from './waiter';
 
 // Contratos do caixa (SPEC 5.7).
 
@@ -257,6 +257,14 @@ export interface CashierTable {
   totals: ComandaTotals;
   /** Alguma comanda pediu a conta. */
   closingRequested: boolean;
+  /** Último pedido, "atendi a mesa" ou abertura de comanda. */
+  lastAttendedAt: string;
+  /** Conta impressa e ainda não tirada do vermelho. */
+  billAlert: boolean;
+  /** Já houve pagamento nesta ocupação (estrela de pago parcial). */
+  partialPaid: boolean;
+  /** Cor no quadro de mesas (ver tableTone). */
+  tone: TableTone;
 }
 
 /** Venda no balcão: nome e CPF opcionais (sem nome: "Balcão 1", "Balcão 2"…). */

@@ -232,7 +232,7 @@ describe('mapa de mesas e fechamento', () => {
     expect(m10.totalCents).toBeGreaterThan(0);
     expect(m10.lastAttendedAt).not.toBeNull();
     expect(m13).toMatchObject({ status: 'LIVRE', comandaCount: 0, lastAttendedAt: null });
-    expect(map).toMatchObject({ alertYellowMinutes: 15, alertRedMinutes: 30 });
+    expect(map).toMatchObject({ alertYellowMinutes: 20, alertRedMinutes: 30 });
   });
 
   it('"atendi a mesa" é idempotente e atualiza o último atendimento', async () => {
