@@ -14,9 +14,32 @@ const ROLE_HINTS: Record<Role, string> = {
   COZINHA: 'Só o painel da cozinha (marcar pedidos prontos)',
 };
 
+const SHOW_INACTIVE_KEY = 'admin.usuarios.inativos';
+
+function readShowInactive(): boolean {
+  try {
+    return localStorage.getItem(SHOW_INACTIVE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function UsersPage() {
   const users = useApiQuery<AdminUser[]>(PATH);
   const [editing, setEditing] = useState<AdminUser | 'new' | null>(null);
+  // Desativados ficam escondidos por padrão (o histórico deles continua no sistema).
+  const [showInactive, setShowInactive] = useState(readShowInactive);
+  const inactive = users.data?.filter((u) => !u.active).length ?? 0;
+  const shown = users.data?.filter((u) => showInactive || u.active) ?? [];
+  const toggleInactive = () => {
+    const next = !showInactive;
+    setShowInactive(next);
+    try {
+      localStorage.setItem(SHOW_INACTIVE_KEY, next ? '1' : '0');
+    } catch {
+      /* sem armazenamento: vale só nesta visita */
+    }
+  };
 
   return (
     <>
@@ -26,13 +49,21 @@ export function UsersPage() {
         action={<Button variant="primary" onClick={() => setEditing('new')}>+ Novo usuário</Button>}
       />
       <ErrorBanner message={errorMessage(users.error)} />
+      {inactive > 0 && (
+        <div className="mb-3 flex items-center justify-between gap-3 text-sm text-slate-400">
+          <span>
+            {showInactive ? `Mostrando todos, inclusive ${inactive} inativo(s).` : `${inactive} usuário(s) inativo(s) escondido(s).`}
+          </span>
+          <Button onClick={toggleInactive}>{showInactive ? 'Esconder inativos' : `Mostrar inativos (${inactive})`}</Button>
+        </div>
+      )}
       {users.isLoading ? (
         <Loading />
-      ) : users.data?.length === 0 ? (
-        <EmptyState>Nenhum usuário.</EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState>Nenhum usuário ativo.</EmptyState>
       ) : (
         <ul className="divide-y divide-slate-800 rounded-xl bg-slate-900">
-          {users.data?.map((u) => (
+          {shown.map((u) => (
             <li key={u.id}>
               <button onClick={() => setEditing(u)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/60">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-800 text-sm font-semibold">
