@@ -2,7 +2,7 @@
 
 > **v1.1 (2026-10-18):** incorporadas as decisões do dono sobre os pontos em aberto (ver seção 12):
 > comanda identificada por nome + mesa, busca no caixa por mesa ou CPF, taxa de serviço ligável pelo dono,
-> telefone obrigatório e CPF opcional (decisão de 20/10/2026), PIN do QR = 4 últimos números do telefone, impressoras pelo nome no Windows, KDS e estoque como fases futuras.
+> telefone obrigatório e CPF opcional (decisão de 20/10/2026), PIN do QR = 4 últimos números do telefone, impressoras pelo nome no Windows, painel da cozinha (KDS) com teclado entregue em 21/10/2026, estoque como fase futura.
 
 > Documento de referência para desenvolvimento com Claude Code.
 > Coloque este arquivo na raiz do repositório como `SPEC.md` e referencie no `CLAUDE.md`.
@@ -451,9 +451,9 @@ Eventos Socket.IO: `table.updated`, `comanda.updated`, `order.created`, `print.s
 |---|---|
 | Identificação da comanda | Uma comanda por pessoa, aberta com nome + CPF + mesa. Mesa = onde entregar; nome = para quem. Caixa localiza por mesa (lista nomes) ou por CPF (mostra a mesa). Ver 5.2 e 5.7. |
 | Taxa de serviço | Dono liga/desliga. Ligada = 10%. Ver 5.7. |
-| CPF | Obrigatório na abertura. PIN do QR = 3 últimos dígitos do CPF, com rate limit. Ver 5.6. |
+| Telefone e CPF | Telefone obrigatório, CPF opcional (20/10/2026). PIN do QR = 4 últimos números do telefone, com rate limit. Ver 5.6. |
 | Impressoras | Rede ou USB, instaladas no Windows do caixa e identificadas pelo nome; dono vincula categorias a impressoras. Ver 5.1 e 5.5. |
-| KDS | Fase futura, em mini PC com mouse. Ver 5.11. |
+| KDS | Entregue em 21/10/2026: painel em `/cozinha` (perfil Cozinha), num PC com teclado. Impressora marcada "Usar o painel da cozinha" segura o cupom de produção até a cozinha apertar Enter (pronto). Setas navegam. Cores: verde até 10 min, vermelho a partir de 40 min, borda laranja para viagem. O garçom e o caixa marcam "Para viagem" no lançamento. Item cancelado antes do pronto sai do cartão sem cupom de cancelamento. |
 | Contador | Existe; será consultado para a fase fiscal. |
 | Estoque | Fase futura, fora do escopo atual. |
 

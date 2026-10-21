@@ -138,9 +138,9 @@ function SentBanner({ sent, stillQueued }: { sent?: SentState; stillQueued: bool
       Pedido enviado.{' '}
       {r.unroutedItems > 0
         ? `Atenção: ${r.unroutedItems} item(ns) de categoria sem impressora não sairão em papel.`
-        : r.printJobs > 0
-          ? `${r.printJobs} cupom(ns) na fila de impressão.`
-          : ''}
+        : [r.printJobs > 0 && `${r.printJobs} cupom(ns) na fila de impressão.`, r.panelTickets && 'Foi para o painel da cozinha.']
+            .filter(Boolean)
+            .join(' ')}
     </p>
   );
 }

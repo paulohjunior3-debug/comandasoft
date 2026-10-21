@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ROLES = ['ADMIN', 'GERENTE', 'CAIXA', 'GARCOM'] as const;
+export const ROLES = ['ADMIN', 'GERENTE', 'CAIXA', 'GARCOM', 'COZINHA'] as const;
 export const roleSchema = z.enum(ROLES);
 export type Role = z.infer<typeof roleSchema>;
 
@@ -9,4 +9,5 @@ export const ROLE_LABELS: Record<Role, string> = {
   GERENTE: 'Gerente',
   CAIXA: 'Caixa',
   GARCOM: 'Garçom',
+  COZINHA: 'Cozinha',
 };

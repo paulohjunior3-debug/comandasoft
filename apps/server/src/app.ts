@@ -19,6 +19,7 @@ import { cachedLister, listWindowsPrinters, type ListInstalledPrinters } from '.
 import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { cashierRoutes } from './routes/cashier';
+import { kitchenRoutes } from './routes/kitchen';
 import { printRoutes } from './routes/print';
 import { publicRoutes } from './routes/public';
 import { waiterRoutes } from './routes/waiter';
@@ -117,6 +118,7 @@ export async function buildApp({
       await api.register((waiter) => waiterRoutes(waiter, deps), { prefix: '/waiter' });
       await api.register((print) => printRoutes(print, deps), { prefix: '/print' });
       await api.register((cashier) => cashierRoutes(cashier, deps), { prefix: '/cashier' });
+      await api.register((kitchen) => kitchenRoutes(kitchen, deps), { prefix: '/kitchen' });
       // QR do cliente também por aqui (testes e quem já está no HTTPS); o caminho normal é o servidor público.
       await api.register((pub) => publicRoutes(pub, deps), { prefix: '/public' });
     },

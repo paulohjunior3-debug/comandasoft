@@ -100,3 +100,10 @@ describe('schemas dos cadastros', () => {
     expect(settingsSchema.safeParse(DEFAULT_SETTINGS).success).toBe(true);
   });
 });
+
+describe('painel da cozinha', () => {
+  it('cor pelo tempo: verde até 10 min, vermelho a partir de 40', async () => {
+    const { kitchenTone } = await import('./kitchen');
+    expect([0, 9, 10, 39, 40, 55].map(kitchenTone)).toEqual(['novo', 'novo', 'normal', 'normal', 'atrasado', 'atrasado']);
+  });
+});

@@ -15,3 +15,4 @@ export * from './public';
 export * from './audit';
 export * from './period';
 export * from './fiscal';
+export * from './kitchen';

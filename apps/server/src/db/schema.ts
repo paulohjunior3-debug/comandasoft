@@ -141,6 +141,8 @@ export const printers = pgTable('printers', {
   codepage: text().notNull().default('CP860'),
   cut: boolean().notNull().default(true),
   active: boolean().notNull().default(true),
+  /** Cupons de produção esperam no painel da cozinha e só imprimem quando marcam "pronto". */
+  usesPanel: boolean().notNull().default(false),
   ...timestamps,
 });
 
@@ -187,7 +189,8 @@ export const settings = pgTable('settings', {
 export const comandaStatusEnum = pgEnum('comanda_status', COMANDA_STATUSES);
 export const orderItemStatusEnum = pgEnum('order_item_status', ['ATIVO', 'CANCELADO']);
 export const printJobTypeEnum = pgEnum('print_job_type', ['PRODUCAO', 'CANCELAMENTO', 'PRE_CONTA', 'CUPOM', 'DANFE', 'CAIXA', 'TESTE', 'GAVETA']);
-export const printJobStatusEnum = pgEnum('print_job_status', ['PENDENTE', 'IMPRIMINDO', 'OK', 'ERRO']);
+/** PAINEL: esperando no painel da cozinha; vira PENDENTE quando a cozinha marca "pronto". */
+export const printJobStatusEnum = pgEnum('print_job_status', ['PENDENTE', 'IMPRIMINDO', 'OK', 'ERRO', 'PAINEL']);
 
 const OPEN_COMANDA = sql`status in ('ABERTA', 'EM_FECHAMENTO')`;
 
@@ -269,6 +272,7 @@ export const orders = pgTable(
       .references(() => users.id),
     createdAtDevice: timestamp({ withTimezone: true }).notNull(),
     receivedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    takeaway: boolean().notNull().default(false),
   },
   (t) => [index().on(t.tableId, t.receivedAt)],
 );
@@ -335,6 +339,9 @@ export const printJobs = pgTable(
     /** Depois de uma falha, só tenta de novo a partir deste momento (backoff). */
     nextAttemptAt: timestamp({ withTimezone: true }),
     printedAt: timestamp({ withTimezone: true }),
+    /** Painel da cozinha: quando e quem marcou "pronto". */
+    readyAt: timestamp({ withTimezone: true }),
+    readyBy: uuid().references(() => users.id),
     ...timestamps,
   },
   (t) => [index().on(t.status, t.createdAt), index().on(t.referenceId)],

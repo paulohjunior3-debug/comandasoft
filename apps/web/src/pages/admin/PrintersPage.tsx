@@ -75,6 +75,7 @@ export function PrintersPage() {
                   {p.installed === false && <Badge tone="bad">Não encontrada no Windows</Badge>}
                   {p.installed === true && <Badge tone="ok">Instalada</Badge>}
                   <Badge>{p.widthMm} mm</Badge>
+                  {p.usesPanel && <Badge tone="warn">Painel da cozinha</Badge>}
                 </div>
                 <p className="mt-3 text-sm text-slate-400">
                   {p.categoryIds.length ? p.categoryIds.map(categoryName).join(', ') : 'Nenhuma categoria vinculada'}
@@ -103,6 +104,7 @@ function PrinterModal({ printer, categories, onClose }: { printer: Printer | nul
     codepage: printer?.codepage ?? 'CP860',
     cut: printer?.cut ?? true,
     active: printer?.active ?? true,
+    usesPanel: printer?.usesPanel ?? false,
     categoryIds: printer?.categoryIds ?? [],
   }));
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
@@ -195,6 +197,13 @@ function PrinterModal({ printer, categories, onClose }: { printer: Printer | nul
       </div>
       <Toggle label="Cortar papel (guilhotina)" checked={form.cut} onChange={(v) => set('cut', v)} />
       <Toggle label="Ativa" checked={form.active} onChange={(v) => set('active', v)} />
+      <div>
+        <Toggle label="Usar o painel da cozinha" checked={form.usesPanel} onChange={(v) => set('usesPanel', v)} />
+        <p className="mt-1 text-xs text-slate-500">
+          Ligado: os pedidos aparecem primeiro na tela da cozinha (endereço /cozinha) e o cupom só imprime quando a cozinha aperta Enter
+          (pronto). Desligado: imprime na hora.
+        </p>
+      </div>
       {printer && (
         <div className="rounded-lg border border-slate-800 p-3">
           <Button onClick={() => test.mutate({ method: 'POST', path: `${PATH}/${printer.id}/test` })} disabled={test.isPending}>

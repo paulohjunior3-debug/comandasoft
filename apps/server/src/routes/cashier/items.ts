@@ -7,7 +7,7 @@ import { audit } from '../../lib/audit';
 import { authorizeManager } from '../../lib/authorize';
 import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound } from '../../lib/errors';
-import type { CancelTicket } from '../../printing/tickets';
+import type { CancelTicket, ProductionTicket } from '../../printing/tickets';
 import { idParams } from '../admin/params';
 
 /**
@@ -170,7 +170,28 @@ export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker 
           .values(shares.map((s, i) => ({ orderItemId: split!.id, comandaId: s.comandaId, amountCents: gone[i]! })));
       }
 
-      if (routes.length) {
+      // Ainda no painel da cozinha (sem "pronto"): só tira o item do cartão, sem cupom de cancelamento.
+      const warned: typeof routes = [];
+      for (const route of routes) {
+        const [held] = route.printer.usesPanel
+          ? await tx
+              .select()
+              .from(printJobs)
+              .where(and(eq(printJobs.printerId, route.printer.id), eq(printJobs.referenceId, item.orderId), eq(printJobs.status, 'PAINEL')))
+          : [];
+        const ticket = held?.payload as ProductionTicket | undefined;
+        if (!held || !ticket?.items.some((i) => i.itemId === id)) {
+          warned.push(route);
+          continue;
+        }
+        const items = ticket.items
+          .map((i) => (i.itemId === id ? { ...i, qty: i.qty - input.qty } : i))
+          .filter((i) => i.qty > 0);
+        if (items.length === 0) await tx.delete(printJobs).where(eq(printJobs.id, held.id));
+        else await tx.update(printJobs).set({ payload: { ...ticket, items } }).where(eq(printJobs.id, held.id));
+      }
+
+      if (warned.length) {
         const payload = (sector: string): CancelTicket => ({
           kind: 'CANCELAMENTO',
           sector,
@@ -185,7 +206,7 @@ export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker 
         });
         await tx
           .insert(printJobs)
-          .values(routes.map(({ printer }) => ({ printerId: printer.id, type: 'CANCELAMENTO' as const, payload: payload(printer.sectorLabel), referenceId: id })));
+          .values(warned.map(({ printer }) => ({ printerId: printer.id, type: 'CANCELAMENTO' as const, payload: payload(printer.sectorLabel), referenceId: id })));
       }
 
       await audit(tx, request, {

@@ -124,6 +124,8 @@ export const createOrderSchema = z.object({
   items: z.array(orderItemInputSchema).min(1, 'O pedido está vazio').max(100),
   /** Quando o garçom tocou em Enviar (pode ser bem antes, se estava offline). */
   createdAtDevice: z.string().datetime({ offset: true }),
+  /** Pedido para viagem: sai destacado no painel e no cupom da cozinha. */
+  takeaway: z.boolean().default(false),
 });
 export type CreateOrderInput = z.input<typeof createOrderSchema>;
 
@@ -132,6 +134,8 @@ export interface CreateOrderResponse {
   /** true quando o servidor já tinha recebido este pedido (reenvio). */
   duplicate: boolean;
   printJobs: number;
+  /** Cupons que foram para o painel da cozinha (imprimem quando a cozinha marca pronto). */
+  panelTickets?: number;
   /** Itens de categorias sem impressora vinculada (não saem em papel). */
   unroutedItems: number;
 }

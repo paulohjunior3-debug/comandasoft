@@ -23,6 +23,7 @@ import { TablesPage } from './pages/admin/TablesPage';
 import { UsersPage } from './pages/admin/UsersPage';
 import { CashierPage } from './pages/cashier/CashierPage';
 import { HomePage } from './pages/Home';
+import { KitchenPage } from './pages/kitchen/KitchenPage';
 import { ComandaPage } from './pages/waiter/ComandaPage';
 import { OrderPage } from './pages/waiter/OrderPage';
 import { PendingPage } from './pages/waiter/PendingPage';
@@ -43,6 +44,7 @@ const queryClient = new QueryClient({
 
 const WAITER_ROLES: Role[] = ['GARCOM', 'GERENTE'];
 const CASHIER_ROLES: Role[] = ['CAIXA', 'GERENTE'];
+const KITCHEN_ROLES: Role[] = ['COZINHA', 'GERENTE'];
 
 /** Liga a fila offline enquanto há alguém logado e atualiza as telas a cada envio confirmado. */
 function OutboxRunner() {
@@ -135,6 +137,14 @@ createRoot(document.getElementById('root')!).render(
               element={
                 <RequireAuth roles={CASHIER_ROLES}>
                   <CashierPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/cozinha"
+              element={
+                <RequireAuth roles={KITCHEN_ROLES}>
+                  <KitchenPage />
                 </RequireAuth>
               }
             />

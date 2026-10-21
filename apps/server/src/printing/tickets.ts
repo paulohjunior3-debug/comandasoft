@@ -16,7 +16,10 @@ export interface ProductionTicket {
   createdAt: string;
   /** Últimos caracteres do id do pedido, para conferência/reimpressão. */
   orderRef: string;
-  items: { qty: number; name: string; notes: string | null }[];
+  /** itemId: para tirar do painel da cozinha um item cancelado antes do "pronto". */
+  items: { qty: number; name: string; notes: string | null; itemId?: string }[];
+  /** Pedido para viagem: faixa "PARA VIAGEM" no cupom e cartão laranja no painel. */
+  takeaway?: boolean;
   /** Marcado nas reimpressões para a cozinha não preparar de novo. */
   reprint?: boolean;
 }

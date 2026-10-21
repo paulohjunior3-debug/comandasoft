@@ -95,12 +95,15 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
           tableId: table.id,
           userId: request.user!.id,
           createdAtDevice: new Date(input.createdAtDevice),
+          takeaway: input.takeaway,
         })
         .onConflictDoNothing({ target: orders.clientUuid })
         .returning({ id: orders.id });
       if (!order) return null; // outro envio do mesmo pedido chegou primeiro
 
       const tickets = new Map<string, ProductionTicket>();
+      // Impressoras com painel: o cupom espera a cozinha marcar "pronto" (status PAINEL).
+      const panelPrinters = new Set(routes.filter((r) => r.printer.usesPanel).map((r) => r.printer.id));
       let unroutedItems = 0;
 
       for (const item of input.items) {
@@ -137,11 +140,12 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
               waiter: request.user!.name,
               createdAt: input.createdAtDevice,
               orderRef: order.id.slice(-6).toUpperCase(),
+              takeaway: input.takeaway || undefined,
               items: [],
             };
             tickets.set(printer.id, ticket);
           }
-          ticket.items.push({ qty: item.qty, name: product.name, notes: item.notes });
+          ticket.items.push({ qty: item.qty, name: product.name, notes: item.notes, itemId: row!.id });
         }
       }
 
@@ -164,10 +168,17 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker 
 
       if (tickets.size) {
         await tx.insert(printJobs).values(
-          [...tickets].map(([printerId, payload]) => ({ printerId, type: 'PRODUCAO' as const, payload, referenceId: order.id })),
+          [...tickets].map(([printerId, payload]) => ({
+            printerId,
+            type: 'PRODUCAO' as const,
+            payload,
+            referenceId: order.id,
+            status: panelPrinters.has(printerId) ? ('PAINEL' as const) : ('PENDENTE' as const),
+          })),
         );
       }
-      return { orderId: order.id, duplicate: false, printJobs: tickets.size, unroutedItems } satisfies CreateOrderResponse;
+      const onPanel = [...tickets.keys()].filter((p) => panelPrinters.has(p)).length;
+      return { orderId: order.id, duplicate: false, printJobs: tickets.size - onPanel, panelTickets: onPanel, unroutedItems } satisfies CreateOrderResponse;
     });
 
     if (!result) {

@@ -11,6 +11,7 @@ const STATUS: Record<PrintJobStatus, { label: string; tone: 'neutral' | 'ok' | '
   IMPRIMINDO: { label: 'Imprimindo', tone: 'warn' },
   OK: { label: 'Impresso', tone: 'ok' },
   ERRO: { label: 'Erro', tone: 'bad' },
+  PAINEL: { label: 'No painel da cozinha', tone: 'neutral' },
 };
 
 const TYPE_LABEL: Record<string, string> = { PRODUCAO: 'Produção', TESTE: 'Teste', CANCELAMENTO: 'Cancelamento', PRE_CONTA: 'Pré-conta' };

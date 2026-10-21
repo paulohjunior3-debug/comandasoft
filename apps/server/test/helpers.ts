@@ -36,6 +36,7 @@ export async function createTestContext(): Promise<TestContext> {
     ['gerente', 'GERENTE'],
     ['caixa', 'CAIXA'],
     ['garcom', 'GARCOM'],
+    ['cozinha', 'COZINHA'],
   ];
   await db.insert(schema.users).values(roles.map(([login, role]) => ({ name: login, login, passwordHash, role })));
 

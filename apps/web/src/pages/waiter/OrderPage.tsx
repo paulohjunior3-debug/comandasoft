@@ -10,7 +10,7 @@ import {
 import { useMutation } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { Button, ErrorBanner, Loading, Modal } from '../../components/ui';
+import { Button, ErrorBanner, Loading, Modal, TakeawayButton } from '../../components/ui';
 import { ApiRequestError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useCachedQuery } from '../../lib/offline/cache';
@@ -257,6 +257,7 @@ function ReviewModal({
   // Um clientUuid por pedido: se a rede falhar e o garçom tocar em Enviar de novo, não duplica.
   const [clientUuid] = useState(() => crypto.randomUUID());
   const [createdAtDevice] = useState(() => new Date().toISOString());
+  const [takeaway, setTakeaway] = useState(false);
   const send = useMutation({
     mutationFn: async () => {
       const body = {
@@ -264,6 +265,7 @@ function ReviewModal({
         tableId,
         comandaIds,
         createdAtDevice,
+        takeaway,
         items: cart.map((l) => ({
           productId: l.product.id,
           qty: l.qty,
@@ -282,7 +284,7 @@ function ReviewModal({
         path: '/waiter/orders',
         body,
         tableId,
-        label: `${itemCount} item(ns) para ${comandaNames.join(', ')}`,
+        label: `${itemCount} item(ns) para ${comandaNames.join(', ')}${takeaway ? ' (para viagem)' : ''}`,
         userId: user!.id,
       });
     },
@@ -315,6 +317,7 @@ function ReviewModal({
           {comandaIds.length > 1 && <span className="text-amber-400"> (dividido igualmente)</span>}
         </p>
       )}
+      <TakeawayButton checked={takeaway} onChange={setTakeaway} />
       <ul className="space-y-3">
         {cart.map((l) => (
           <li key={l.key} className="rounded-xl bg-slate-800/60 p-3">

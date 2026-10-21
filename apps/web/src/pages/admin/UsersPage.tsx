@@ -11,6 +11,7 @@ const ROLE_HINTS: Record<Role, string> = {
   GERENTE: 'Cancelar itens, descontos, reabrir comandas, sangria',
   CAIXA: 'Abrir/fechar caixa e receber pagamentos',
   GARCOM: 'Abrir comandas e lançar pedidos',
+  COZINHA: 'Só o painel da cozinha (marcar pedidos prontos)',
 };
 
 export function UsersPage() {

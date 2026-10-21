@@ -1,11 +1,12 @@
 import { ROLE_LABELS, type Role } from '@sistema-bar/shared';
-import { Link } from 'react-router';
+import { Link, Navigate } from 'react-router';
 import { useAuth } from '../lib/auth';
 import { useOnline } from '../lib/useOnline';
 
 const AREAS: { title: string; description: string; roles: Role[]; to?: string }[] = [
   { title: 'Garçom', description: 'Mapa de mesas, comandas e pedidos', roles: ['GARCOM', 'GERENTE'], to: '/garcom' },
   { title: 'Caixa', description: 'Pagamentos, sangria e fechamento', roles: ['CAIXA', 'GERENTE'], to: '/caixa' },
+  { title: 'Cozinha', description: 'Painel dos pedidos: Enter marca pronto e imprime', roles: ['COZINHA', 'GERENTE'], to: '/cozinha' },
   { title: 'Administração', description: 'Cardápio, mesas, impressoras e usuários', roles: [], to: '/admin' },
 ];
 
@@ -13,6 +14,8 @@ export function HomePage() {
   const { user, logout } = useAuth();
   const online = useOnline();
   if (!user) return null;
+  // A máquina da cozinha só usa o painel: vai direto para ele.
+  if (user.role === 'COZINHA') return <Navigate to="/cozinha" replace />;
 
   const areas = AREAS.filter((a) => user.role === 'ADMIN' || a.roles.includes(user.role));
 

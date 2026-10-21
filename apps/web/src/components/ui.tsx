@@ -227,3 +227,19 @@ export function EmptyState({ children }: { children: ReactNode }) {
 export function Loading() {
   return <p className="py-8 text-center text-slate-500">Carregando…</p>;
 }
+
+/** Botão grande "Para viagem" do lançamento de pedido: laranja quando marcado (igual ao painel da cozinha). */
+export function TakeawayButton({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={checked}
+      onClick={() => onChange(!checked)}
+      className={`flex w-full items-center justify-center gap-2 rounded-xl border-2 px-4 py-3 text-base font-semibold transition-colors ${
+        checked ? 'border-orange-500 bg-orange-500 text-slate-950' : 'border-slate-700 bg-slate-900 text-slate-300'
+      }`}
+    >
+      🥡 {checked ? 'Para viagem ✓' : 'Marcar para viagem'}
+    </button>
+  );
+}

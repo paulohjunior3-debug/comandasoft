@@ -18,7 +18,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
-import { Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
+import { Button, ErrorBanner, Loading, Modal, SelectField, TakeawayButton, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { maskCpf, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
@@ -125,7 +125,7 @@ function ProductPicker({ cart, setCart }: { cart: CartLine[]; setCart: (f: (c: C
   );
 }
 
-async function sendOrder(tableId: string, comandaIds: string[], cart: CartLine[]) {
+async function sendOrder(tableId: string, comandaIds: string[], cart: CartLine[], takeaway = false) {
   return api<CreateOrderResponse>('/waiter/orders', {
     method: 'POST',
     body: JSON.stringify({
@@ -133,13 +133,22 @@ async function sendOrder(tableId: string, comandaIds: string[], cart: CartLine[]
       tableId,
       comandaIds,
       createdAtDevice: new Date().toISOString(),
+      takeaway,
       items: cart.map((l) => ({ productId: l.product.id, qty: l.qty, notes: l.notes.trim() || undefined, expectedUnitPriceCents: l.product.priceCents })),
     }),
   });
 }
 
 const printedNote = (r: CreateOrderResponse) =>
-  r.unroutedItems ? ` Atenção: ${r.unroutedItems} item(ns) sem impressora vinculada.` : r.printJobs ? ' Enviado para impressão.' : '';
+  r.unroutedItems
+    ? ` Atenção: ${r.unroutedItems} item(ns) sem impressora vinculada.`
+    : r.panelTickets && !r.printJobs
+      ? ' Enviado para o painel da cozinha.'
+      : r.panelTickets
+        ? ' Enviado para impressão e para o painel da cozinha.'
+        : r.printJobs
+          ? ' Enviado para impressão.'
+          : '';
 
 /** Lançar itens pelo caixa numa comanda da mesa (ou dividido entre as selecionadas). */
 export function LaunchItemsModal({
@@ -155,6 +164,7 @@ export function LaunchItemsModal({
 }) {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [target, setTarget] = useState(selected.length > 1 ? 'dividir' : (selected[0] ?? table.comandas[0]?.id ?? ''));
+  const [takeaway, setTakeaway] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -164,7 +174,7 @@ export function LaunchItemsModal({
     setBusy(true);
     setError(null);
     try {
-      const r = await sendOrder(table.id, comandaIds, cart);
+      const r = await sendOrder(table.id, comandaIds, cart, takeaway);
       onDone(`${cart.reduce((s, l) => s + l.qty, 0)} item(ns) lançado(s).${printedNote(r)}`);
     } catch (err) {
       setError(errorMessage(err));
@@ -197,6 +207,7 @@ export function LaunchItemsModal({
         {selected.length > 1 && <option value="dividir">Dividir entre as selecionadas ({selected.length})</option>}
       </SelectField>
       <ProductPicker cart={cart} setCart={setCart} />
+      <TakeawayButton checked={takeaway} onChange={setTakeaway} />
     </Modal>
   );
 }
@@ -311,6 +322,7 @@ export function CounterSaleModal({ onClose, onDone }: { onClose: () => void; onD
   const [cart, setCart] = useState<CartLine[]>([]);
   const [name, setName] = useState('');
   const [cpf, setCpf] = useState('');
+  const [takeaway, setTakeaway] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [clientUuid] = useState(() => crypto.randomUUID());
@@ -326,7 +338,7 @@ export function CounterSaleModal({ onClose, onDone }: { onClose: () => void; onD
         method: 'POST',
         body: JSON.stringify({ clientUuid, customerName: name.trim() || undefined, cpf: cpf || undefined }),
       });
-      const r = await sendOrder(c.tableId, [c.comandaId], cart);
+      const r = await sendOrder(c.tableId, [c.comandaId], cart, takeaway);
       onDone(c.tableId, c.comandaId, `Venda no balcão lançada.${printedNote(r)}`);
     } catch (err) {
       setError(errorMessage(err));
@@ -351,6 +363,7 @@ export function CounterSaleModal({ onClose, onDone }: { onClose: () => void; onD
     >
       <ErrorBanner message={error} />
       <ProductPicker cart={cart} setCart={setCart} />
+      <TakeawayButton checked={takeaway} onChange={setTakeaway} />
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField label="Nome (opcional)" placeholder="Balcão 1, Balcão 2…" value={name} onChange={(e) => setName(e.target.value)} />
         <TextField label="CPF na nota (opcional)" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(maskCpf(e.target.value))} />

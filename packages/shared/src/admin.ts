@@ -149,6 +149,8 @@ export const printerInputSchema = z.object({
   codepage: z.enum(PRINTER_CODEPAGES).default('CP860'),
   cut: z.boolean().default(true),
   active: z.boolean().default(true),
+  /** Pedidos vão primeiro para o painel da cozinha; o cupom só sai quando marcam "pronto". */
+  usesPanel: z.boolean().default(false),
   /** Categorias cujos itens saem nesta impressora (o dono configura pela tela da impressora). */
   categoryIds: z.array(id).default([]),
 });
@@ -163,6 +165,7 @@ export interface Printer {
   codepage: (typeof PRINTER_CODEPAGES)[number];
   cut: boolean;
   active: boolean;
+  usesPanel: boolean;
   categoryIds: string[];
   /** false quando o nome não aparece mais entre as impressoras instaladas no Windows. */
   installed: boolean | null;
