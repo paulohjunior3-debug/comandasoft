@@ -68,8 +68,8 @@ export function CashierPage() {
   };
 
   return (
-    <div className="min-h-dvh">
-      <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur">
+    <div className="min-h-dvh pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+      <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-950/95 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 backdrop-blur">
         <Link to="/" className="flex items-center gap-2 font-semibold">
           <img src="/favicon.svg" alt="" className="size-7" /> {register ? register.name : 'Caixa'}
         </Link>
