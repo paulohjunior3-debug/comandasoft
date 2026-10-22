@@ -10,13 +10,14 @@ import {
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { cashRegisters, cashSessions, comandas, diningTables, paymentComandas, payments, users } from '../../db/schema';
+import { cashRegisters, cashSessions, comandas, diningTables, paymentComandas, payments, printers, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { authorizeManager } from '../../lib/authorize';
 import { loadBill } from '../../lib/billing';
 import { billTicket, enqueueCashierPrint } from '../../lib/cashier-print';
 import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
+import { renderJob } from '../../printing/worker';
 import { idParams } from '../admin/params';
 import { getRegister } from './session';
 
@@ -132,6 +133,20 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
     if (!printed) throw new HttpError(409, 'NO_CASHIER_PRINTER', 'Escolha a impressora do caixa em Administração > Configurações.');
     printWorker.kick();
     return { printed };
+  });
+
+  /** O mesmo descritivo, na tela (como sai no papel da impressora do caixa), sem imprimir. */
+  app.post('/closed-comandas/preview', async (request) => {
+    const { comandaIds, registerId } = closedBillsPrintSchema.parse(request.body);
+    const settings = await getSettings(db);
+    const register = registerId ? await getRegister(db, registerId) : null;
+    const bill = await loadBill(db, [...new Set(comandaIds)], settings);
+    if (bill.comandas.length === 0) throw notFound('Comanda');
+    const ticket = billTicket(bill, 'CUPOM', settings, register ? `${request.user!.name} · ${register.name}` : request.user!.name);
+    const printerId = register?.printerId ?? settings.cashierPrinterId;
+    const [printer] = printerId ? await db.select().from(printers).where(eq(printers.id, printerId)) : [];
+    const layout = printer ?? { widthMm: 80, codepage: 'CP860', cut: true };
+    return { text: renderJob(ticket, layout).preview, widthMm: layout.widthMm === 58 ? 58 : 80 };
   });
 
   /**

@@ -1,7 +1,7 @@
 import { formatBRL, PAYMENT_METHOD_LABELS, PAYMENT_METHODS, type ClosedBillsResponse, type ClosedTableBill, type PaymentMethod } from '@sistema-bar/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Badge, Button, ErrorBanner, Loading } from '../../components/ui';
+import { Badge, Button, ErrorBanner, Loading, Modal } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatTime, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
@@ -81,11 +81,59 @@ const brDate = (iso: string) => (iso ? iso.split('-').reverse().join('/') : '');
 const dayTime = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', ' às');
 
+/** O descritivo na tela, igual ao papel (fonte monoespaçada, mesma largura da impressora). */
+function ReceiptPreview({
+  title,
+  comandaIds,
+  registerId,
+  onClose,
+  onPrint,
+}: {
+  title: string;
+  comandaIds: string[];
+  registerId?: string;
+  onClose: () => void;
+  onPrint: () => void;
+}) {
+  const data = useQuery({
+    queryKey: ['closed-preview', ...comandaIds],
+    queryFn: () =>
+      api<{ text: string; widthMm: number }>('/cashier/closed-comandas/preview', { method: 'POST', body: JSON.stringify({ comandaIds, registerId }) }),
+  });
+  return (
+    <Modal
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Fechar</Button>
+          <Button variant="primary" onClick={onPrint}>
+            🧾 Imprimir
+          </Button>
+        </>
+      }
+    >
+      <ErrorBanner message={data.isError ? errorMessage(data.error) : null} />
+      {data.data ? (
+        <pre
+          className="mx-auto overflow-x-auto rounded-md bg-stone-100 px-3 py-4 font-mono text-[11px] leading-snug text-stone-900 shadow-inner"
+          style={{ width: `${data.data.widthMm === 58 ? 32 : 48}ch`, maxWidth: '100%', boxSizing: 'content-box' }}
+        >
+          {data.data.text}
+        </pre>
+      ) : (
+        !data.isError && <Loading />
+      )}
+    </Modal>
+  );
+}
+
 function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; registerId?: string; listPath: string }) {
   const qc = useQueryClient();
   const pin = usePin();
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState(false);
   const print = useMutation({
     mutationFn: () =>
       api('/cashier/closed-comandas/print', { method: 'POST', body: JSON.stringify({ comandaIds: b.comandas.map((c) => c.id), registerId }) }),
@@ -163,6 +211,7 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
         ))}
       </ul>
       <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Button onClick={() => setViewing(true)}>👁 Ver cupom</Button>
         <Button onClick={() => print.mutate()} disabled={print.isPending}>
           🧾 Imprimir descritivo
         </Button>
@@ -170,6 +219,15 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
       </div>
       <ErrorBanner message={errorMessage(print.error ?? change.error)} />
       {pin.element}
+      {viewing && (
+        <ReceiptPreview
+          title={`${b.tableLabel ?? `Mesa ${b.tableNumber}`} · ${formatTime(b.closedAt)}`}
+          comandaIds={b.comandas.map((c) => c.id)}
+          registerId={registerId}
+          onClose={() => setViewing(false)}
+          onPrint={() => print.mutate()}
+        />
+      )}
     </li>
   );
 }
