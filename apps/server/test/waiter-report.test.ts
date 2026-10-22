@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { CashierTable, MyOrder, SalesReport } from '@sistema-bar/shared';
+import type { CashierTable, ClosedBillsResponse, MyOrder, SalesReport } from '@sistema-bar/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createTestContext, PASSWORD, type TestContext } from './helpers';
 
@@ -101,5 +101,94 @@ describe('relatório por garçom', () => {
     expect(byName.Maria).toMatchObject({ itemsCents: 5000, qty: 2, orders: 2, comandas: 2, tables: 2, serviceFeeCents: 500, visits: 2 });
     // Empate no valor: quem atendeu mais vem primeiro.
     expect(report.waiters[0]!.name).toBe('Maria');
+  });
+});
+
+describe('contas fechadas', () => {
+  it('lista as mesas fechadas do dia com as comandas e os pagamentos; reimprime o descritivo', async () => {
+    const res = (await caixa({ method: 'GET', url: '/api/cashier/closed-comandas' })).json() as ClosedBillsResponse;
+    expect(res.bills.map((b) => [b.tableNumber, b.comandas.map((c) => c.customerName), b.totalCents])).toEqual(
+      expect.arrayContaining([
+        [1, ['Ana'], 9900],
+        [2, ['Bia'], 1100],
+      ]),
+    );
+    const ana = res.bills.find((b) => b.tableNumber === 1)!;
+    expect(ana.payments).toMatchObject([{ method: 'PIX', amountCents: 9900, editable: true }]);
+    expect(ana.comandas[0]!.phone).toBe('34987654321');
+
+    ctx.printed.length = 0;
+    expect((await caixa({ method: 'POST', url: '/api/cashier/closed-comandas/print', payload: { comandaIds: [ids.ana], registerId: ids.register } })).statusCode).toBe(200);
+    await ctx.app.printWorker.runOnce();
+    const preview = ctx.printed.find((p) => p.preview.includes('CUPOM DE CONSUMO'))!.preview;
+    expect(preview).toContain('REIMPRESS');
+    expect(preview).toMatch(/5x Cerveja/);
+    expect((await garcom({ method: 'GET', url: '/api/cashier/closed-comandas' })).statusCode).toBe(403);
+  });
+
+  it('corrige a forma de pagamento (gerente), com auditoria; o relatório passa a contar na forma certa', async () => {
+    const res = (await caixa({ method: 'GET', url: '/api/cashier/closed-comandas' })).json() as ClosedBillsResponse;
+    const pay = res.bills.find((b) => b.tableNumber === 1)!.payments[0]!;
+    // Caixa sem PIN: pede autorização.
+    expect((await caixa({ method: 'POST', url: `/api/cashier/payments/${pay.id}/method`, payload: { method: 'DINHEIRO', reason: 'Fechou errado' } })).json().error).toBe(
+      'PIN_REQUIRED',
+    );
+    const gerente = await ctx.as('gerente');
+    const ok = await gerente({ method: 'POST', url: `/api/cashier/payments/${pay.id}/method`, payload: { method: 'DINHEIRO', reason: 'Era dinheiro' } });
+    expect(ok.json()).toEqual({ ok: true });
+    expect((await gerente({ method: 'POST', url: `/api/cashier/payments/${pay.id}/method`, payload: { method: 'DINHEIRO', reason: 'De novo' } })).json().error).toBe('SAME_METHOD');
+
+    const after = (await caixa({ method: 'GET', url: '/api/cashier/closed-comandas' })).json() as ClosedBillsResponse;
+    expect(after.bills.find((b) => b.tableNumber === 1)!.payments[0]).toMatchObject({ method: 'DINHEIRO', changeCents: 0 });
+    const report: SalesReport = (await admin({ method: 'GET', url: `/api/admin/reports/sales?from=${after.date}&to=${after.date}` })).json();
+    expect(report.received.byMethod).toMatchObject({ DINHEIRO: 9900, PIX: 1100 });
+  });
+});
+
+describe('meus lançamentos: só desde a abertura do caixa', () => {
+  it('pedido de antes da abertura não aparece', async () => {
+    const before = (await maria({ method: 'GET', url: '/api/waiter/orders/mine' })).json() as MyOrder[];
+    const oldest = before.at(-1)!;
+    // Simula um pedido lançado antes de o caixa abrir (dia anterior).
+    const { orders, cashSessions } = await import('../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const [session] = await ctx.db.select().from(cashSessions);
+    await ctx.db.update(orders).set({ receivedAt: new Date(session!.openedAt.getTime() - 60_000) }).where(eq(orders.id, oldest.id));
+    const now = (await maria({ method: 'GET', url: '/api/waiter/orders/mine' })).json() as MyOrder[];
+    expect(now.map((o) => o.id)).not.toContain(oldest.id);
+    expect(now).toHaveLength(before.length - 1);
+  });
+});
+
+describe('pagamento por item agrupado', () => {
+  it('pagar 4 de 5 cervejas lançadas em dois pedidos (3 + 2): o servidor aceita as frações por linha', async () => {
+    const c = (
+      await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa, customerName: 'Rita', phone: '(34) 99999-0000' } })
+    ).json().id as string;
+    await order(garcom, ids.mesa, [c], [{ productId: ids.cerveja, qty: 3 }]);
+    await order(garcom, ids.mesa, [c], [{ productId: ids.cerveja, qty: 2 }]);
+    const bill = (await caixa({ method: 'POST', url: '/api/cashier/bill', payload: { comandaIds: [c] } })).json();
+    const [a, b] = bill.items as { orderItemId: string; qty: number }[];
+    // O que a tela manda ao escolher 4 no grupo "5× Cerveja": a 1ª linha inteira e 1 das 2 da segunda.
+    const res = await caixa({
+      method: 'POST',
+      url: '/api/cashier/payments',
+      payload: {
+        clientUuid: randomUUID(),
+        registerId: ids.register,
+        comandaIds: [c],
+        method: 'PIX',
+        amountCents: 4400, // 4 × R$ 10,00 + 10%
+        payerName: 'Rita',
+        items: [
+          { orderItemId: a!.orderItemId, comandaId: c, num: 3, den: 3 },
+          { orderItemId: b!.orderItemId, comandaId: c, num: 1, den: 2 },
+        ],
+      },
+    });
+    expect(res.statusCode).toBeLessThan(300);
+    const after = (await caixa({ method: 'POST', url: '/api/cashier/bill', payload: { comandaIds: [c] } })).json();
+    expect(after.totals.remainingCents).toBe(1100);
+    expect(after.items.map((i: { paidFraction: { num: number; den: number } }) => i.paidFraction.num / i.paidFraction.den)).toEqual([1, 0.5]);
   });
 });

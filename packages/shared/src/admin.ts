@@ -246,6 +246,8 @@ export const settingsSchema = z.object({
   receiptFooter: z.string().trim().max(200),
   /** Impressora do caixa: pré-conta, cupom final, gaveta e relatórios (SPEC 5.5). */
   cashierPrinterId: z.string().uuid().nullable(),
+  /** Cancelar item imprime um aviso "CANCELADO" na cozinha/bar. Desligado: só some do painel. */
+  printCancelTickets: z.boolean(),
   /**
    * Endereço que vai no QR das mesas (ex.: http://192.168.0.10:8080). Vazio = o sistema sugere
    * pelo IP deste PC. Se o IP mudar, os QR impressos param de funcionar: fixe o IP no roteador.
@@ -282,6 +284,7 @@ export const DEFAULT_SETTINGS: Settings = {
   companyPhone: '',
   receiptFooter: 'Obrigado pela preferência!',
   cashierPrinterId: null,
+  printCancelTickets: false,
   qrBaseUrl: '',
   guestWifiName: '',
   weekStartDay: 1,

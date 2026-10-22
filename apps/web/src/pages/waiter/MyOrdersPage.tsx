@@ -1,4 +1,4 @@
-import { MY_ORDERS_HOURS, type MyOrder } from '@sistema-bar/shared';
+import type { MyOrder } from '@sistema-bar/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Badge, ErrorBanner, Loading } from '../../components/ui';
@@ -32,7 +32,7 @@ export function MyOrdersPage() {
     <div className="min-h-dvh pb-8">
       <WaiterHeader title="Meus lançamentos" back="/garcom" />
       <main className="mx-auto max-w-3xl space-y-3 px-4 pt-4">
-        <p className="text-sm text-slate-400">Pedidos que você lançou nas últimas {MY_ORDERS_HOURS} horas, do mais recente para o mais antigo.</p>
+        <p className="text-sm text-slate-400">Pedidos que você lançou desde a abertura do caixa de hoje, do mais recente para o mais antigo.</p>
         <ErrorBanner message={mine.isError ? errorMessage(mine.error) : null} />
 
         {queued.map((e) => {
@@ -58,7 +58,7 @@ export function MyOrdersPage() {
         {mine.isLoading ? (
           <Loading />
         ) : (mine.data ?? []).length === 0 && queued.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">Nenhum lançamento seu nas últimas horas.</p>
+          <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">Nenhum lançamento seu desde a abertura do caixa.</p>
         ) : (
           (mine.data ?? []).map((o) => (
             <Link key={o.id} to={`/garcom/mesa/${o.tableId}`} className="block rounded-xl bg-slate-900 p-3 active:bg-slate-800">

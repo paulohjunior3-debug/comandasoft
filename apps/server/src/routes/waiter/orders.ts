@@ -1,8 +1,9 @@
 import { createOrderSchema, MY_ORDERS_HOURS, splitCents, WAITER_ERRORS, type CreateOrderResponse, type MyOrder } from '@sistema-bar/shared';
-import { and, asc, count, desc, eq, gte, inArray, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNull, max, min, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import {
+  cashSessions,
   comandas,
   diningTables,
   orderItems,
@@ -19,9 +20,16 @@ import { HttpError } from '../../lib/errors';
 import type { ProductionTicket } from '../../printing/tickets';
 
 export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker, license }: AppDeps) {
-  /** Meus lançamentos: o garçom confere o que já pediu (só os dele, das últimas horas). */
+  /**
+   * Meus lançamentos: o garçom confere o que já pediu (só os dele), a partir da abertura do caixa
+   * de hoje: o caixa aberto mais antigo ou, com tudo fechado, o último que abriu. Teto de 16 horas.
+   */
   app.get('/mine', async (request): Promise<MyOrder[]> => {
-    const since = new Date(Date.now() - MY_ORDERS_HOURS * 3_600_000);
+    const ceiling = Date.now() - MY_ORDERS_HOURS * 3_600_000;
+    const [openSession] = await db.select({ at: min(cashSessions.openedAt) }).from(cashSessions).where(isNull(cashSessions.closedAt));
+    const [lastSession] = openSession?.at ? [] : await db.select({ at: max(cashSessions.openedAt) }).from(cashSessions);
+    const opened = openSession?.at ?? lastSession?.at ?? null;
+    const since = new Date(Math.max(ceiling, opened ? opened.getTime() : ceiling));
     const rows = await db
       .select({ order: orders, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
       .from(orders)

@@ -40,6 +40,9 @@ beforeAll(async () => {
   const me = users.find((u: { login: string }) => u.login === 'admin');
   await admin({ method: 'PUT', url: `/api/admin/users/${me.id}`, payload: { ...me, pin: PIN } });
 
+  // Estes testes conferem o aviso de cancelamento nos setores (desligado por padrão).
+  const current = (await admin({ method: 'GET', url: '/api/admin/settings' })).json();
+  await admin({ method: 'PUT', url: '/api/admin/settings', payload: { ...current, printCancelTickets: true } });
   ids.bar = (await post('/api/admin/printers', { name: 'Bar', windowsName: 'ELGIN BAR', sectorLabel: 'BAR' })).id;
   const cat = (await post('/api/admin/categories', { name: 'Bebidas' })).id;
   await admin({ method: 'PUT', url: `/api/admin/printers/${ids.bar}`, payload: { name: 'Bar', windowsName: 'ELGIN BAR', sectorLabel: 'BAR', categoryIds: [cat] } });
@@ -187,5 +190,26 @@ describe('cancelar mesa', () => {
     const res = await cancelTable([c], { authorizerPin: PIN });
     expect(res.statusCode).toBe(409);
     expect(res.json().message).toMatch(/já tem pagamento/);
+  });
+});
+
+describe('aviso de cancelamento desligado (padrão)', () => {
+  it('cancelar item não imprime nada na cozinha/bar', async () => {
+    const current = (await admin({ method: 'GET', url: '/api/admin/settings' })).json();
+    await admin({ method: 'PUT', url: '/api/admin/settings', payload: { ...current, printCancelTickets: false } });
+    const mesa3 = ((await admin({ method: 'POST', url: '/api/admin/tables', payload: { number: 3 } })).json() as { id: string }).id;
+    const c = (
+      await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: mesa3, customerName: 'Nil', phone: '(34) 99999-0000' } })
+    ).json().id as string;
+    await garcom({
+      method: 'POST',
+      url: '/api/waiter/orders',
+      payload: { clientUuid: randomUUID(), tableId: mesa3, comandaIds: [c], items: [{ productId: ids.cerveja, qty: 1 }], createdAtDevice: new Date().toISOString() },
+    });
+    const before = (await ctx.db.select().from(printJobs).where(eq(printJobs.type, 'CANCELAMENTO'))).length;
+    const item = (await bill(c)).items[0]!;
+    const res = await cancel(item.orderItemId, { qty: 1, authorizerPin: PIN });
+    expect(res.json()).toMatchObject({ canceledQty: 1, printed: false });
+    expect((await ctx.db.select().from(printJobs).where(eq(printJobs.type, 'CANCELAMENTO'))).length).toBe(before);
   });
 });

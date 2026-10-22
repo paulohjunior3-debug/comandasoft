@@ -2,6 +2,7 @@ import type { PrintJobStatus, PrintJobSummary, PrintQueueResponse } from '@siste
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Badge, Button, EmptyState, ErrorBanner, Loading, Modal, PageHeader } from '../../components/ui';
+import { ClosedBills } from '../cashier/ClosedBills';
 import { api } from '../../lib/api';
 import { formatTime } from '../../lib/format';
 import { errorMessage, useApiMutation } from '../../lib/queries';
@@ -17,7 +18,34 @@ const STATUS: Record<PrintJobStatus, { label: string; tone: 'neutral' | 'ok' | '
 const TYPE_LABEL: Record<string, string> = { PRODUCAO: 'Produção', TESTE: 'Teste', CANCELAMENTO: 'Cancelamento', PRE_CONTA: 'Pré-conta' };
 
 /** Fila de impressão (SPEC 5.5): acompanhar, ver o cupom, tentar de novo e reimprimir. */
+/** Fila de impressão com a aba "Contas fechadas" (descritivo para o cliente que volta pedindo). */
 export function PrintQueuePage() {
+  const [tab, setTab] = useState<'FILA' | 'CONTAS'>('FILA');
+  return (
+    <>
+      <div className="mb-4 flex gap-1 rounded-lg bg-slate-900 p-1 text-sm print:hidden">
+        {(['FILA', 'CONTAS'] as const).map((t) => (
+          <button key={t} onClick={() => setTab(t)} className={`flex-1 rounded-md py-2 ${tab === t ? 'bg-slate-700 font-medium' : 'text-slate-400'}`}>
+            {t === 'FILA' ? 'Fila de impressão' : 'Contas fechadas'}
+          </button>
+        ))}
+      </div>
+      {tab === 'FILA' ? (
+        <PrintQueue />
+      ) : (
+        <>
+          <PageHeader
+            title="Contas fechadas"
+            description="Mesas fechadas no dia, com as comandas e os pagamentos. Reimprima o descritivo ou corrija a forma de pagamento (enquanto o caixa estiver aberto)."
+          />
+          <ClosedBills />
+        </>
+      )}
+    </>
+  );
+}
+
+function PrintQueue() {
   const [filter, setFilter] = useState<'ABERTOS' | 'TODOS'>('TODOS');
   const path = `/print/queue${filter === 'ABERTOS' ? '?status=ABERTOS' : ''}`;
   const queue = useQuery({ queryKey: [path], queryFn: () => api<PrintQueueResponse>(path), refetchInterval: 3_000 });
