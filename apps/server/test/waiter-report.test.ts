@@ -125,6 +125,14 @@ describe('contas fechadas', () => {
     expect(preview).toContain('REIMPRESS');
     expect(preview).toMatch(/5x Cerveja/);
     expect((await garcom({ method: 'GET', url: '/api/cashier/closed-comandas' })).statusCode).toBe(403);
+    // Ver na tela, sem imprimir: o mesmo texto do papel.
+    const queued = ctx.printed.length;
+    const view = (await caixa({ method: 'POST', url: '/api/cashier/closed-comandas/preview', payload: { comandaIds: [ids.ana] } })).json();
+    expect(view.widthMm).toBe(80);
+    expect(view.text).toContain('CUPOM DE CONSUMO');
+    expect(view.text).toMatch(/5x Cerveja/);
+    await ctx.app.printWorker.runOnce();
+    expect(ctx.printed.length).toBe(queued);
   });
 
   it('corrige a forma de pagamento (gerente), com auditoria; o relatório passa a contar na forma certa', async () => {
