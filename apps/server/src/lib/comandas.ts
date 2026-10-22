@@ -34,6 +34,7 @@ export async function loadComandaSummaries(db: Db, where: SQL | undefined): Prom
     tableId: c.tableId,
     tableNumber,
     customerName: c.customerName,
+    phone: c.phone,
     peopleCount: c.peopleCount,
     status: c.status,
     openedAt: c.openedAt.toISOString(),

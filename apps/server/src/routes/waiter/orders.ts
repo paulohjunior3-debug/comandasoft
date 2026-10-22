@@ -1,5 +1,5 @@
-import { createOrderSchema, splitCents, WAITER_ERRORS, type CreateOrderResponse } from '@sistema-bar/shared';
-import { and, count, eq, inArray, or } from 'drizzle-orm';
+import { createOrderSchema, MY_ORDERS_HOURS, splitCents, WAITER_ERRORS, type CreateOrderResponse, type MyOrder } from '@sistema-bar/shared';
+import { and, asc, count, desc, eq, gte, inArray, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import {
@@ -19,6 +19,43 @@ import { HttpError } from '../../lib/errors';
 import type { ProductionTicket } from '../../printing/tickets';
 
 export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+  /** Meus lançamentos: o garçom confere o que já pediu (só os dele, das últimas horas). */
+  app.get('/mine', async (request): Promise<MyOrder[]> => {
+    const since = new Date(Date.now() - MY_ORDERS_HOURS * 3_600_000);
+    const rows = await db
+      .select({ order: orders, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
+      .from(orders)
+      .innerJoin(diningTables, eq(diningTables.id, orders.tableId))
+      .where(and(eq(orders.userId, request.user!.id), gte(orders.receivedAt, since)))
+      .orderBy(desc(orders.receivedAt))
+      .limit(100);
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.order.id);
+    const items = await db
+      .select({ orderId: orderItems.orderId, id: orderItems.id, qty: orderItems.qty, name: orderItems.productNameSnapshot, notes: orderItems.notes, status: orderItems.status })
+      .from(orderItems)
+      .where(inArray(orderItems.orderId, ids))
+      .orderBy(asc(orderItems.createdAt));
+    const names = await db
+      .selectDistinct({ orderId: orderItems.orderId, name: comandas.customerName })
+      .from(orderItems)
+      .innerJoin(orderItemShares, eq(orderItemShares.orderItemId, orderItems.id))
+      .innerJoin(comandas, eq(comandas.id, orderItemShares.comandaId))
+      .where(inArray(orderItems.orderId, ids));
+    return rows.map(({ order, tableNumber, isCounter }) => ({
+      id: order.id,
+      receivedAt: order.receivedAt.toISOString(),
+      tableId: order.tableId,
+      tableNumber,
+      tableLabel: isCounter ? 'Balcão' : null,
+      customers: [...new Set(names.filter((n) => n.orderId === order.id).map((n) => n.name))],
+      takeaway: order.takeaway,
+      items: items
+        .filter((i) => i.orderId === order.id)
+        .map((i) => ({ qty: i.qty, name: i.name, notes: i.notes, canceled: i.status === 'CANCELADO' })),
+    }));
+  });
+
   async function duplicateResponse(orderId: string): Promise<CreateOrderResponse> {
     const [{ n }] = (await db.select({ n: count() }).from(printJobs).where(eq(printJobs.referenceId, orderId))) as [{ n: number }];
     return { orderId, duplicate: true, printJobs: n, unroutedItems: 0 };

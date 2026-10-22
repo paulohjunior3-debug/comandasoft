@@ -44,6 +44,8 @@ export interface ComandaSummary {
   tableId: string;
   tableNumber: number;
   customerName: string;
+  /** Telefone informado na abertura (só números). */
+  phone: string | null;
   peopleCount: number;
   status: ComandaStatus;
   openedAt: string;
@@ -148,6 +150,21 @@ export const createOrderSchema = z.object({
   takeaway: z.boolean().default(false),
 });
 export type CreateOrderInput = z.input<typeof createOrderSchema>;
+
+/** "Meus lançamentos": pedidos que o próprio garçom lançou nas últimas horas (mais recente primeiro). */
+export interface MyOrder {
+  id: string;
+  receivedAt: string;
+  tableId: string;
+  tableNumber: number;
+  tableLabel: string | null;
+  customers: string[];
+  takeaway: boolean;
+  items: { qty: number; name: string; notes: string | null; canceled: boolean }[];
+}
+
+/** Janela de "Meus lançamentos". */
+export const MY_ORDERS_HOURS = 16;
 
 export interface CreateOrderResponse {
   orderId: string;

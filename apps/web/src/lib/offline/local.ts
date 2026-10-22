@@ -24,6 +24,7 @@ export function pendingComandas(entries: OutboxEntry[], tableId: string, tableNu
         tableId,
         tableNumber,
         customerName: body.customerName,
+        phone: typeof body.phone === 'string' ? body.phone.replace(/\D/g, '') || null : null,
         peopleCount: body.peopleCount ?? 1,
         status: 'ABERTA',
         openedAt: new Date(e.createdAt / 1000).toISOString(),

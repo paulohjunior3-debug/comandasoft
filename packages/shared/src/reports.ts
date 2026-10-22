@@ -75,6 +75,22 @@ export interface SalesReport {
     /** Contado − esperado no fechamento (null = ainda aberto). */
     differenceCents: number | null;
   }[];
+  /**
+   * Garçons (bonificação): o que cada um lançou nas comandas fechadas do período (quem lançou o
+   * pedido; o caixa e o gerente também aparecem se lançaram). Taxa de serviço proporcional aos
+   * itens de cada um na comanda. "Atendi a mesa" conta os toques no período.
+   */
+  waiters: {
+    userId: string;
+    name: string;
+    itemsCents: number;
+    qty: number;
+    orders: number;
+    comandas: number;
+    tables: number;
+    serviceFeeCents: number;
+    visits: number;
+  }[];
   /** Produtos das comandas fechadas, do maior valor para o menor, com o detalhe por dia. */
   products: { name: string; qty: number; totalCents: number; days: { date: string; qty: number; totalCents: number }[] }[];
 }

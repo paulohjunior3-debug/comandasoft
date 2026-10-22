@@ -1,7 +1,7 @@
 import { formatBRL, type ComandaDetail, type CreateOrderInput, type OpenComandaInput } from '@sistema-bar/shared';
 import { useNavigate, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Loading } from '../../components/ui';
-import { formatTime } from '../../lib/format';
+import { formatTime, maskPhone } from '../../lib/format';
 import { useCachedQuery } from '../../lib/offline/cache';
 import { useOutboxEntries } from '../../lib/offline/hooks';
 import { pendingOrdersFor } from '../../lib/offline/local';
@@ -48,6 +48,12 @@ export function ComandaPage() {
         {c && (
           <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
             <span>Mesa {c.tableNumber}</span>
+            {c.phone && (
+              <>
+                <span>·</span>
+                <span>{maskPhone(c.phone)}</span>
+              </>
+            )}
             <span>·</span>
             <span>Comanda nº {c.number}</span>
             <span>·</span>

@@ -181,6 +181,7 @@ function ComandaRow({ comanda: c }: { comanda: ComandaSummary | PendingComanda }
             {c.customerName}
             {c.peopleCount > 1 && <span className="text-sm font-normal text-slate-400"> · {c.peopleCount} pessoas</span>}
           </span>
+          {c.phone && <span className="block text-xs text-slate-400">{maskPhone(c.phone)}</span>}
           {pending && (c.conflict ? <Badge tone="bad">Recusada · ver pendências</Badge> : <Badge tone="warn">Aguardando envio</Badge>)}
           {!pending && c.status === 'EM_FECHAMENTO' && <Badge tone="warn">Pediu a conta</Badge>}
         </span>

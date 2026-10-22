@@ -34,6 +34,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
   MESA_ALERTA_CONTA_REMOVIDO: { label: 'Tirou a mesa do vermelho (conta impressa)', group: 'VENDAS' },
 
   ITEM_CANCELADO: { label: 'Cancelou item', group: 'CANCELAMENTOS', sensitive: true },
+  COMANDA_CANCELADA: { label: 'Cancelou mesa/comanda', group: 'CANCELAMENTOS', sensitive: true },
   ESTORNO: { label: 'Estornou pagamento', group: 'CANCELAMENTOS', sensitive: true },
   DESCONTO: { label: 'Deu desconto', group: 'CANCELAMENTOS', sensitive: true },
   DESCONTO_DESFEITO: { label: 'Desfez desconto', group: 'CANCELAMENTOS' },

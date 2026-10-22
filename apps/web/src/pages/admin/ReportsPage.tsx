@@ -225,6 +225,9 @@ function ReportBody({ r }: { r: SalesReport }) {
         />
       </Panel>
 
+      {/* ---- Garçons (bonificação) ---- */}
+      <Waiters waiters={r.waiters} />
+
       {/* ---- Sessões ---- */}
       <Panel title="Aberturas e fechamentos de caixa">
         <div className="overflow-x-auto">
@@ -272,6 +275,58 @@ function ReportBody({ r }: { r: SalesReport }) {
       </Panel>
 
     </div>
+  );
+}
+
+/**
+ * Vendas por garçom, para a bonificação: o que cada um lançou nas comandas fechadas do período,
+ * a taxa de serviço proporcional e quantas vezes tocou em "Atendi a mesa".
+ */
+function Waiters({ waiters }: { waiters: SalesReport['waiters'] }) {
+  if (waiters.length === 0) return null;
+  const topSales = waiters.reduce((a, b) => (b.itemsCents > a.itemsCents ? b : a)).userId;
+  const topVisits = waiters.reduce((a, b) => (b.visits > a.visits ? b : a));
+  return (
+    <Panel title="Vendas por garçom (bonificação)">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-xs text-slate-400">
+            <tr>
+              <Th>Garçom</Th>
+              <Th right>Vendido</Th>
+              <Th right>Taxa de serviço</Th>
+              <Th right>Itens</Th>
+              <Th right>Pedidos</Th>
+              <Th right>Comandas</Th>
+              <Th right>Mesas</Th>
+              <Th right>Atendi a mesa</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {waiters.map((w) => (
+              <tr key={w.userId} className="border-t border-slate-800">
+                <Td>
+                  {w.name}
+                  {w.userId === topSales && w.itemsCents > 0 && <span title="Quem mais vendeu"> 🏆</span>}
+                  {w.userId === topVisits.userId && topVisits.visits > 0 && <span title="Quem mais atendeu mesas"> ⭐</span>}
+                </Td>
+                <Td right className="font-semibold">{formatBRL(w.itemsCents)}</Td>
+                <Td right>{formatBRL(w.serviceFeeCents)}</Td>
+                <Td right>{w.qty}</Td>
+                <Td right>{w.orders}</Td>
+                <Td right>{w.comandas}</Td>
+                <Td right>{w.tables}</Td>
+                <Td right>{w.visits}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        🏆 quem mais vendeu · ⭐ quem mais tocou em "Atendi a mesa". Vendido = itens que a pessoa lançou nas comandas fechadas (sem taxa e
+        couvert). A taxa de serviço de cada comanda é dividida pelo valor que cada um lançou nela. Caixa e gerente aparecem se lançaram pedidos.
+      </p>
+    </Panel>
   );
 }
 
@@ -509,6 +564,9 @@ function downloadCsv(r: SalesReport, registerName: string | undefined) {
     [],
     ['Caixa', 'Espécie', 'Pix', 'Crédito', 'Débito', 'Total', 'Fiscal', 'Aberturas'],
     ...r.registers.map((x) => [x.name, money(x.byMethod.DINHEIRO), money(x.byMethod.PIX), money(x.byMethod.CREDITO), money(x.byMethod.DEBITO), money(x.totalCents), money(x.fiscalCents), x.sessions]),
+    [],
+    ['Garçom', 'Vendido', 'Taxa de serviço', 'Itens', 'Pedidos', 'Comandas', 'Mesas', 'Atendi a mesa'],
+    ...r.waiters.map((w) => [w.name, money(w.itemsCents), money(w.serviceFeeCents), w.qty, w.orders, w.comandas, w.tables, w.visits]),
     [],
     ['Produto', 'Quantidade', 'Valor'],
     ...r.products.map((p) => [p.name, p.qty, money(p.totalCents)]),

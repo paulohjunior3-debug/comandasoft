@@ -124,3 +124,68 @@ describe('cancelar item no caixa', () => {
     expect(res.json().message).toMatch(/Estorne o pagamento/);
   });
 });
+
+describe('cancelar mesa', () => {
+  const cancelTable = (comandaIds: string[], body: Record<string, unknown> = {}, as: Inject = caixa) =>
+    as({ method: 'POST', url: '/api/cashier/comandas/cancel', payload: { comandaIds, reason: 'Cliente desistiu', ...body } });
+  let mesa2: string;
+  const openAt = async (tableId: string, customerName: string) =>
+    (await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId, customerName, phone: '(34) 99999-0000' } })).json()
+      .id as string;
+  const openTables = async () => ((await caixa({ method: 'GET', url: '/api/cashier/tables' })).json() as { id: string }[]).map((t) => t.id);
+
+  beforeAll(async () => {
+    mesa2 = ((await admin({ method: 'POST', url: '/api/admin/tables', payload: { number: 2 } })).json() as { id: string }).id;
+  });
+
+  it('mesa sem nada lançado (ou com tudo cancelado) encerra sem pedir PIN', async () => {
+    const vazia = await openAt(mesa2, 'Teo');
+    const res = await cancelTable([vazia]);
+    expect(res.json()).toEqual({ canceledComandas: 1, canceledItems: 0 });
+    expect(await openTables()).not.toContain(mesa2);
+  });
+
+  it('com itens ativos: caixa precisa do PIN; cancela os itens, avisa o setor e encerra as comandas', async () => {
+    const a = await openAt(mesa2, 'Rui');
+    const b = await openAt(mesa2, 'Lia');
+    for (const [comandaIds, productId] of [[[a], ids.cerveja], [[a, b], ids.porcao]] as const) {
+      await garcom({
+        method: 'POST',
+        url: '/api/waiter/orders',
+        payload: { clientUuid: randomUUID(), tableId: mesa2, comandaIds, items: [{ productId, qty: 2 }], createdAtDevice: new Date().toISOString() },
+      });
+    }
+    expect((await cancelTable([a, b])).json().error).toBe('PIN_REQUIRED');
+    // Item dividido com comanda que ficou de fora: recusa.
+    expect((await cancelTable([a], { authorizerPin: PIN })).json().error).toBe('ITEM_SHARED');
+
+    const before = (await ctx.db.select().from(printJobs).where(eq(printJobs.type, 'CANCELAMENTO'))).length;
+    const res = await cancelTable([a, b], { authorizerPin: PIN });
+    expect(res.json()).toEqual({ canceledComandas: 2, canceledItems: 2 });
+    expect((await ctx.db.select().from(printJobs).where(eq(printJobs.type, 'CANCELAMENTO'))).length).toBe(before + 2);
+    expect(await openTables()).not.toContain(mesa2);
+    const [log] = await ctx.db.select().from(auditLogs).where(eq(auditLogs.action, 'COMANDA_CANCELADA'));
+    expect(log).toBeTruthy();
+    // Encerrada não se cancela de novo.
+    expect((await cancelTable([a], { authorizerPin: PIN })).json().error).toBe('COMANDA_NOT_OPEN');
+    // Garçom não cancela mesa.
+    expect((await cancelTable([await openAt(mesa2, 'Bia')], {}, garcom)).statusCode).toBe(403);
+  });
+
+  it('comanda com pagamento não se cancela', async () => {
+    const c = await openAt(mesa2, 'Gil');
+    await garcom({
+      method: 'POST',
+      url: '/api/waiter/orders',
+      payload: { clientUuid: randomUUID(), tableId: mesa2, comandaIds: [c], items: [{ productId: ids.cerveja, qty: 2 }], createdAtDevice: new Date().toISOString() },
+    });
+    await caixa({
+      method: 'POST',
+      url: '/api/cashier/payments',
+      payload: { clientUuid: randomUUID(), registerId: ids.register, comandaIds: [c], method: 'PIX', amountCents: 500, payerName: 'Gil' },
+    });
+    const res = await cancelTable([c], { authorizerPin: PIN });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toMatch(/já tem pagamento/);
+  });
+});

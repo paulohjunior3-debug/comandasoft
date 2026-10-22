@@ -41,6 +41,27 @@ export async function enqueueCashierPrint(
 }
 
 /** Monta a pré-conta ou o cupom final a partir da conta calculada. */
+/**
+ * No papel, itens iguais saem numa linha só (10 cervejas = "10x Cerveja" com o valor das 10),
+ * na ordem em que apareceram. Na tela do caixa continuam separados, com horário e garçom.
+ * Rateado só se junta com rateado do mesmo jeito (a parte de cada comanda muda o valor).
+ */
+function groupItems(items: Bill['items']): BillTicket['comandas'][number]['items'] {
+  const groups = new Map<string, BillTicket['comandas'][number]['items'][number]>();
+  for (const i of items) {
+    const shared = i.sharedWith > 1;
+    const key = [i.productName, i.unitPriceCents, shared ? i.sharedWith : 1].join('|');
+    const g = groups.get(key);
+    if (g) {
+      g.qty += i.qty;
+      g.amountCents += i.amountCents;
+    } else {
+      groups.set(key, { qty: i.qty, name: i.productName, amountCents: i.amountCents, shared });
+    }
+  }
+  return [...groups.values()];
+}
+
 export function billTicket(bill: Bill, variant: BillTicket['variant'], settings: Settings, operator: string, openDrawer = false): BillTicket {
   return {
     kind: 'CONTA',
@@ -52,9 +73,7 @@ export function billTicket(bill: Bill, variant: BillTicket['variant'], settings:
     operator,
     comandas: bill.comandas.map((c) => ({
       name: c.customerName,
-      items: bill.items
-        .filter((i) => i.comandaId === c.id && i.amountCents > 0)
-        .map((i) => ({ qty: i.qty, name: i.productName, amountCents: i.amountCents, shared: i.sharedWith > 1 })),
+      items: groupItems(bill.items.filter((i) => i.comandaId === c.id && i.amountCents > 0)),
       itemsCents: c.totals.itemsCents,
       serviceFeeCents: c.totals.serviceFeeCents,
       couvertCents: c.totals.couvertCents,

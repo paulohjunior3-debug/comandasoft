@@ -26,6 +26,7 @@ import { HomePage } from './pages/Home';
 import { KitchenPage } from './pages/kitchen/KitchenPage';
 import { ComandaPage } from './pages/waiter/ComandaPage';
 import { OrderPage } from './pages/waiter/OrderPage';
+import { MyOrdersPage } from './pages/waiter/MyOrdersPage';
 import { PendingPage } from './pages/waiter/PendingPage';
 import { TableMapPage } from './pages/waiter/TableMapPage';
 import { TablePage } from './pages/waiter/TablePage';
@@ -121,6 +122,14 @@ createRoot(document.getElementById('root')!).render(
               element={
                 <RequireAuth roles={WAITER_ROLES}>
                   <ComandaPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/garcom/meus-lancamentos"
+              element={
+                <RequireAuth roles={WAITER_ROLES}>
+                  <MyOrdersPage />
                 </RequireAuth>
               }
             />
