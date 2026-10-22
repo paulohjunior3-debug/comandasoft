@@ -505,7 +505,10 @@ export interface ClosedTableBill {
 }
 
 export interface ClosedBillsResponse {
+  /** Dia do movimento (o turno que passa da meia-noite conta no dia em que o caixa abriu). */
   date: string;
+  /** Caixas desse dia do movimento: de quando a quando (closedAt null = ainda aberto). */
+  sessions: { registerName: string; openedAt: string; closedAt: string | null }[];
   bills: ClosedTableBill[];
 }
 

@@ -48,11 +48,24 @@ export function ClosedBills({ registerId }: { registerId?: string }) {
           />
         </label>
       </div>
+      {list.data && (
+        <p className="text-xs text-slate-400">
+          {list.data.sessions.length === 0
+            ? `Nenhum caixa com o dia do movimento ${brDate(day)}.`
+            : `Movimento de ${brDate(day)}: ${list.data.sessions
+                .map((s) => `${s.registerName} aberto ${dayTime(s.openedAt)}${s.closedAt ? `, fechado ${dayTime(s.closedAt)}` : ' (ainda aberto)'}`)
+                .join(' · ')}.`}{' '}
+          O turno que passa da meia-noite conta no dia em que o caixa abriu.
+        </p>
+      )}
       <ErrorBanner message={list.isError ? errorMessage(list.error) : null} />
       {list.isLoading ? (
         <Loading />
       ) : bills.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">Nenhuma conta fechada nesse dia.</p>
+        <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">
+          Nenhuma conta fechada nesse dia do movimento.
+          {list.data?.sessions.length === 0 && ' Se a mesa foi fechada de madrugada, veja o dia anterior.'}
+        </p>
       ) : (
         <ul className="space-y-3">
           {bills.map((b) => (
@@ -63,6 +76,10 @@ export function ClosedBills({ registerId }: { registerId?: string }) {
     </div>
   );
 }
+
+const brDate = (iso: string) => (iso ? iso.split('-').reverse().join('/') : '');
+const dayTime = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', ' às');
 
 function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; registerId?: string; listPath: string }) {
   const qc = useQueryClient();

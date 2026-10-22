@@ -10,7 +10,7 @@ import {
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { cashSessions, comandas, diningTables, paymentComandas, payments, users } from '../../db/schema';
+import { cashRegisters, cashSessions, comandas, diningTables, paymentComandas, payments, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { authorizeManager } from '../../lib/authorize';
 import { loadBill } from '../../lib/billing';
@@ -33,8 +33,19 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
       const [last] = await db.select({ d: cashSessions.businessDate }).from(cashSessions).orderBy(desc(cashSessions.openedAt)).limit(1);
       date = last?.d ?? suggestedBusinessDate();
     }
-    const sessions = await db.select().from(cashSessions).where(eq(cashSessions.businessDate, date));
-    if (sessions.length === 0) return { date, bills: [] };
+    const sessionRows = await db
+      .select({ s: cashSessions, registerName: cashRegisters.name })
+      .from(cashSessions)
+      .innerJoin(cashRegisters, eq(cashRegisters.id, cashSessions.registerId))
+      .where(eq(cashSessions.businessDate, date))
+      .orderBy(cashSessions.openedAt);
+    const sessions = sessionRows.map((r) => r.s);
+    const sessionInfo = sessionRows.map((r) => ({
+      registerName: r.registerName,
+      openedAt: r.s.openedAt.toISOString(),
+      closedAt: r.s.closedAt?.toISOString() ?? null,
+    }));
+    if (sessions.length === 0) return { date, sessions: sessionInfo, bills: [] };
     const ranges = sessions.map((s) => [s.openedAt.getTime(), (s.closedAt ?? new Date()).getTime()] as const);
     const from = new Date(Math.min(...ranges.map((r) => r[0])));
     const to = new Date(Math.max(...ranges.map((r) => r[1])));
@@ -46,7 +57,7 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
         .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
         .where(and(eq(comandas.status, 'FECHADA'), gte(comandas.closedAt, from), lte(comandas.closedAt, to)))
     ).filter((r) => ranges.some(([a, b]) => r.c.closedAt!.getTime() >= a && r.c.closedAt!.getTime() <= b));
-    if (rows.length === 0) return { date, bills: [] };
+    if (rows.length === 0) return { date, sessions: sessionInfo, bills: [] };
 
     const pays = await db
       .select({ p: payments, comandaId: paymentComandas.comandaId, userName: users.name, sessionClosedAt: cashSessions.closedAt })
@@ -106,7 +117,7 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
       flush();
     }
     bills.sort((a, b) => b.closedAt.localeCompare(a.closedAt));
-    return { date, bills };
+    return { date, sessions: sessionInfo, bills };
   });
 
   /** Reimprime o descritivo (cupom de consumo) de uma conta fechada, marcado como reimpressão. */
