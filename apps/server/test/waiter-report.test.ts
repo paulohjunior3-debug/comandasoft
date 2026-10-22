@@ -116,6 +116,7 @@ describe('contas fechadas', () => {
     const ana = res.bills.find((b) => b.tableNumber === 1)!;
     expect(ana.payments).toMatchObject([{ method: 'PIX', amountCents: 9900, editable: true }]);
     expect(ana.comandas[0]!.phone).toBe('34987654321');
+    expect(res.sessions).toMatchObject([{ registerName: 'Caixa 1', closedAt: null }]);
 
     ctx.printed.length = 0;
     expect((await caixa({ method: 'POST', url: '/api/cashier/closed-comandas/print', payload: { comandaIds: [ids.ana], registerId: ids.register } })).statusCode).toBe(200);
