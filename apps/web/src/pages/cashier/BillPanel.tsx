@@ -15,7 +15,7 @@ import {
   type TransferResult,
 } from '@sistema-bar/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatTime, maskPhone } from '../../lib/format';
@@ -681,6 +681,7 @@ function PaymentForm({
       setPicks([]);
       setValueInputs({});
       setGroupQty({});
+      setExpanded([]);
       onPaid(r);
     },
   });
@@ -702,90 +703,16 @@ function PaymentForm({
   };
 
   const pickOf = (orderItemId: string, comandaId: string) => picks.find((p) => p.orderItemId === orderItemId && p.comandaId === comandaId);
-
-  return (
-    <section className="space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-4">
-      <div className="flex gap-1 rounded-lg bg-slate-800 p-1 text-sm">
-        {(['VALOR', 'ITENS'] as const).map((m) => (
-          <button key={m} onClick={() => setMode(m)} className={`flex-1 rounded-md py-1.5 ${mode === m ? 'bg-slate-600 font-medium' : 'text-slate-400'}`}>
-            {m === 'VALOR' ? 'Por valor' : 'Por item'}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-4 gap-1">
-        {PAYMENT_METHODS.map((m) => (
-          <button
-            key={m}
-            onClick={() => setMethod(m)}
-            className={`rounded-lg border py-2.5 text-sm font-medium ${method === m ? 'border-amber-500 bg-amber-500 text-slate-950' : 'border-slate-700'}`}
-          >
-            {PAYMENT_METHOD_LABELS[m]}
-          </button>
-        ))}
-      </div>
-
-      {mode === 'VALOR' ? (
-        <>
-          <TextField
-            label="Valor a pagar (R$)"
-            inputMode="decimal"
-            placeholder={formatBRL(remaining).replace('R$ ', '')}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            hint="Vazio = paga todo o restante."
-          />
-          <div className="flex items-end gap-2">
-            <TextField label="Dividir por" inputMode="numeric" placeholder="nº de pessoas" value={split} onChange={(e) => setSplit(e.target.value.replace(/\D/g, ''))} />
-            <Button
-              disabled={!split || Number(split) < 2}
-              onClick={() => setAmount((Math.ceil(remaining / Number(split)) / 100).toFixed(2).replace('.', ','))}
-            >
-              Calcular
-            </Button>
-          </div>
-        </>
-      ) : (
-        <ul className="max-h-72 space-y-1 overflow-y-auto">
-          {collapsed.map((g) => {
-            const q = groupQty[g.key] ?? 0;
-            const who = b.comandas.length > 1 ? `${b.comandas.find((c) => c.id === g.comandaId)?.customerName}: ` : '';
-            return (
-              <li key={g.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-800/60 px-2 py-1.5 text-sm">
-                <span className="min-w-0 flex-1">
-                  {who}
-                  {g.free}× {g.name} <span className="text-slate-500">{formatBRL(g.unitCents)} cada</span>
-                  <button
-                    onClick={() => {
-                      setExpanded((e) => [...e, g.key]);
-                      setQty(g.key, 0);
-                    }}
-                    className="ml-2 text-xs text-slate-400 underline"
-                    title="Mostrar um por um (para pagar fração, ex.: 1/2)"
-                  >
-                    separar
-                  </button>
-                </span>
-                <span className="flex items-center gap-1">
-                  <button aria-label={`Menos ${g.name}`} disabled={q <= 0} onClick={() => setQty(g.key, q - 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
-                    −
-                  </button>
-                  <span className="w-8 text-center font-semibold tabular-nums" aria-live="polite">
-                    {q}
-                  </span>
-                  <button aria-label={`Mais ${g.name}`} disabled={q >= g.free} onClick={() => setQty(g.key, q + 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
-                    +
-                  </button>
-                  <button onClick={() => setQty(g.key, q === g.free ? 0 : g.free)} className="rounded-md bg-slate-700 px-2 py-1 text-xs">
-                    {q === g.free ? 'Nenhuma' : 'Todas'}
-                  </button>
-                </span>
-              </li>
-            );
-          })}
-          {b.items
-            .filter((i) => i.amountCents > 0 && i.paidCents < i.amountCents && !inGroup(i.orderItemId, i.comandaId))
-            .map((i) => {
+  const inAnyGroup = (orderItemId: string, comandaId: string) =>
+    groups.some((g) => g.lines.some((l) => l.item.orderItemId === orderItemId && l.item.comandaId === comandaId));
+  /** Junta de novo as linhas separadas (as escolhas feitas linha a linha nelas são descartadas). */
+  const regroup = (g: UnitGroup) => {
+    const mine = (p: { orderItemId: string; comandaId: string }) => g.lines.some((l) => l.item.orderItemId === p.orderItemId && l.item.comandaId === p.comandaId);
+    setPicks((ps) => ps.filter((p) => !mine(p)));
+    setExpanded((e) => e.filter((k) => k !== g.key));
+  };
+  // Uma linha do pagamento por item (fração ou valor), como antes do agrupamento.
+  const renderLine = (i: BillItem) => {
               const current = pickOf(i.orderItemId, i.comandaId);
               const k = `${i.orderItemId}-${i.comandaId}`;
               const left = i.amountCents - i.paidCents;
@@ -844,7 +771,108 @@ function PaymentForm({
                   )}
                 </li>
               );
-            })}
+            };
+
+  return (
+    <section className="space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-4">
+      <div className="flex gap-1 rounded-lg bg-slate-800 p-1 text-sm">
+        {(['VALOR', 'ITENS'] as const).map((m) => (
+          <button key={m} onClick={() => setMode(m)} className={`flex-1 rounded-md py-1.5 ${mode === m ? 'bg-slate-600 font-medium' : 'text-slate-400'}`}>
+            {m === 'VALOR' ? 'Por valor' : 'Por item'}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-4 gap-1">
+        {PAYMENT_METHODS.map((m) => (
+          <button
+            key={m}
+            onClick={() => setMethod(m)}
+            className={`rounded-lg border py-2.5 text-sm font-medium ${method === m ? 'border-amber-500 bg-amber-500 text-slate-950' : 'border-slate-700'}`}
+          >
+            {PAYMENT_METHOD_LABELS[m]}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'VALOR' ? (
+        <>
+          <TextField
+            label="Valor a pagar (R$)"
+            inputMode="decimal"
+            placeholder={formatBRL(remaining).replace('R$ ', '')}
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            hint="Vazio = paga todo o restante."
+          />
+          <div className="flex items-end gap-2">
+            <TextField label="Dividir por" inputMode="numeric" placeholder="nº de pessoas" value={split} onChange={(e) => setSplit(e.target.value.replace(/\D/g, ''))} />
+            <Button
+              disabled={!split || Number(split) < 2}
+              onClick={() => setAmount((Math.ceil(remaining / Number(split)) / 100).toFixed(2).replace('.', ','))}
+            >
+              Calcular
+            </Button>
+          </div>
+        </>
+      ) : (
+        <ul className="max-h-72 space-y-1 overflow-y-auto">
+          {groups.map((g) => {
+            const who = b.comandas.length > 1 ? `${b.comandas.find((c) => c.id === g.comandaId)?.customerName}: ` : '';
+            if (expanded.includes(g.key)) {
+              return (
+                <Fragment key={g.key}>
+                  <li className="flex items-center gap-2 rounded-lg bg-slate-800/30 px-2 py-1 text-xs text-slate-400">
+                    <span className="flex-1">
+                      {who}
+                      {g.free}× {g.name} · separados um por um
+                    </span>
+                    <button onClick={() => regroup(g)} className="text-amber-400 underline">
+                      agrupar de novo
+                    </button>
+                  </li>
+                  {g.lines.map((l) => renderLine(l.item))}
+                </Fragment>
+              );
+            }
+            const q = groupQty[g.key] ?? 0;
+            return (
+              <li key={g.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-800/60 px-2 py-1.5 text-sm">
+                <span className="min-w-0 flex-1">
+                  {who}
+                  {g.free}× {g.name} <span className="text-slate-500">{formatBRL(g.unitCents)} cada</span>
+                  <button
+                    onClick={() => {
+                      setExpanded((e) => [...e, g.key]);
+                      setQty(g.key, 0);
+                    }}
+                    className="ml-2 text-xs text-slate-400 underline"
+                    title="Mostrar um por um (para pagar fração, ex.: 1/2)"
+                  >
+                    separar
+                  </button>
+                </span>
+                <span className="flex items-center gap-1">
+                  <button aria-label={`Menos ${g.name}`} disabled={q <= 0} onClick={() => setQty(g.key, q - 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
+                    −
+                  </button>
+                  <span className="w-8 text-center font-semibold tabular-nums" aria-live="polite">
+                    {q}
+                  </span>
+                  <button aria-label={`Mais ${g.name}`} disabled={q >= g.free} onClick={() => setQty(g.key, q + 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
+                    +
+                  </button>
+                  <button onClick={() => setQty(g.key, q === g.free ? 0 : g.free)} className="rounded-md bg-slate-700 px-2 py-1 text-xs">
+                    {q === g.free ? 'Nenhuma' : 'Todas'}
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+          {/* Fora dos grupos: item único, rateado ou pago em parte (valor quebrado). */}
+          {b.items
+            .filter((i) => i.amountCents > 0 && i.paidCents < i.amountCents && !inAnyGroup(i.orderItemId, i.comandaId))
+            .map((i) => renderLine(i))}
         </ul>
       )}
 
