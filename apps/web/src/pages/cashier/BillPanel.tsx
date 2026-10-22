@@ -34,6 +34,51 @@ const FRACTIONS = [
 /** Parte de um item que a pessoa paga: fração (1/3 da pizza) ou valor (R$ 15,00 do filé). */
 type ItemPick = { orderItemId: string; comandaId: string; num?: number; den?: number; amountCents?: number };
 
+/**
+ * Itens iguais da mesma comanda (mesmo produto e preço, sem rateio) para pagar por quantidade:
+ * 10 cervejas lançadas em vários pedidos viram uma linha "10× Cerveja" e a pessoa escolhe 4.
+ * Item pago por valor (R$) ou em fração quebrada fica fora do grupo, com as opções de sempre.
+ */
+interface UnitGroup {
+  key: string;
+  comandaId: string;
+  name: string;
+  unitCents: number;
+  lines: { item: BillItem; free: number }[];
+  free: number;
+}
+
+function unitGroups(items: BillItem[]): UnitGroup[] {
+  const map = new Map<string, UnitGroup>();
+  for (const i of items) {
+    if (i.amountCents <= 0 || i.paidCents >= i.amountCents || i.sharedWith > 1) continue;
+    const paidUnits = (i.qty * i.paidFraction.num) / i.paidFraction.den;
+    if (!Number.isInteger(paidUnits) || i.paidCents !== Math.round((i.amountCents * paidUnits) / i.qty)) continue;
+    const free = i.qty - paidUnits;
+    if (free <= 0) continue;
+    const key = `${i.comandaId}|${i.productName}|${i.unitPriceCents}`;
+    const g = map.get(key) ?? { key, comandaId: i.comandaId, name: i.productName, unitCents: i.unitPriceCents, lines: [], free: 0 };
+    g.lines.push({ item: i, free });
+    g.free += free;
+    map.set(key, g);
+  }
+  // Uma unidade só continua com as frações (1/2, 1/3...) de antes.
+  return [...map.values()].filter((g) => g.free > 1);
+}
+
+/** Distribui a quantidade escolhida pelas linhas do grupo, na ordem do lançamento. */
+function groupPicksOf(g: UnitGroup, qty: number): ItemPick[] {
+  const out: ItemPick[] = [];
+  let need = qty;
+  for (const l of g.lines) {
+    if (need <= 0) break;
+    const take = Math.min(l.free, need);
+    need -= take;
+    out.push({ orderItemId: l.item.orderItemId, comandaId: l.item.comandaId, num: take, den: l.item.qty });
+  }
+  return out;
+}
+
 /** Conta quitada, esperando a escolha de cupom (não fiscal, fiscal ou só finalizar). */
 export interface FinalizeInfo {
   comandaIds: string[];
@@ -563,6 +608,8 @@ function PaymentForm({
   const [payer, setPayer] = useState('');
   const [picks, setPicks] = useState<ItemPick[]>([]);
   const [valueInputs, setValueInputs] = useState<Record<string, string>>({});
+  const [groupQty, setGroupQty] = useState<Record<string, number>>({});
+  const [expanded, setExpanded] = useState<string[]>([]);
   const [clientUuid, setClientUuid] = useState(() => crypto.randomUUID());
   const [localError, setLocalError] = useState<string | null>(null);
   const remaining = b.totals.remainingCents;
@@ -571,13 +618,27 @@ function PaymentForm({
     setAmount('');
     setPicks([]);
     setValueInputs({});
+    setGroupQty({});
+    setExpanded([]);
     setPayer(b.comandas.length === 1 ? b.comandas[0]!.customerName : '');
   }, [comandaIds.join(',')]);
+
+  const groups = useMemo(() => unitGroups(b.items), [b]);
+  const collapsed = groups.filter((g) => !expanded.includes(g.key));
+  const inGroup = (orderItemId: string, comandaId: string) =>
+    collapsed.some((g) => g.lines.some((l) => l.item.orderItemId === orderItemId && l.item.comandaId === comandaId));
+  // O que vai para o servidor: as escolhas linha a linha (fora dos grupos) + as quantidades dos grupos.
+  const allPicks = useMemo(
+    () => [...picks.filter((p) => !inGroup(p.orderItemId, p.comandaId)), ...collapsed.flatMap((g) => groupPicksOf(g, groupQty[g.key] ?? 0))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [picks, groupQty, groups, expanded],
+  );
+  const setQty = (key: string, qty: number) => setGroupQty((q) => ({ ...q, [key]: qty }));
 
   // Pagamento por item: mesmo cálculo do servidor (fração + taxa da comanda, limitado ao restante dela).
   const itemsAmount = useMemo(() => {
     const perComanda = new Map<string, number>();
-    for (const p of picks) {
+    for (const p of allPicks) {
       const item = b.items.find((i) => i.orderItemId === p.orderItemId && i.comandaId === p.comandaId);
       const comanda = b.comandas.find((c) => c.id === p.comandaId);
       if (!item || !comanda) continue;
@@ -592,7 +653,7 @@ function PaymentForm({
       perComanda.set(p.comandaId, (perComanda.get(p.comandaId) ?? 0) + part + fee);
     }
     return [...perComanda].reduce((s, [id, v]) => s + Math.min(v, b.comandas.find((c) => c.id === id)!.totals.remainingCents), 0);
-  }, [picks, b]);
+  }, [allPicks, b]);
 
   const amountCents = mode === 'ITENS' ? itemsAmount : (parseBRL(amount || '') ?? (amount ? null : remaining));
   const tenderedCents = method === 'DINHEIRO' && tendered ? parseBRL(tendered) : null;
@@ -610,7 +671,7 @@ function PaymentForm({
           amountCents,
           tenderedCents: tenderedCents ?? undefined,
           payerName: payer.trim(),
-          items: mode === 'ITENS' ? picks : undefined,
+          items: mode === 'ITENS' ? allPicks : undefined,
         }),
       }),
     onSuccess: (r) => {
@@ -619,11 +680,12 @@ function PaymentForm({
       setTendered('');
       setPicks([]);
       setValueInputs({});
+      setGroupQty({});
       onPaid(r);
     },
   });
 
-  const invalidValue = picks.some((p) => {
+  const invalidValue = allPicks.some((p) => {
     if (p.amountCents === undefined) return false;
     const item = b.items.find((i) => i.orderItemId === p.orderItemId && i.comandaId === p.comandaId);
     return !item || p.amountCents <= 0 || item.paidCents + p.amountCents > item.amountCents;
@@ -685,8 +747,44 @@ function PaymentForm({
         </>
       ) : (
         <ul className="max-h-72 space-y-1 overflow-y-auto">
+          {collapsed.map((g) => {
+            const q = groupQty[g.key] ?? 0;
+            const who = b.comandas.length > 1 ? `${b.comandas.find((c) => c.id === g.comandaId)?.customerName}: ` : '';
+            return (
+              <li key={g.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-800/60 px-2 py-1.5 text-sm">
+                <span className="min-w-0 flex-1">
+                  {who}
+                  {g.free}× {g.name} <span className="text-slate-500">{formatBRL(g.unitCents)} cada</span>
+                  <button
+                    onClick={() => {
+                      setExpanded((e) => [...e, g.key]);
+                      setQty(g.key, 0);
+                    }}
+                    className="ml-2 text-xs text-slate-400 underline"
+                    title="Mostrar um por um (para pagar fração, ex.: 1/2)"
+                  >
+                    separar
+                  </button>
+                </span>
+                <span className="flex items-center gap-1">
+                  <button aria-label={`Menos ${g.name}`} disabled={q <= 0} onClick={() => setQty(g.key, q - 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
+                    −
+                  </button>
+                  <span className="w-8 text-center font-semibold tabular-nums" aria-live="polite">
+                    {q}
+                  </span>
+                  <button aria-label={`Mais ${g.name}`} disabled={q >= g.free} onClick={() => setQty(g.key, q + 1)} className="size-8 rounded-full bg-slate-700 text-lg disabled:opacity-40">
+                    +
+                  </button>
+                  <button onClick={() => setQty(g.key, q === g.free ? 0 : g.free)} className="rounded-md bg-slate-700 px-2 py-1 text-xs">
+                    {q === g.free ? 'Nenhuma' : 'Todas'}
+                  </button>
+                </span>
+              </li>
+            );
+          })}
           {b.items
-            .filter((i) => i.amountCents > 0 && i.paidCents < i.amountCents)
+            .filter((i) => i.amountCents > 0 && i.paidCents < i.amountCents && !inGroup(i.orderItemId, i.comandaId))
             .map((i) => {
               const current = pickOf(i.orderItemId, i.comandaId);
               const k = `${i.orderItemId}-${i.comandaId}`;

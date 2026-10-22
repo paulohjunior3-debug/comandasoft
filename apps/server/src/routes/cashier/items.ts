@@ -18,6 +18,7 @@ import {
 import { audit } from '../../lib/audit';
 import { authorizeManager } from '../../lib/authorize';
 import { OPEN_STATUSES } from '../../lib/comandas';
+import { getSettings } from '../../lib/settings';
 import { HttpError, notFound } from '../../lib/errors';
 import type { CancelTicket, ProductionTicket } from '../../printing/tickets';
 import { idParams } from '../admin/params';
@@ -146,8 +147,9 @@ export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker 
     }
 
     const authorizer = await authorizeManager(db, request, input.authorizerPin);
+    const { printCancelTickets: notify } = await getSettings(db);
     const printed = await db.transaction((tx) =>
-      cancelItemTx(tx, request, { item, place: row, shares, qty: input.qty, reason: input.reason, authorizer, now: new Date() }),
+      cancelItemTx(tx, request, { item, place: row, shares, qty: input.qty, reason: input.reason, authorizer, now: new Date(), notify }),
     );
     if (printed) printWorker.kick();
     return { canceledQty: input.qty, remainingQty: item.qty - input.qty, printed };
@@ -204,11 +206,12 @@ export async function cashierItemRoutes(app: FastifyInstance, { db, printWorker 
     const authorizer = items.length ? await authorizeManager(db, request, input.authorizerPin) : { id: request.user!.id, name: request.user!.name };
     const now = new Date();
     const place = rows[0]!;
+    const { printCancelTickets: notify } = await getSettings(db);
     const printed = await db.transaction(async (tx) => {
       let anyPrinted = false;
       for (const item of items) {
         const shares = allShares.filter((s) => s.orderItemId === item.id);
-        anyPrinted = (await cancelItemTx(tx, request, { item, place, shares, qty: item.qty, reason: input.reason, authorizer, now })) || anyPrinted;
+        anyPrinted = (await cancelItemTx(tx, request, { item, place, shares, qty: item.qty, reason: input.reason, authorizer, now, notify })) || anyPrinted;
       }
       await tx.update(comandas).set({ status: 'CANCELADA', closedAt: now }).where(inArray(comandas.id, ids));
       await audit(tx, request, {
@@ -248,6 +251,7 @@ async function cancelItemTx(
     reason,
     authorizer,
     now,
+    notify,
   }: {
     item: typeof orderItems.$inferSelect;
     place: { tableNumber: number; isCounter: boolean };
@@ -256,6 +260,8 @@ async function cancelItemTx(
     reason: string;
     authorizer: { id: string; name: string };
     now: Date;
+    /** Imprimir o aviso de cancelamento nos setores (Configurações). */
+    notify: boolean;
   },
 ): Promise<boolean> {
   const id = item.id;
@@ -313,7 +319,7 @@ async function cancelItemTx(
     else await tx.update(printJobs).set({ payload: { ...ticket, items } }).where(eq(printJobs.id, held.id));
   }
 
-  if (warned.length) {
+  if (notify && warned.length) {
     const payload = (sector: string): CancelTicket => ({
       kind: 'CANCELAMENTO',
       sector,
@@ -344,5 +350,5 @@ async function cancelItemTx(
       comandas: shares.map((s) => s.comandaId),
     },
   });
-  return warned.length > 0;
+  return notify && warned.length > 0;
 }

@@ -465,6 +465,50 @@ export interface FiscalRequestResult {
 
 export const refundPaymentSchema = z.object({ reason, authorizerPin });
 
+/** Corrigir a forma de pagamento lançada errada (gerente, com motivo; só com o caixa dele aberto). */
+export const changePaymentMethodSchema = z.object({ method: z.enum(PAYMENT_METHODS, 'Escolha a forma de pagamento'), reason, authorizerPin });
+
+/** Contas fechadas de um dia do movimento (sem data: o do caixa aberto ou do último). */
+export const closedBillsQuerySchema = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (use AAAA-MM-DD).')
+    .optional(),
+});
+
+export const closedBillsPrintSchema = z.object({
+  comandaIds: z.array(z.string().uuid()).min(1).max(50),
+  registerId: z.string().uuid().optional(),
+});
+
+/** Uma conta fechada: as comandas da mesma ocupação da mesa e os pagamentos delas. */
+export interface ClosedTableBill {
+  key: string;
+  tableNumber: number;
+  tableLabel: string | null;
+  openedAt: string;
+  closedAt: string;
+  comandas: { id: string; customerName: string; phone: string | null; totalCents: number; closedAt: string }[];
+  totalCents: number;
+  payments: {
+    id: string;
+    method: PaymentMethod;
+    amountCents: number;
+    changeCents: number;
+    payerName: string;
+    status: 'OK' | 'ESTORNADO';
+    createdAt: string;
+    userName: string;
+    /** Dá para corrigir a forma (pagamento válido e o caixa dele ainda aberto). */
+    editable: boolean;
+  }[];
+}
+
+export interface ClosedBillsResponse {
+  date: string;
+  bills: ClosedTableBill[];
+}
+
 /** Cancelar item lançado (SPEC 4): todo ou parte da quantidade, com motivo e PIN de gerente/admin. */
 export const cancelItemSchema = z.object({
   qty: z.number().int().min(1, 'Quantidade inválida'),

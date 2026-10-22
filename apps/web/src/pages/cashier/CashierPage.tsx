@@ -22,6 +22,7 @@ import { useAuth } from '../../lib/auth';
 import { formatTime } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { BillPanel, type FinalizeInfo } from './BillPanel';
+import { ClosedBills } from './ClosedBills';
 import { CounterSaleModal, CouvertModal, InstallQrModal, OpenTableModal } from './CashierActions';
 import { CASHIER_SHORTCUTS, kbdClass, toggleFullscreen, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
@@ -166,6 +167,7 @@ function SessionActions({ registerId }: { registerId: string }) {
   const [install, setInstall] = useState(false);
   const [help, setHelp] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [closed, setClosed] = useState(false);
   const pin = usePin();
   const qc = useQueryClient();
   useShortcut('F1', () => setHelp(true));
@@ -195,9 +197,10 @@ function SessionActions({ registerId }: { registerId: string }) {
         {menu && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
-            <div role="menu" className="absolute right-0 z-50 mt-1 w-64 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl">
+            <div role="menu" className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl">
               {item('Atalhos do teclado', 'F1', () => setHelp(true))}
               {item('Couvert (show)', 'F8', () => setCouvert(true))}
+              {item('Contas fechadas (reimprimir / corrigir pagamento)', null, () => setClosed(true))}
               {item('Suprimento', null, () => setMovement('SUPRIMENTO'))}
               {item('Sangria', null, () => setMovement('SANGRIA'))}
               {item('📱 Celulares (instalar o app)', null, () => setInstall(true))}
@@ -221,6 +224,11 @@ function SessionActions({ registerId }: { registerId: string }) {
         </Modal>
       )}
       {install && <InstallQrModal onClose={() => setInstall(false)} />}
+      {closed && (
+        <Modal title="Contas fechadas" wide onClose={() => setClosed(false)} footer={<Button onClick={() => setClosed(false)}>Fechar</Button>}>
+          <ClosedBills registerId={registerId} />
+        </Modal>
+      )}
       {couvert && (
         <CouvertModal
           pin={pin}

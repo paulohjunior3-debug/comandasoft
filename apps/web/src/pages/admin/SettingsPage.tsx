@@ -121,6 +121,12 @@ export function SettingsPage() {
               </option>
             ))}
           </SelectField>
+          <Toggle
+            label="Imprimir aviso de cancelamento na cozinha/bar"
+            checked={form.printCancelTickets}
+            onChange={(v) => set('printCancelTickets', v)}
+            hint="Desligado: cancelar item não imprime nada nos setores (no painel da cozinha o item só some do cartão)."
+          />
         </Section>
 
         <Section title="Mapa de mesas">

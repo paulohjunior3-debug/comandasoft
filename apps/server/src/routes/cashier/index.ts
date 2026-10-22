@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { lanAddresses } from '../../lib/network';
 import { cashierBillRoutes } from './bills';
+import { cashierClosedRoutes } from './closed';
 import { cashierCounterRoutes } from './counter';
 import { cashierCouvertRoutes } from './couvert';
 import { cashierFinalizeRoutes } from './finalize';
@@ -19,6 +20,7 @@ export async function cashierRoutes(app: FastifyInstance, deps: AppDeps) {
   await app.register((r) => cashierItemRoutes(r, deps));
   await app.register((r) => cashierCounterRoutes(r, deps));
   await app.register((r) => cashierCouvertRoutes(r, deps), { prefix: '/couvert' });
+  await app.register((r) => cashierClosedRoutes(r, deps));
   /** IPs deste PC na rede, para o QR que leva os celulares da equipe à página /certificado. */
   app.get('/lan-addresses', async () => ({ addresses: lanAddresses() }));
 }

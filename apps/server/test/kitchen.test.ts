@@ -43,6 +43,9 @@ beforeAll(async () => {
   const me = users.find((u: { login: string }) => u.login === 'admin');
   await admin({ method: 'PUT', url: `/api/admin/users/${me.id}`, payload: { ...me, pin: PIN } });
 
+  // Estes testes conferem o aviso de cancelamento nos setores (desligado por padrão).
+  const current = (await admin({ method: 'GET', url: '/api/admin/settings' })).json();
+  await admin({ method: 'PUT', url: '/api/admin/settings', payload: { ...current, printCancelTickets: true } });
   const pratos = (ids.pratos = (await post('/api/admin/categories', { name: 'Pratos' })).id);
   const cervejas = (await post('/api/admin/categories', { name: 'Cervejas' })).id;
   ids.kitchen = (await post('/api/admin/printers', { name: 'Cozinha', windowsName: 'ELGIN COZINHA', sectorLabel: 'COZINHA', usesPanel: true, categoryIds: [pratos] })).id;
