@@ -24,6 +24,7 @@ import { formatTime } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { BillPanel, type FinalizeInfo } from './BillPanel';
 import { CounterSaleModal, CouvertModal, InstallQrModal, OpenTableModal } from './CashierActions';
+import { CASHIER_SHORTCUTS, kbdClass, toggleFullscreen, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
 import { CloseCashModal, describeRules, MovementModal, OpenCashForm } from './CashModals';
 
@@ -87,6 +88,7 @@ export function CashierPage() {
           </span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {s && <span className="hidden text-xs text-slate-500 xl:inline">F1 = atalhos</span>}
           {s && registerId && <SessionActions registerId={registerId} />}
           <PrinterAlert />
           <span className="text-xs text-slate-500">{user?.name}</span>
@@ -155,18 +157,72 @@ const TONE_CLASS = {
   vermelho: 'border-red-500 bg-red-600 text-white',
 } as const;
 
+/**
+ * Funções do caixa num menu só (menos botões na tela), cada uma com o seu atalho de teclado.
+ * F1 mostra a lista de atalhos; F8 abre o couvert.
+ */
 function SessionActions({ registerId }: { registerId: string }) {
   const [movement, setMovement] = useState<CashMovementType | null>(null);
   const [closing, setClosing] = useState(false);
   const [couvert, setCouvert] = useState(false);
   const [install, setInstall] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [menu, setMenu] = useState(false);
   const pin = usePin();
   const qc = useQueryClient();
+  useShortcut('F1', () => setHelp(true));
+  useShortcut('F8', () => setCouvert(true));
+
+  const item = (label: string, keys: string | null, onClick: () => void, danger = false) => (
+    <button
+      key={label}
+      role="menuitem"
+      onClick={() => {
+        setMenu(false);
+        onClick();
+      }}
+      className={`flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-800 ${danger ? 'text-red-300' : ''}`}
+    >
+      {label}
+      {keys && <kbd className="text-xs text-slate-500">{keys}</kbd>}
+    </button>
+  );
+
   return (
     <>
-      <Button onClick={() => setInstall(true)} title="QR para instalar o app nos celulares da equipe">📱 Celulares</Button>
+      <div className="relative">
+        <Button onClick={() => setMenu((m) => !m)} aria-haspopup="menu" aria-expanded={menu}>
+          ☰ Funções
+        </Button>
+        {menu && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenu(false)} />
+            <div role="menu" className="absolute right-0 z-50 mt-1 w-64 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl">
+              {item('Atalhos do teclado', 'F1', () => setHelp(true))}
+              {item('Couvert (show)', 'F8', () => setCouvert(true))}
+              {item('Suprimento', null, () => setMovement('SUPRIMENTO'))}
+              {item('Sangria', null, () => setMovement('SANGRIA'))}
+              {item('📱 Celulares (instalar o app)', null, () => setInstall(true))}
+              {item('Tela cheia', 'F11', toggleFullscreen)}
+              <div className="my-1 border-t border-slate-800" />
+              {item('Fechar caixa', null, () => setClosing(true), true)}
+            </div>
+          </>
+        )}
+      </div>
+      {help && (
+        <Modal title="Atalhos do caixa" onClose={() => setHelp(false)} footer={<Button variant="primary" onClick={() => setHelp(false)}>Fechar</Button>}>
+          <ul className="divide-y divide-slate-800">
+            {CASHIER_SHORTCUTS.map((sc) => (
+              <li key={sc.keys} className="flex items-center justify-between gap-4 py-2 text-sm">
+                <span>{sc.label}</span>
+                <kbd className="shrink-0 rounded border border-slate-600 bg-slate-800 px-2 py-0.5 font-mono text-xs">{sc.keys}</kbd>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
       {install && <InstallQrModal onClose={() => setInstall(false)} />}
-      <Button onClick={() => setCouvert(true)}>Couvert</Button>
       {couvert && (
         <CouvertModal
           pin={pin}
@@ -177,9 +233,6 @@ function SessionActions({ registerId }: { registerId: string }) {
         />
       )}
       {pin.element}
-      <Button onClick={() => setMovement('SUPRIMENTO')}>Suprimento</Button>
-      <Button onClick={() => setMovement('SANGRIA')}>Sangria</Button>
-      <Button variant="danger" onClick={() => setClosing(true)}>Fechar caixa</Button>
       {movement && <MovementModal registerId={registerId} type={movement} onClose={() => setMovement(null)} />}
       {closing && <CloseCashModal registerId={registerId} onClose={() => setClosing(false)} />}
     </>
@@ -253,13 +306,24 @@ function Workspace({ registerId }: { registerId: string }) {
 
   const table = tables.data?.find((t) => t.id === current?.tableId);
   const list = tables.data ?? [];
+  useShortcut('F2', () => {
+    const input = document.getElementById('busca') as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+  });
+  useShortcut('F6', () => setCreating('mesa'));
+  useShortcut('F7', () => setCreating('balcao'));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
       <aside className="space-y-3">
         <div className="grid grid-cols-2 gap-2">
-          <Button onClick={() => setCreating('mesa')}>+ Abrir mesa</Button>
-          <Button onClick={() => setCreating('balcao')}>Venda balcão</Button>
+          <Button onClick={() => setCreating('mesa')}>
+            + Abrir mesa<kbd className={kbdClass}>F6</kbd>
+          </Button>
+          <Button onClick={() => setCreating('balcao')}>
+            Venda balcão<kbd className={kbdClass}>F7</kbd>
+          </Button>
         </div>
         {notice && (
           <p className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300" onClick={() => setNotice(null)}>
@@ -288,7 +352,9 @@ function Workspace({ registerId }: { registerId: string }) {
           />
         )}
         <form onSubmit={search} className="space-y-2">
-          <label htmlFor="busca" className="block text-sm text-slate-300">Mesa, nome, telefone ou CPF</label>
+          <label htmlFor="busca" className="block text-sm text-slate-300">
+            Mesa, nome, telefone ou CPF <kbd className={kbdClass}>F2</kbd>
+          </label>
           <div className="flex gap-2">
             <input
               id="busca"

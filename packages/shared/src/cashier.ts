@@ -238,6 +238,8 @@ export interface CashierComanda {
   cpfLast3: string | null;
   /** Final do telefone (PIN do QR). */
   phoneLast4: string | null;
+  /** Telefone informado na abertura (só números), para o caixa ver junto do nome. */
+  phone: string | null;
   status: ComandaStatus;
   openedAt: string;
   /** Pessoas nesta comanda (multiplica o couvert). */
@@ -470,6 +472,14 @@ export const cancelItemSchema = z.object({
   authorizerPin,
 });
 export type CancelItemInput = z.infer<typeof cancelItemSchema>;
+
+/** Cancelar a mesa (ou comandas escolhidas): itens ativos cancelados e comandas encerradas como CANCELADA. */
+export const cancelComandasSchema = z.object({
+  comandaIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma comanda').max(50),
+  reason,
+  authorizerPin,
+});
+export type CancelComandasInput = z.infer<typeof cancelComandasSchema>;
 
 /**
  * Mover item lançado na comanda errada: para outra comanda da mesa ou de outra mesa, inteiro

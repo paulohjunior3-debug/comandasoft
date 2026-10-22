@@ -75,9 +75,14 @@ export function TableMapPage() {
           <p className="py-10 text-center text-slate-400">Nenhuma mesa cadastrada. Peça ao administrador para cadastrar.</p>
         ) : (
           <>
-            <p className="mb-3 text-sm text-slate-400">
-              {occupied} de {data.tables.length} mesas ocupadas
-            </p>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm text-slate-400">
+                {occupied} de {data.tables.length} mesas ocupadas
+              </p>
+              <Link to="/garcom/meus-lancamentos" className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-200 active:bg-slate-800">
+                📝 Meus lançamentos
+              </Link>
+            </div>
             {areas.map((area) => (
               <section key={area} className="mb-5">
                 {areas.length > 1 && <h2 className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">{area || 'Sem área'}</h2>}

@@ -18,9 +18,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge, Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
-import { formatTime } from '../../lib/format';
+import { formatTime, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
 import { LaunchItemsModal, MoveItemModal, OpenTableModal } from './CashierActions';
+import { kbdClass, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
 
 const FRACTIONS = [
@@ -104,6 +105,48 @@ export function BillPanel({
   });
 
   const toggle = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  /**
+   * Cancelar a mesa (todas as comandas selecionadas): itens ativos são cancelados (PIN de gerente
+   * no perfil Caixa) e as comandas somem do caixa. Com pagamento, o servidor recusa.
+   */
+  const cancelTable = useMutation({
+    mutationFn: async ({ comandaIds, reason }: { comandaIds: string[]; reason: string }) =>
+      pin.run((authorizerPin) =>
+        api<{ canceledComandas: number; canceledItems: number }>('/cashier/comandas/cancel', {
+          method: 'POST',
+          body: JSON.stringify({ comandaIds, reason, authorizerPin }),
+        }),
+      ),
+    onSuccess: (r, { comandaIds }) => {
+      refresh();
+      setSelected((s) => s.filter((id) => !comandaIds.includes(id)));
+      setNotice(`${r.canceledComandas} comanda(s) cancelada(s)${r.canceledItems ? `, com ${r.canceledItems} item(ns)` : ''}.`);
+      if (comandaIds.length >= table.comandas.length) onEmpty();
+    },
+  });
+  const askCancelTable = () => {
+    if (!ordered.length) return;
+    const all = ordered.length === table.comandas.length;
+    const what = all ? `a ${table.label.toLowerCase()} inteira` : `${ordered.length} comanda(s) selecionada(s)`;
+    const reason = prompt(`Cancelar ${what}? Os itens lançados serão cancelados e a cozinha/bar avisados.\n\nMotivo:`);
+    if (reason === null) return;
+    if (reason.trim().length < 3) return alert('Informe o motivo (ao menos 3 letras).');
+    cancelTable.mutate({ comandaIds: ordered, reason: reason.trim() });
+  };
+  useShortcut('Ctrl+A', askCancelTable);
+  useShortcut('F3', () => ordered.length && !printBill.isPending && printBill.mutate());
+  useShortcut('F4', () => setLaunching(true));
+
+  /** Depois de cancelar um item: se a mesa ficou sem nada ativo (e sem pagamento), oferece encerrar. */
+  const offerCloseIfEmpty = async () => {
+    const all = table.comandas.map((c) => c.id);
+    const fresh = await api<Bill>('/cashier/bill', { method: 'POST', body: JSON.stringify({ comandaIds: all }) }).catch(() => null);
+    if (!fresh || fresh.items.some((i) => !i.canceled) || fresh.payments.some((p) => p.status === 'OK')) return;
+    if (confirm(`Todos os itens da ${table.label.toLowerCase()} foram cancelados. Encerrar a mesa?`)) {
+      cancelTable.mutate({ comandaIds: all, reason: 'Todos os itens cancelados' });
+    }
+  };
   const b = bill.data;
   const single = b && b.comandas.length === 1 ? b.comandas[0]! : null;
 
@@ -127,10 +170,18 @@ export function BillPanel({
         <h2 className="text-2xl font-semibold">{table.label}</h2>
         <div className="flex gap-2">
           <Button onClick={() => setSelected(table.comandas.map((c) => c.id))}>Mesa inteira</Button>
-          <Button variant="primary" onClick={() => setLaunching(true)}>Lançar itens</Button>
+          <Button variant="primary" onClick={() => setLaunching(true)}>
+            Lançar itens<kbd className={kbdClass}>F4</kbd>
+          </Button>
           {!table.isCounter && <Button onClick={() => setAddingComanda(true)}>Nova comanda</Button>}
           <Button onClick={() => setTransferring(true)}>Transferir</Button>
-          <Button onClick={() => printBill.mutate()} disabled={!ordered.length || printBill.isPending}>Imprimir pré-conta</Button>
+          <Button onClick={() => printBill.mutate()} disabled={!ordered.length || printBill.isPending}>
+            Imprimir pré-conta<kbd className={kbdClass}>F3</kbd>
+          </Button>
+          <Button variant="danger" onClick={askCancelTable} disabled={!ordered.length || cancelTable.isPending}>
+            {ordered.length === table.comandas.length ? 'Cancelar mesa' : 'Cancelar comanda'}
+            <kbd className={kbdClass}>Ctrl+A</kbd>
+          </Button>
         </div>
       </div>
       {table.billAlert && (
@@ -144,7 +195,7 @@ export function BillPanel({
       {!table.billAlert && table.partialPaid && (
         <p className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-amber-300">⭐ Pago parcial: parte da mesa já pagou.</p>
       )}
-      <ErrorBanner message={errorMessage(bill.error ?? printBill.error ?? action.error)} />
+      <ErrorBanner message={errorMessage(bill.error ?? printBill.error ?? action.error ?? cancelTable.error)} />
       {notice && (
         <p className="rounded-lg bg-emerald-950 px-3 py-2 text-sm text-emerald-300" onClick={() => setNotice(null)}>
           {notice}
@@ -165,6 +216,7 @@ export function BillPanel({
               <span className="block font-medium">
                 {c.customerName} {c.status === 'EM_FECHAMENTO' && <span className="text-xs text-sky-300">· pediu a conta</span>}
               </span>
+              {c.phone && <span className="block text-xs text-slate-400">{maskPhone(c.phone)}</span>}
               <span className="block text-sm text-slate-400">resta {formatBRL(c.totals.remainingCents)}</span>
             </button>
           );
@@ -376,6 +428,7 @@ export function BillPanel({
                 setNotice(
                   `${body.qty}× ${canceling.productName} cancelado.${r.printed ? ' Aviso de cancelamento enviado ao setor.' : ''}`,
                 );
+                void offerCloseIfEmpty();
               })
           }
         />
@@ -401,10 +454,13 @@ function ComandaBlock({
   return (
     <section className="rounded-xl bg-slate-900">
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-        <span className="font-semibold">{c.customerName}</span>
+        <span className="font-semibold">
+          {c.customerName}
+          {c.phone && <span className="ml-2 font-normal text-slate-300">{maskPhone(c.phone)}</span>}
+        </span>
         <span className="text-sm text-slate-400">
-          {[c.phoneLast4 && `tel. final ${c.phoneLast4}`, c.cpfLast3 && `CPF final ${c.cpfLast3}`].filter(Boolean).join(' · ') || 'sem telefone/CPF'} · nº{' '}
-          {c.number}
+          {[!c.phone && 'sem telefone', c.cpfLast3 && `CPF final ${c.cpfLast3}`].filter(Boolean).join(' · ')}
+          {(!c.phone || c.cpfLast3) && ' · '}nº {c.number}
         </span>
       </header>
       <ul className="divide-y divide-slate-800/60 text-sm">

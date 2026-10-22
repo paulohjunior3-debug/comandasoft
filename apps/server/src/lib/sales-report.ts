@@ -16,8 +16,10 @@ import {
   fiscalRequests,
   orderItems,
   orderItemShares,
+  orders,
   paymentComandas,
   payments,
+  tableVisits,
   users,
 } from '../db/schema';
 import type { Queryable } from './billing';
@@ -186,6 +188,9 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     ? await db
         .select({
           orderItemId: orderItems.id,
+          orderId: orderItems.orderId,
+          waiterId: orders.userId,
+          waiterName: users.name,
           comandaId: orderItemShares.comandaId,
           name: orderItems.productNameSnapshot,
           qty: orderItems.qty,
@@ -193,6 +198,8 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
         })
         .from(orderItemShares)
         .innerJoin(orderItems, eq(orderItems.id, orderItemShares.orderItemId))
+        .innerJoin(orders, eq(orders.id, orderItems.orderId))
+        .innerJoin(users, eq(users.id, orders.userId))
         .where(and(inArray(orderItemShares.comandaId, soldComandaIds), eq(orderItems.status, 'ATIVO')))
     : [];
   type Tally = { qty: number; totalCents: number; items: Set<string> };
@@ -213,6 +220,51 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
     let d = p.days.get(date);
     if (!d) p.days.set(date, (d = { qty: 0, totalCents: 0, items: new Set() }));
     tally(d, r);
+  }
+
+  // ---- Garçons: vendas lançadas por cada um nas comandas fechadas ----
+  type WaiterTally = Tally & { userId: string; name: string; orders: Set<string>; comandas: Set<string>; tables: Set<string>; feeCents: number };
+  const waiters = new Map<string, WaiterTally>();
+  const itemsCentsOf = new Map<string, number>();
+  for (const r of productRows) itemsCentsOf.set(r.comandaId, (itemsCentsOf.get(r.comandaId) ?? 0) + r.amountCents);
+  for (const r of productRows) {
+    let w = waiters.get(r.waiterId);
+    if (!w) {
+      waiters.set(
+        r.waiterId,
+        (w = { userId: r.waiterId, name: r.waiterName, qty: 0, totalCents: 0, items: new Set(), orders: new Set(), comandas: new Set(), tables: new Set(), feeCents: 0 }),
+      );
+    }
+    tally(w, r);
+    w.orders.add(r.orderId);
+    w.comandas.add(r.comandaId);
+    const c = comandaRows.find((x) => x.id === r.comandaId);
+    if (c) {
+      w.tables.add(`${c.tableId}|${soldDay.get(c.id)}`);
+      // Taxa de serviço da comanda dividida pelo valor que cada garçom lançou nela.
+      const fee = (c.finalTotals as ComandaTotals | null)?.serviceFeeCents ?? 0;
+      const base = itemsCentsOf.get(c.id) ?? 0;
+      if (fee && base) w.feeCents += (fee * r.amountCents) / base;
+    }
+  }
+  // "Atendi a mesa" feitos enquanto os caixas do período estavam abertos (o turno passa da meia-noite).
+  const ranges = sessionRows.map((r) => [r.s.openedAt.getTime(), (r.s.closedAt ?? new Date()).getTime()] as const);
+  const visitCount = new Map<string, number>();
+  if (ranges.length) {
+    const visits = await db
+      .select({ userId: tableVisits.userId, at: tableVisits.visitedAt })
+      .from(tableVisits)
+      .where(and(gte(tableVisits.visitedAt, new Date(Math.min(...ranges.map((r) => r[0])))), lte(tableVisits.visitedAt, new Date(Math.max(...ranges.map((r) => r[1]))))));
+    for (const v of visits) {
+      const t = v.at.getTime();
+      if (ranges.some(([a, b]) => t >= a && t <= b)) visitCount.set(v.userId, (visitCount.get(v.userId) ?? 0) + 1);
+    }
+  }
+  const visitRows = [...visitCount].map(([userId, n]) => ({ userId, n }));
+  for (const v of visitRows) {
+    if (waiters.has(v.userId)) continue;
+    const [u] = await db.select({ name: users.name }).from(users).where(eq(users.id, v.userId));
+    waiters.set(v.userId, { userId: v.userId, name: u?.name ?? '?', qty: 0, totalCents: 0, items: new Set(), orders: new Set(), comandas: new Set(), tables: new Set(), feeCents: 0 });
   }
 
   return {
@@ -243,6 +295,19 @@ export async function buildSalesReport(db: Queryable, query: SalesReportQuery): 
       sangriaCents: movementSum(r.s.id, 'SANGRIA'),
       differenceCents: r.s.closedAt ? r.s.differenceCents : null,
     })),
+    waiters: [...waiters.values()]
+      .map((w) => ({
+        userId: w.userId,
+        name: w.name,
+        itemsCents: w.totalCents,
+        qty: w.qty,
+        orders: w.orders.size,
+        comandas: w.comandas.size,
+        tables: w.tables.size,
+        serviceFeeCents: Math.round(w.feeCents),
+        visits: visitRows.find((v) => v.userId === w.userId)?.n ?? 0,
+      }))
+      .sort((a, b) => b.itemsCents - a.itemsCents || b.visits - a.visits || a.name.localeCompare(b.name)),
     products: [...products.values()]
       .map(({ name, qty, totalCents, days }) => ({
         name,

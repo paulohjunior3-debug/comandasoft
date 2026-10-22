@@ -198,6 +198,7 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
       customerName: c.customerName,
       cpfLast3: c.cpfLast3,
       phoneLast4: c.phone ? c.phone.slice(-4) : null,
+      phone: c.phone,
       status: c.status,
       openedAt: c.openedAt.toISOString(),
       peopleCount: c.peopleCount,
