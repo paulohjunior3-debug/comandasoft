@@ -19,8 +19,13 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Badge, Button, ErrorBanner, Loading, Modal, SelectField, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatTime, maskPhone } from '../../lib/format';
+
+/** Dia e hora do lançamento (ex.: 24/10 21:15), só na tela do caixa. */
+const formatDayTime = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
 import { errorMessage } from '../../lib/queries';
 import { LaunchItemsModal, MoveItemModal, OpenTableModal } from './CashierActions';
+import { EditComandaModal } from './EditComandaModal';
 import { kbdClass, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
 
@@ -120,6 +125,7 @@ export function BillPanel({
   const [launching, setLaunching] = useState(false);
   const [addingComanda, setAddingComanda] = useState(false);
   const [moving, setMoving] = useState<BillItem | null>(null);
+  const [editingComanda, setEditingComanda] = useState<BillComanda | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => setSelected(preselect ?? table.comandas.map((c) => c.id)), [table.id, preselect]);
@@ -276,7 +282,7 @@ export function BillPanel({
         <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
           <div className="space-y-4">
             {b.comandas.map((c) => (
-              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onMoveItem={setMoving} />
+              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onMoveItem={setMoving} onEdit={() => setEditingComanda(c)} />
             ))}
 
             {b.adjustments.length > 0 && (
@@ -478,6 +484,17 @@ export function BillPanel({
           }
         />
       )}
+      {editingComanda && (
+        <EditComandaModal
+          comanda={editingComanda}
+          onClose={() => setEditingComanda(null)}
+          onSaved={() => {
+            setEditingComanda(null);
+            setNotice('Nome/telefone corrigido.');
+            refresh();
+          }}
+        />
+      )}
       {pin.element}
     </div>
   );
@@ -488,11 +505,13 @@ function ComandaBlock({
   bill,
   onCancelItem,
   onMoveItem,
+  onEdit,
 }: {
   comanda: BillComanda;
   bill: Bill;
   onCancelItem: (item: BillItem) => void;
   onMoveItem: (item: BillItem) => void;
+  onEdit: () => void;
 }) {
   const items = bill.items.filter((i) => i.comandaId === c.id);
   const open = c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO';
@@ -502,6 +521,11 @@ function ComandaBlock({
         <span className="font-semibold">
           {c.customerName}
           {c.phone && <span className="ml-2 font-normal text-slate-300">{maskPhone(c.phone)}</span>}
+          {open && (
+            <button onClick={onEdit} className="ml-2 text-xs font-normal text-amber-400 underline" title="Corrigir nome e telefone">
+              ✏️ corrigir
+            </button>
+          )}
         </span>
         <span className="text-sm text-slate-400">
           {[!c.phone && 'sem telefone', c.cpfLast3 && `CPF final ${c.cpfLast3}`].filter(Boolean).join(' · ')}
@@ -517,7 +541,7 @@ function ComandaBlock({
               <span className={i.canceled ? 'line-through' : ''}>{i.productName}</span>
               {i.canceled && <span className="ml-2 text-xs text-red-400 no-underline">cancelado</span>}
               <span className="block text-xs text-slate-500">
-                {formatTime(i.orderedAt)} · {i.waiterName}
+                {formatDayTime(i.orderedAt)} · {i.waiterName}
                 {i.notes && <span className="text-amber-300/80"> · {i.notes}</span>}
               </span>
               {i.sharedWith > 1 && <span className="text-slate-500"> · rateado entre {i.sharedWith}</span>}

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { CashierTable, TableDetail, TableMapResponse } from '@sistema-bar/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { auditLogs, comandas, orders } from '../src/db/schema';
+import { auditLogs, comandas, orders, tableVisits } from '../src/db/schema';
 import { createTestContext, type TestContext } from './helpers';
 
 type Inject = Awaited<ReturnType<TestContext['as']>>;
@@ -56,10 +56,24 @@ describe('cores das mesas', () => {
     expect(await mapEntry()).toMatchObject({ status: 'OCUPADA', billAlert: false, partialPaid: false });
   });
 
+  it('"minhas mesas": quem abriu, lançou ou atendeu nesta ocupação', async () => {
+    expect((await mapEntry()).mine).toBe(true); // o garçom abriu as comandas
+    const maria = await (async () => {
+      const { PASSWORD } = await import('./helpers');
+      await admin({ method: 'POST', url: '/api/admin/users', payload: { name: 'Maria', login: 'maria', password: PASSWORD, role: 'GARCOM', active: true } });
+      return ctx.as('maria');
+    })();
+    const entryFor = async (as: Inject) => ((await as({ method: 'GET', url: '/api/waiter/tables' })).json() as TableMapResponse).tables.find((t) => t.id === ids.mesa)!;
+    expect((await entryFor(maria)).mine).toBe(false);
+    await maria({ method: 'POST', url: `/api/waiter/tables/${ids.mesa}/visit`, payload: { clientUuid: randomUUID() } });
+    expect((await entryFor(maria)).mine).toBe(true);
+  });
+
   it('sem pedido nem "atendi a mesa" há mais de 20 min fica amarela; atender volta a verde', async () => {
     const old = new Date(Date.now() - 25 * 60_000);
     await ctx.db.update(comandas).set({ openedAt: old }).where(eq(comandas.tableId, ids.mesa));
     await ctx.db.update(orders).set({ receivedAt: old }).where(eq(orders.tableId, ids.mesa));
+    await ctx.db.update(tableVisits).set({ visitedAt: old }).where(eq(tableVisits.tableId, ids.mesa));
     expect((await cashierTable()).tone).toBe('amarelo');
 
     await garcom({ method: 'POST', url: `/api/waiter/tables/${ids.mesa}/visit`, payload: { clientUuid: randomUUID() } });

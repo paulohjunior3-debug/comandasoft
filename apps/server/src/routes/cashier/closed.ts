@@ -1,5 +1,7 @@
 import {
   changePaymentMethodSchema,
+  formatBRL,
+  splitPaymentSchema,
   closedBillsQuerySchema,
   closedBillsPrintSchema,
   suggestedBusinessDate,
@@ -7,6 +9,7 @@ import {
   type ClosedTableBill,
   type ComandaTotals,
 } from '@sistema-bar/shared';
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
@@ -147,6 +150,86 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
     const [printer] = printerId ? await db.select().from(printers).where(eq(printers.id, printerId)) : [];
     const layout = printer ?? { widthMm: 80, codepage: 'CP860', cut: true };
     return { text: renderJob(ticket, layout).preview, widthMm: layout.widthMm === 58 ? 58 : 80 };
+  });
+
+  /**
+   * Corrige como o pagamento foi feito, dividindo em várias formas (ex.: R$ 30 dinheiro, R$ 40
+   * débito e o resto crédito). A primeira parte fica no pagamento original; as outras viram
+   * pagamentos novos do mesmo caixa, com a parte de cada comanda dividida na proporção.
+   * Gerente (ou PIN), com motivo, e só com o caixa desse pagamento aberto.
+   */
+  app.post('/payments/:id/split', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const { parts, reason, authorizerPin } = splitPaymentSchema.parse(request.body);
+    const [row] = await db
+      .select({ p: payments, sessionClosedAt: cashSessions.closedAt })
+      .from(payments)
+      .innerJoin(cashSessions, eq(cashSessions.id, payments.cashSessionId))
+      .where(eq(payments.id, id));
+    if (!row) throw notFound('Pagamento');
+    const p = row.p;
+    if (p.status !== 'OK') throw new HttpError(409, 'ALREADY_REFUNDED', 'Este pagamento foi estornado.');
+    if (row.sessionClosedAt) {
+      throw new HttpError(409, 'OTHER_SESSION', 'O caixa deste pagamento já foi fechado; a forma de pagamento não pode mais ser alterada.');
+    }
+    const total = parts.reduce((s, x) => s + x.amountCents, 0);
+    if (total !== p.amountCents) {
+      throw new HttpError(400, 'VALIDATION', `A soma das formas (${formatBRL(total)}) tem de ser o valor do pagamento (${formatBRL(p.amountCents)}).`);
+    }
+    if (parts.length === 1 && parts[0]!.method === p.method) throw new HttpError(409, 'SAME_METHOD', 'O pagamento já está nessa forma.');
+    const authorizer = await authorizeManager(db, request, authorizerPin);
+    const allocations = await db.select().from(paymentComandas).where(eq(paymentComandas.paymentId, id));
+
+    const created = await db.transaction(async (tx) => {
+      const cash = (m: string, cents: number) => ({ tenderedCents: m === 'DINHEIRO' ? cents : null, changeCents: 0 });
+      const [first, ...others] = parts;
+      await tx
+        .update(payments)
+        .set({ method: first!.method, amountCents: first!.amountCents, ...cash(first!.method, first!.amountCents) })
+        .where(eq(payments.id, id));
+      // A parte de cada comanda em cada forma, na proporção (centavos que sobram vão para a 1ª comanda).
+      const shareOf = (cents: number) => {
+        const out = allocations.map((a) => Math.floor((a.amountCents * cents) / p.amountCents));
+        out[0]! += cents - out.reduce((s, v) => s + v, 0);
+        return out;
+      };
+      const firstShares = shareOf(first!.amountCents);
+      for (const [i, a] of allocations.entries()) {
+        await tx
+          .update(paymentComandas)
+          .set({ amountCents: firstShares[i]! })
+          .where(and(eq(paymentComandas.paymentId, id), eq(paymentComandas.comandaId, a.comandaId)));
+      }
+      const ids: string[] = [];
+      for (const part of others) {
+        const [n] = await tx
+          .insert(payments)
+          .values({
+            clientUuid: randomUUID(),
+            cashSessionId: p.cashSessionId,
+            method: part.method,
+            amountCents: part.amountCents,
+            ...cash(part.method, part.amountCents),
+            payerName: p.payerName,
+            userId: p.userId,
+            createdAt: p.createdAt,
+          })
+          .returning({ id: payments.id });
+        const shares = shareOf(part.amountCents);
+        const rows = allocations.map((a, i) => ({ paymentId: n!.id, comandaId: a.comandaId, amountCents: shares[i]! })).filter((r) => r.amountCents > 0);
+        if (rows.length) await tx.insert(paymentComandas).values(rows);
+        ids.push(n!.id);
+      }
+      await audit(tx, request, {
+        action: 'PAGAMENTO_FORMA_ALTERADA',
+        entity: 'payment',
+        entityId: id,
+        before: { method: p.method, amountCents: p.amountCents, changeCents: p.changeCents },
+        after: { parts, reason, authorizedBy: authorizer.name, newPayments: ids },
+      });
+      return ids;
+    });
+    return { ok: true, payments: [id, ...created] };
   });
 
   /**

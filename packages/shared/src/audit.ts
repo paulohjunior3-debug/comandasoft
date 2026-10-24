@@ -27,6 +27,7 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
   SUPRIMENTO: { label: 'Suprimento', group: 'CAIXA' },
 
   COMANDA_ABERTA: { label: 'Abriu comanda', group: 'VENDAS' },
+  COMANDA_ALTERADA: { label: 'Corrigiu nome/telefone da comanda', group: 'VENDAS', sensitive: true },
   COMANDA_FECHAMENTO_SOLICITADO: { label: 'Pediu o fechamento da comanda', group: 'VENDAS' },
   PAGAMENTO: { label: 'Recebeu pagamento', group: 'VENDAS' },
   CUPOM_FISCAL_SOLICITADO: { label: 'Pediu cupom fiscal', group: 'VENDAS' },

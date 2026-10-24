@@ -1,7 +1,7 @@
-import { formatBRL, PAYMENT_METHOD_LABELS, PAYMENT_METHODS, type ClosedBillsResponse, type ClosedTableBill, type PaymentMethod } from '@sistema-bar/shared';
+import { formatBRL, parseBRL, PAYMENT_METHOD_LABELS, PAYMENT_METHODS, type ClosedBillsResponse, type ClosedTableBill, type PaymentMethod } from '@sistema-bar/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Badge, Button, ErrorBanner, Loading, Modal } from '../../components/ui';
+import { Badge, Button, ErrorBanner, Loading, Modal, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatTime, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
@@ -128,6 +128,112 @@ function ReceiptPreview({
   );
 }
 
+/**
+ * Corrigir como o pagamento foi feito: uma ou várias formas (ex.: R$ 30 dinheiro, R$ 40 débito
+ * e o resto crédito). A soma tem de dar o valor do pagamento; o botão "o resto" completa a linha.
+ */
+function SplitPaymentModal({
+  payment,
+  busy,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  payment: ClosedTableBill['payments'][number];
+  busy: boolean;
+  error: string | null;
+  onClose: () => void;
+  onConfirm: (parts: { method: PaymentMethod; amountCents: number }[], reason: string) => void;
+}) {
+  const toText = (c: number) => (c / 100).toFixed(2).replace('.', ',');
+  const [rows, setRows] = useState<{ method: PaymentMethod; value: string }[]>([{ method: payment.method, value: toText(payment.amountCents) }]);
+  const [reason, setReason] = useState('Forma lançada errada');
+  const [localError, setLocalError] = useState<string | null>(null);
+  const cents = rows.map((r) => parseBRL(r.value) ?? 0);
+  const sum = cents.reduce((a, v) => a + v, 0);
+  const diff = payment.amountCents - sum;
+  const set = (i: number, patch: Partial<{ method: PaymentMethod; value: string }>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  const confirm = () => {
+    if (diff !== 0) return setLocalError(diff > 0 ? `Falta distribuir ${formatBRL(diff)}.` : `Passou ${formatBRL(-diff)} do valor do pagamento.`);
+    if (cents.some((c) => c <= 0)) return setLocalError('Cada forma precisa de um valor maior que zero (ou remova a linha).');
+    if (reason.trim().length < 3) return setLocalError('Informe o motivo.');
+    setLocalError(null);
+    // Mesma forma em duas linhas: junta.
+    const merged = new Map<PaymentMethod, number>();
+    rows.forEach((r, i) => merged.set(r.method, (merged.get(r.method) ?? 0) + cents[i]!));
+    onConfirm([...merged].map(([method, amountCents]) => ({ method, amountCents })), reason.trim());
+  };
+
+  return (
+    <Modal
+      title={`Alterar pagamento de ${formatBRL(payment.amountCents)}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancelar</Button>
+          <Button variant="primary" onClick={confirm} disabled={busy || diff !== 0}>
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-400">
+        Lançado como <b className="text-slate-200">{PAYMENT_METHOD_LABELS[payment.method]}</b> · {payment.payerName}. Informe como foi pago de verdade (pode ser em várias formas).
+      </p>
+      <ul className="space-y-2">
+        {rows.map((r, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-2">
+            <select
+              aria-label="Forma"
+              value={r.method}
+              onChange={(e) => set(i, { method: e.target.value as PaymentMethod })}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2"
+            >
+              {PAYMENT_METHODS.map((m) => (
+                <option key={m} value={m}>
+                  {PAYMENT_METHOD_LABELS[m]}
+                </option>
+              ))}
+            </select>
+            <input
+              aria-label="Valor"
+              inputMode="decimal"
+              value={r.value}
+              onChange={(e) => set(i, { value: e.target.value })}
+              className="w-28 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-right tabular-nums"
+            />
+            {diff > 0 && (
+              <button onClick={() => set(i, { value: toText((parseBRL(r.value) ?? 0) + diff) })} className="text-xs text-amber-400 underline">
+                + o resto
+              </button>
+            )}
+            {rows.length > 1 && (
+              <button onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))} className="text-xs text-red-300 underline">
+                remover
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {rows.length < 4 && (
+        <Button
+          onClick={() =>
+            setRows((rs) => [...rs, { method: PAYMENT_METHODS.find((m) => !rs.some((r) => r.method === m)) ?? 'CREDITO', value: diff > 0 ? toText(diff) : '' }])
+          }
+        >
+          + Adicionar forma
+        </Button>
+      )}
+      <p className={`text-sm font-semibold ${diff === 0 ? 'text-emerald-400' : 'text-amber-300'}`}>
+        {diff === 0 ? 'Valores conferem.' : diff > 0 ? `Falta distribuir ${formatBRL(diff)}` : `Passou ${formatBRL(-diff)}`}
+      </p>
+      <TextField label="Motivo" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <ErrorBanner message={localError ?? error} />
+    </Modal>
+  );
+}
+
 function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; registerId?: string; listPath: string }) {
   const qc = useQueryClient();
   const pin = usePin();
@@ -140,21 +246,16 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
     onSuccess: () => setNotice('Descritivo enviado para a impressora do caixa.'),
   });
   const change = useMutation({
-    mutationFn: ({ paymentId, method, reason }: { paymentId: string; method: PaymentMethod; reason: string }) =>
-      pin.run((authorizerPin) => api(`/cashier/payments/${paymentId}/method`, { method: 'POST', body: JSON.stringify({ method, reason, authorizerPin }) })),
+    mutationFn: ({ paymentId, parts, reason }: { paymentId: string; parts: { method: PaymentMethod; amountCents: number }[]; reason: string }) =>
+      pin.run((authorizerPin) => api(`/cashier/payments/${paymentId}/split`, { method: 'POST', body: JSON.stringify({ parts, reason, authorizerPin }) })),
     onSuccess: (_r, v) => {
       setEditing(null);
-      setNotice(`Forma de pagamento alterada para ${PAYMENT_METHOD_LABELS[v.method]}.`);
+      setNotice(`Pagamento corrigido: ${v.parts.map((x) => `${PAYMENT_METHOD_LABELS[x.method]} ${formatBRL(x.amountCents)}`).join(' + ')}.`);
       void qc.invalidateQueries({ queryKey: [listPath] });
       void qc.invalidateQueries({ queryKey: ['/cashier/session'] });
     },
   });
-  const askChange = (paymentId: string, method: PaymentMethod) => {
-    const reason = prompt(`Alterar para ${PAYMENT_METHOD_LABELS[method]}. Motivo:`, 'Forma lançada errada');
-    if (reason === null) return;
-    if (reason.trim().length < 3) return alert('Informe o motivo (ao menos 3 letras).');
-    change.mutate({ paymentId, method, reason: reason.trim() });
-  };
+  const editingPayment = b.payments.find((p) => p.id === editing) ?? null;
 
   return (
     <li className="rounded-xl bg-slate-900 p-4">
@@ -189,7 +290,7 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
               {p.status === 'ESTORNADO' ? (
                 <Badge tone="bad">Estornado</Badge>
               ) : p.editable ? (
-                <button onClick={() => setEditing(editing === p.id ? null : p.id)} className="text-xs text-amber-400 underline">
+                <button onClick={() => setEditing(p.id)} className="text-xs text-amber-400 underline">
                   Alterar forma
                 </button>
               ) : (
@@ -198,15 +299,7 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
                 </span>
               )}
             </div>
-            {editing === p.id && (
-              <div className="mt-1.5 flex flex-wrap gap-1">
-                {PAYMENT_METHODS.filter((m) => m !== p.method).map((m) => (
-                  <Button key={m} onClick={() => askChange(p.id, m)} disabled={change.isPending}>
-                    {PAYMENT_METHOD_LABELS[m]}
-                  </Button>
-                ))}
-              </div>
-            )}
+
           </li>
         ))}
       </ul>
@@ -218,6 +311,18 @@ function BillCard({ bill: b, registerId, listPath }: { bill: ClosedTableBill; re
         {notice && <span className="text-sm text-emerald-400">{notice}</span>}
       </div>
       <ErrorBanner message={errorMessage(print.error ?? change.error)} />
+      {editingPayment && (
+        <SplitPaymentModal
+          payment={editingPayment}
+          busy={change.isPending}
+          error={change.error ? errorMessage(change.error) : null}
+          onClose={() => {
+            setEditing(null);
+            change.reset();
+          }}
+          onConfirm={(parts, reason) => change.mutate({ paymentId: editingPayment.id, parts, reason })}
+        />
+      )}
       {pin.element}
       {viewing && (
         <ReceiptPreview

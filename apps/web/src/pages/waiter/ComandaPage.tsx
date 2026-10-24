@@ -1,4 +1,5 @@
 import { formatBRL, type ComandaDetail, type CreateOrderInput, type OpenComandaInput } from '@sistema-bar/shared';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { Badge, Button, ErrorBanner, Loading } from '../../components/ui';
 import { formatTime, maskPhone } from '../../lib/format';
@@ -6,6 +7,7 @@ import { useCachedQuery } from '../../lib/offline/cache';
 import { useOutboxEntries } from '../../lib/offline/hooks';
 import { pendingOrdersFor } from '../../lib/offline/local';
 import { errorMessage, useApiMutation } from '../../lib/queries';
+import { EditComandaModal } from '../cashier/EditComandaModal';
 import { WaiterHeader } from './WaiterHeader';
 
 export function ComandaPage() {
@@ -17,6 +19,7 @@ export function ComandaPage() {
   const localOpen = entries.find((e) => e.kind === 'comanda' && e.id === comandaId);
   const detail = useCachedQuery<ComandaDetail>(path, { enabled: !localOpen });
   const requestClose = useApiMutation([path, '/waiter/tables']);
+  const [editing, setEditing] = useState(false);
   const releaseQr = useApiMutation([path]);
 
   const c = detail.data;
@@ -133,10 +136,25 @@ export function ComandaPage() {
               Pagamentos e descontos são feitos no caixa.{queuedOrders.length > 0 && ' Os itens aguardando envio ainda não entram no total.'}
             </p>
 
+            {(c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO') && (
+              <Button onClick={() => setEditing(true)} className="w-full py-3">
+                ✏️ Corrigir nome / telefone
+              </Button>
+            )}
             {c.status === 'ABERTA' && (
               <Button onClick={askClose} disabled={requestClose.isPending} className="w-full py-3">
                 Pedir fechamento
               </Button>
+            )}
+            {editing && (
+              <EditComandaModal
+                comanda={{ id: c.id, customerName: c.customerName, phone: c.phone }}
+                onClose={() => setEditing(false)}
+                onSaved={() => {
+                  setEditing(false);
+                  void detail.refetch();
+                }}
+              />
             )}
           </>
         )}

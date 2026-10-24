@@ -187,6 +187,32 @@ describe('painel da cozinha', () => {
     expect((await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${randomUUID()}/revert`, payload: {} })).statusCode).toBe(404);
   });
 
+  it('pronto só de alguns itens: o cupom sai com eles e o resto continua no painel', async () => {
+    await ctx.app.printWorker.runOnce();
+    ctx.printed.length = 0;
+    await order(ids.ana, [{ productId: ids.file, qty: 2, notes: 'ao ponto' }, { productId: ids.file, qty: 1, notes: 'sem molho' }]);
+    const [ticket] = (await panel()).tickets.filter((t) => t.customers[0] === 'Ana');
+    expect(ticket!.items).toHaveLength(2);
+    const res = await cozinha({ method: 'POST', url: `/api/kitchen/tickets/${ticket!.id}/ready`, payload: { items: [1] } });
+    expect(res.json()).toMatchObject({ ok: true, partial: true, printedItems: 1, remainingItems: 1 });
+    await ctx.app.printWorker.runOnce();
+    expect(ctx.printed.map((p) => p.printer)).toEqual(['Cozinha']);
+    expect(ctx.printed[0]!.preview).toContain('>> SEM MOLHO');
+    expect(ctx.printed[0]!.preview).not.toContain('AO PONTO');
+    const still = (await panel()).tickets.find((t) => t.id === ticket!.id)!;
+    expect(still.items).toEqual([{ qty: 2, name: 'Filé à parmegiana', notes: 'ao ponto' }]);
+    expect(still.createdAt).toBe(ticket!.createdAt);
+    // O resto, depois: pronto normal.
+    await ready(ticket!.id);
+    await ctx.app.printWorker.runOnce();
+    expect((await panel()).tickets.find((t) => t.id === ticket!.id)).toBeUndefined();
+  });
+
+  it('cupom da cozinha sai só com a hora (sem a data)', async () => {
+    const last = ctx.printed.at(-1)!.preview;
+    expect(last).toMatch(/garcom · \d{2}:\d{2} · #/);
+  });
+
   it('impressora sem painel continua imprimindo na hora', async () => {
     await admin({
       method: 'PUT',

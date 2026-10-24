@@ -1,9 +1,10 @@
-import { openComandaSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem, type ComandaTotals } from '@sistema-bar/shared';
-import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { editComandaSchema, openComandaSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem, type ComandaTotals } from '@sistema-bar/shared';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
 import { comandas, diningTables, orderItems, orderItemShares, orders, qrUnlockAttempts, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
+import { authorizeManager } from '../../lib/authorize';
 import { loadBill } from '../../lib/billing';
 import { loadComandaSummaries, OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound, pgError } from '../../lib/errors';
@@ -181,6 +182,60 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf, licen
       if (row.lockedAt) await audit(tx, request, { action: 'QR_LIBERADO', entity: 'comanda', entityId: id });
     });
     return { qrLocked: false };
+  });
+
+  /**
+   * Corrige nome e telefone da comanda (garçom escreveu errado). Gerente/admin direto; garçom e
+   * caixa com o PIN de um gerente. Fica na auditoria (antes e depois).
+   */
+  app.post('/:id/edit', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request) => {
+    const { id: ref } = idParams.parse(request.params);
+    const input = editComandaSchema.parse(request.body);
+    const [row] = await db
+      .select({ c: comandas, tableNumber: diningTables.number })
+      .from(comandas)
+      .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+      .where(or(eq(comandas.id, ref), eq(comandas.clientUuid, ref)));
+    if (!row) throw notFound('Comanda');
+    const c = row.c;
+    if (!(OPEN_STATUSES as readonly string[]).includes(c.status)) {
+      throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_OPEN, 'Esta comanda já foi encerrada.');
+    }
+    const name = input.customerName ?? c.customerName;
+    const phone = input.phone ?? c.phone;
+    if (name === c.customerName && phone === c.phone) return summaryOf(c.id);
+    if (name.toLowerCase() !== c.customerName.toLowerCase()) {
+      const [sameName] = await db
+        .select({ id: comandas.id })
+        .from(comandas)
+        .where(
+          and(
+            eq(comandas.tableId, c.tableId),
+            inArray(comandas.status, [...OPEN_STATUSES]),
+            sql`lower(${comandas.customerName}) = lower(${name})`,
+            ne(comandas.id, c.id),
+          ),
+        );
+      if (sameName) throw duplicateName(name, row.tableNumber);
+    }
+    const authorizer = await authorizeManager(db, request, input.authorizerPin);
+    try {
+      await db.transaction(async (tx) => {
+        await tx.update(comandas).set({ customerName: name, phone }).where(eq(comandas.id, c.id));
+        await audit(tx, request, {
+          action: 'COMANDA_ALTERADA',
+          entity: 'comanda',
+          entityId: c.id,
+          before: { customerName: c.customerName, phone: c.phone },
+          after: { customerName: name, phone, table: row.tableNumber, authorizedBy: authorizer.name },
+        });
+      });
+    } catch (err) {
+      const pg = pgError(err);
+      if (pg?.code === '23505' && pg.constraint === 'comandas_open_name_per_table_unique') throw duplicateName(name, row.tableNumber);
+      throw err;
+    }
+    return summaryOf(c.id);
   });
 
   /** Garçom pede o fechamento: comanda fica EM_FECHAMENTO e avisa o caixa (SPEC 5.3). */

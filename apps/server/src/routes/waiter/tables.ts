@@ -1,8 +1,8 @@
 import { tableVisitSchema, type TableDetail, type TableMapEntry, type TableMapResponse } from '@sistema-bar/shared';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { comandas, diningTables, tableVisits } from '../../db/schema';
+import { comandas, diningTables, orders, tableVisits } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { comandaTotals, loadComandaSummaries, OPEN_STATUSES } from '../../lib/comandas';
 import { clearBillAlert, tableAttention } from '../../lib/table-attention';
@@ -13,7 +13,7 @@ import { idParams } from '../admin/params';
 
 export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
   /** Mapa de mesas: status, nº de comandas, total e último atendimento de cada mesa (SPEC 5.3). */
-  app.get('/', async (): Promise<TableMapResponse> => {
+  app.get('/', async (request): Promise<TableMapResponse> => {
     const [allTables, open, settings, rules] = await Promise.all([
       // O balcão (vendas do caixa) não é mesa do salão.
       db
@@ -22,13 +22,38 @@ export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
         .where(and(eq(diningTables.active, true), eq(diningTables.isCounter, false)))
         .orderBy(asc(diningTables.number)),
       db
-        .select({ id: comandas.id, tableId: comandas.tableId, status: comandas.status, openedAt: comandas.openedAt })
+        .select({ id: comandas.id, tableId: comandas.tableId, status: comandas.status, openedAt: comandas.openedAt, openedBy: comandas.openedBy })
         .from(comandas)
         .where(inArray(comandas.status, [...OPEN_STATUSES])),
       getSettings(db),
       getDayRules(db),
     ]);
     const [totals, attention] = await Promise.all([comandaTotals(db, open.map((c) => c.id)), tableAttention(db, open)]);
+
+    // "Minhas mesas": nesta ocupação, quem está logado abriu comanda, lançou pedido ou tocou em "Atendi a mesa".
+    const me = request.user!.id;
+    const openTableIds = [...new Set(open.map((c) => c.tableId))];
+    const since = new Map<string, number>();
+    for (const c of open) since.set(c.tableId, Math.min(since.get(c.tableId) ?? Infinity, c.openedAt.getTime()));
+    const oldest = open.length ? new Date(Math.min(...since.values())) : new Date();
+    const [myOrders, myVisits] = openTableIds.length
+      ? await Promise.all([
+          db
+            .select({ tableId: orders.tableId, at: orders.receivedAt })
+            .from(orders)
+            .where(and(eq(orders.userId, me), inArray(orders.tableId, openTableIds), gte(orders.receivedAt, oldest))),
+          db
+            .select({ tableId: tableVisits.tableId, at: tableVisits.visitedAt })
+            .from(tableVisits)
+            .where(and(eq(tableVisits.userId, me), inArray(tableVisits.tableId, openTableIds), gte(tableVisits.visitedAt, oldest))),
+        ])
+      : [[], []];
+    const minePerTable = new Set(
+      [
+        ...open.filter((c) => c.openedBy === me).map((c) => c.tableId),
+        ...[...myOrders, ...myVisits].filter((r) => r.at.getTime() >= (since.get(r.tableId) ?? Infinity)).map((r) => r.tableId),
+      ],
+    );
 
     // Mesas em funcionamento hoje (abertura do caixa): as N primeiras pelo número.
     // Mesa com comanda aberta aparece sempre, mesmo fora das N.
@@ -48,6 +73,7 @@ export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
           lastAttendedAt: null,
           billAlert: false,
           partialPaid: false,
+          mine: false,
         };
       }
       const a = attention.get(t.id)!;
@@ -61,6 +87,7 @@ export async function waiterTableRoutes(app: FastifyInstance, { db }: AppDeps) {
         lastAttendedAt: a.lastAttendedAt,
         billAlert: a.billAlert,
         partialPaid: a.partialPaid,
+        mine: minePerTable.has(t.id),
       };
     });
 

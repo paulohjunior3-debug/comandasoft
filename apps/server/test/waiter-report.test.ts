@@ -201,3 +201,57 @@ describe('pagamento por item agrupado', () => {
     expect(after.items.map((i: { paidFraction: { num: number; den: number } }) => i.paidFraction.num / i.paidFraction.den)).toEqual([1, 0.5]);
   });
 });
+
+describe('corrigir nome e telefone da comanda', () => {
+  it('garçom precisa do PIN do gerente; gerente corrige direto; fica na auditoria', async () => {
+    const c = (
+      await garcom({ method: 'POST', url: '/api/waiter/comandas', payload: { clientUuid: randomUUID(), tableId: ids.mesa2, customerName: 'Joao', phone: '(34) 91111-1111' } })
+    ).json().id as string;
+    expect((await garcom({ method: 'POST', url: `/api/waiter/comandas/${c}/edit`, payload: { customerName: 'João Pedro' } })).json().error).toBe('PIN_REQUIRED');
+    const gerente = await ctx.as('gerente');
+    const res = await gerente({ method: 'POST', url: `/api/waiter/comandas/${c}/edit`, payload: { customerName: 'João Pedro', phone: '(34) 92222-2222' } });
+    expect(res.json()).toMatchObject({ customerName: 'João Pedro' });
+    const tables: CashierTable[] = (await caixa({ method: 'GET', url: '/api/cashier/tables' })).json();
+    expect(tables.find((t) => t.number === 2)!.comandas.find((x) => x.id === c)).toMatchObject({ customerName: 'João Pedro', phone: '34922222222' });
+    const { auditLogs } = await import('../src/db/schema');
+    const { eq } = await import('drizzle-orm');
+    const [log] = await ctx.db.select().from(auditLogs).where(eq(auditLogs.action, 'COMANDA_ALTERADA'));
+    expect(log!.beforeJson).toMatchObject({ customerName: 'Joao', phone: '34911111111' });
+  });
+});
+
+describe('alterar pagamento em várias formas', () => {
+  it('R$ 99,00 vira 30 dinheiro + 40 débito + 29 crédito; a soma tem de bater; o relatório acompanha', async () => {
+    const closed = (await caixa({ method: 'GET', url: '/api/cashier/closed-comandas' })).json() as ClosedBillsResponse;
+    const pay = closed.bills.find((b) => b.tableNumber === 1 && b.comandas.some((c) => c.customerName === 'Ana'))!.payments[0]!;
+    const gerente = await ctx.as('gerente');
+    const url = `/api/cashier/payments/${pay.id}/split`;
+    const wrong = await gerente({ method: 'POST', url, payload: { reason: 'Pagou dividido', parts: [{ method: 'DINHEIRO', amountCents: 3000 }] } });
+    expect(wrong.json().message).toMatch(/tem de ser o valor do pagamento/);
+    const ok = await gerente({
+      method: 'POST',
+      url,
+      payload: {
+        reason: 'Pagou dividido',
+        parts: [
+          { method: 'DINHEIRO', amountCents: 3000 },
+          { method: 'DEBITO', amountCents: 4000 },
+          { method: 'CREDITO', amountCents: 2900 },
+        ],
+      },
+    });
+    expect(ok.json().payments).toHaveLength(3);
+    const after = (await caixa({ method: 'GET', url: '/api/cashier/closed-comandas' })).json() as ClosedBillsResponse;
+    const bill = after.bills.find((b) => b.tableNumber === 1 && b.comandas.some((c) => c.customerName === 'Ana'))!;
+    expect(bill.payments.map((p) => [p.method, p.amountCents]).sort()).toEqual([
+      ['CREDITO', 2900],
+      ['DEBITO', 4000],
+      ['DINHEIRO', 3000],
+    ]);
+    const report: SalesReport = (await admin({ method: 'GET', url: `/api/admin/reports/sales?from=${after.date}&to=${after.date}` })).json();
+    expect(report.received.byMethod).toMatchObject({ DINHEIRO: 3000, DEBITO: 4000, CREDITO: 2900 });
+    // A comanda continua quitada.
+    const b = (await caixa({ method: 'POST', url: '/api/cashier/bill', payload: { comandaIds: [ids.ana] } })).json();
+    expect(b.totals.remainingCents).toBe(0);
+  });
+});

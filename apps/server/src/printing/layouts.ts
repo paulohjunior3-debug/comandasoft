@@ -11,6 +11,9 @@ const when = (iso: string) =>
     minute: '2-digit',
   });
 
+/** Só a hora: no cupom da cozinha a data não interessa (a tela do caixa mostra dia e hora). */
+const hour = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+
 const money = (cents: number) => formatBRL(cents);
 
 /**
@@ -23,7 +26,7 @@ function production(t: ProductionTicket): Block[] {
     { kind: 'rule', char: '=' },
     { kind: 'text', text: place(t), align: 'center', size: 'big', bold: true },
     { kind: 'text', text: t.customers.join(', ').toUpperCase(), align: 'center', size: 'tall', bold: true },
-    { kind: 'text', text: `${t.waiter} · ${when(t.createdAt)} · #${t.orderRef}`, align: 'center' },
+    { kind: 'text', text: `${t.waiter} · ${hour(t.createdAt)} · #${t.orderRef}`, align: 'center' },
   ];
   if (t.takeaway) blocks.push({ kind: 'text', text: '*** PARA VIAGEM ***', align: 'center', bold: true, size: 'big' });
   if (t.reprint) blocks.push({ kind: 'text', text: '*** REIMPRESSÃO ***', align: 'center', bold: true, size: 'tall' });
