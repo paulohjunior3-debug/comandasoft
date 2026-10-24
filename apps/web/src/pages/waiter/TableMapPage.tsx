@@ -25,6 +25,22 @@ function toneOf(t: TableMapEntry, nowMs: number, map: TableMapResponse): Tone {
   return ({ verde: 'green', amarelo: 'yellow', vermelho: 'red' } as const)[tableTone(t, nowMs, map.alertYellowMinutes)];
 }
 
+type MapView = 'TODAS' | 'ABERTAS' | 'MINHAS';
+const VIEWS: [MapView, string][] = [
+  ['TODAS', 'Todas'],
+  ['ABERTAS', 'Abertas'],
+  ['MINHAS', 'Minhas mesas'],
+];
+const VIEW_KEY = 'garcom.mapa.filtro';
+function readView(): MapView {
+  try {
+    const v = localStorage.getItem(VIEW_KEY);
+    return v === 'ABERTAS' || v === 'MINHAS' ? v : 'TODAS';
+  } catch {
+    return 'TODAS';
+  }
+}
+
 export function TableMapPage() {
   const { logout } = useAuth();
   const [now, setNow] = useState(Date.now());
@@ -53,7 +69,23 @@ export function TableMapPage() {
   }, []);
 
   const data = map.data;
-  const areas = [...new Set((data?.tables ?? []).map((t) => t.area ?? ''))];
+  const [view, setView] = useState<MapView>(readView);
+  const chooseView = (v: MapView) => {
+    setView(v);
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* sem armazenamento: vale só agora */
+    }
+  };
+  // Comanda aberta offline: a mesa já conta como aberta (e minha) no aparelho.
+  const shown = (data?.tables ?? []).filter((t) => {
+    const queued = (queuedByTable.get(t.id) ?? 0) > 0;
+    if (view === 'ABERTAS') return t.status !== 'LIVRE' || queued;
+    if (view === 'MINHAS') return t.mine || queued;
+    return true;
+  });
+  const areas = [...new Set(shown.map((t) => t.area ?? ''))];
   const occupied = data?.tables.filter((t) => t.status !== 'LIVRE').length ?? 0;
 
   return (
@@ -83,11 +115,29 @@ export function TableMapPage() {
                 📝 Meus lançamentos
               </Link>
             </div>
+            <div className="mb-3 flex gap-1 rounded-lg bg-slate-900 p-1 text-sm" role="tablist" aria-label="Quais mesas mostrar">
+              {VIEWS.map(([v, label]) => (
+                <button
+                  key={v}
+                  role="tab"
+                  aria-selected={view === v}
+                  onClick={() => chooseView(v)}
+                  className={`flex-1 rounded-md py-2 ${view === v ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {shown.length === 0 && (
+              <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-slate-400">
+                {view === 'MINHAS' ? 'Nenhuma mesa sua neste turno ainda (abra comanda, lance pedido ou toque em "Atendi a mesa").' : 'Nenhuma mesa aberta.'}
+              </p>
+            )}
             {areas.map((area) => (
               <section key={area} className="mb-5">
                 {areas.length > 1 && <h2 className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">{area || 'Sem área'}</h2>}
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                  {data.tables
+                  {shown
                     .filter((t) => (t.area ?? '') === area)
                     .map((t) => {
                       const minutes = t.lastAttendedAt

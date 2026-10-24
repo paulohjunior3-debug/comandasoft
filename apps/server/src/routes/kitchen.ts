@@ -83,6 +83,41 @@ export async function kitchenRoutes(app: FastifyInstance, { db, guards, printWor
     }
     const tables = await currentTables(job.referenceId ? [job.referenceId] : []);
     const payload = withTable(job.payload as ProductionTicket, tables.get(job.referenceId ?? ''));
+
+    // Só alguns itens prontos (ex.: o suco antes do prato): o cupom sai com eles e o resto fica no painel.
+    const { items: picked } = z.object({ items: z.array(z.number().int().min(0)).max(100).optional() }).parse(request.body ?? {});
+    const indexes = [...new Set(picked ?? [])].filter((i) => i < payload.items.length).sort((a, b) => a - b);
+    if (indexes.length > 0 && indexes.length < payload.items.length) {
+      const done = indexes.map((i) => payload.items[i]!);
+      const rest = payload.items.filter((_, i) => !indexes.includes(i));
+      const created = await db.transaction(async (tx) => {
+        const [kept] = await tx
+          .update(printJobs)
+          .set({ payload: { ...payload, items: rest } })
+          .where(and(eq(printJobs.id, id), eq(printJobs.status, 'PAINEL')))
+          .returning({ id: printJobs.id });
+        if (!kept) return null;
+        const [part] = await tx
+          .insert(printJobs)
+          .values({
+            printerId: job.printerId,
+            type: 'PRODUCAO',
+            payload: { ...payload, items: done },
+            referenceId: job.referenceId,
+            status: 'PENDENTE',
+            readyAt: new Date(),
+            readyBy: request.user!.id,
+            // Mesmo horário do pedido: se voltar para a tela, o cronômetro continua de onde estava.
+            createdAt: job.createdAt,
+          })
+          .returning({ id: printJobs.id });
+        return part!.id;
+      });
+      if (!created) return { ok: true, already: true };
+      printWorker.kick();
+      return { ok: true, already: false, partial: true, partId: created, printedItems: done.length, remainingItems: rest.length };
+    }
+
     const [updated] = await db
       .update(printJobs)
       .set({ status: 'PENDENTE', payload, readyAt: new Date(), readyBy: request.user!.id })

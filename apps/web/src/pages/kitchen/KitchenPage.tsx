@@ -138,6 +138,50 @@ export function KitchenPage() {
     [tickets, qc, path, donePath],
   );
 
+  /**
+   * Pronto só de alguns itens (ex.: o suco sai antes do prato): o cupom imprime com eles e o
+   * cartão continua na tela com o resto.
+   */
+  const readyPart = useCallback(
+    async (t: KitchenTicket, indexes: number[]) => {
+      setError(null);
+      try {
+        const r = await api<{ partId?: string; printedItems?: number }>(`/kitchen/tickets/${t.id}/ready`, {
+          method: 'POST',
+          body: JSON.stringify({ items: indexes }),
+        });
+        setToast(`${placeOf(t)}: ${indexes.length} item(ns) pronto(s) · imprimindo · Backspace desfaz`);
+        if (r.partId) lastReady.current = { id: r.partId, label: placeOf(t), at: Date.now() };
+      } catch (err) {
+        setError(`Não deu para marcar ${placeOf(t)}: ${errorMessage(err)}`);
+      } finally {
+        void qc.invalidateQueries({ queryKey: [path] });
+        void qc.invalidateQueries({ queryKey: [donePath] });
+      }
+    },
+    [qc, path, donePath],
+  );
+
+  // Pedido com mais de um item: pergunta o que ficou pronto (tudo ou só alguns).
+  const [picking, setPicking] = useState<{ ticket: KitchenTicket; cursor: number; marked: number[] } | null>(null);
+  const askReady = useCallback(
+    (t: KitchenTicket) => {
+      if (t.items.length > 1) setPicking({ ticket: t, cursor: 0, marked: [] });
+      else void ready(t);
+    },
+    [ready],
+  );
+  const finishPicking = useCallback(
+    (all: boolean) => {
+      if (!picking) return;
+      const { ticket, marked } = picking;
+      setPicking(null);
+      if (all || marked.length === 0 || marked.length === ticket.items.length) void ready(ticket);
+      else void readyPart(ticket, marked);
+    },
+    [picking, ready, readyPart],
+  );
+
   /** Reverter um "pronto": o pedido volta para a tela, já selecionado. */
   const revert = useCallback(
     async (id: string, label: string) => {
@@ -175,6 +219,20 @@ export function KitchenPage() {
     const onKey = (e: KeyboardEvent) => {
       unlockSound();
       if (e.target instanceof HTMLSelectElement) return;
+      if (picking) {
+        e.preventDefault();
+        const n = picking.ticket.items.length;
+        const toggle = (i: number) =>
+          setPicking((p) => (p ? { ...p, cursor: i, marked: p.marked.includes(i) ? p.marked.filter((x) => x !== i) : [...p.marked, i] } : p));
+        if (e.key === 'Escape') setPicking(null);
+        else if (e.key === 'ArrowDown') setPicking((p) => (p ? { ...p, cursor: Math.min(n - 1, p.cursor + 1) } : p));
+        else if (e.key === 'ArrowUp') setPicking((p) => (p ? { ...p, cursor: Math.max(0, p.cursor - 1) } : p));
+        else if (e.key === ' ') toggle(picking.cursor);
+        else if (/^[1-9]$/.test(e.key) && Number(e.key) <= n) toggle(Number(e.key) - 1);
+        else if (e.key === 't' || e.key === 'T') finishPicking(true);
+        else if ((e.key === 'Enter' || e.key === 'NumpadEnter') && !e.repeat) finishPicking(false);
+        return;
+      }
       if (doneOpen) {
         e.preventDefault();
         if (e.key === 'Escape' || e.key === 'f' || e.key === 'F') setDoneOpen(false);
@@ -214,12 +272,12 @@ export function KitchenPage() {
         // Tecla segurada ou dois toques seguidos não marcam dois pedidos.
         if (e.repeat || Date.now() - lastEnter.current < 600 || !selected) return;
         lastEnter.current = Date.now();
-        void ready(selected);
+        askReady(selected);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [tickets, selectedIndex, selected, ready, unlockSound, doneOpen, doneList, doneIndex, revert]);
+  }, [tickets, selectedIndex, selected, askReady, unlockSound, doneOpen, doneList, doneIndex, revert, picking, finishPicking]);
 
   useLayoutEffect(() => {
     if (selected) document.getElementById(`pedido-${selected.id}`)?.scrollIntoView({ block: 'nearest' });
@@ -293,6 +351,8 @@ export function KitchenPage() {
         </p>
       )}
 
+      <ProductionSummary tickets={tickets} />
+
       <main className="flex-1 overflow-y-auto p-4">
         {panel.isLoading ? (
           <p className="mt-20 text-center text-2xl text-slate-500">Carregando…</p>
@@ -310,7 +370,7 @@ export function KitchenPage() {
                 minutes={minutesOf(t)}
                 selected={t.id === selected?.id}
                 onSelect={() => setSelectedId(t.id)}
-                onReady={() => void ready(t)}
+                onReady={() => askReady(t)}
               />
             ))}
           </div>
@@ -328,6 +388,20 @@ export function KitchenPage() {
         <p role="status" className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-xl bg-emerald-600 px-6 py-3 text-xl font-bold shadow-2xl">
           ✓ {toast}
         </p>
+      )}
+
+      {picking && (
+        <ItemPicker
+          ticket={picking.ticket}
+          cursor={picking.cursor}
+          marked={picking.marked}
+          onToggle={(i) =>
+            setPicking((p) => (p ? { ...p, cursor: i, marked: p.marked.includes(i) ? p.marked.filter((x) => x !== i) : [...p.marked, i] } : p))
+          }
+          onAll={() => finishPicking(true)}
+          onMarked={() => finishPicking(false)}
+          onClose={() => setPicking(null)}
+        />
       )}
 
       {doneOpen && (
@@ -423,6 +497,90 @@ function DoneDrawer({
           </ul>
         )}
       </aside>
+    </div>
+  );
+}
+
+/**
+ * Quanto tem de cada prato para fazer, somando todas as mesas (ex.: 5× Filé de tilápia):
+ * ajuda a cozinha a produzir em quantidade.
+ */
+function ProductionSummary({ tickets }: { tickets: KitchenTicket[] }) {
+  const totals = new Map<string, number>();
+  for (const t of tickets) for (const i of t.items) totals.set(i.name, (totals.get(i.name) ?? 0) + i.qty);
+  if (totals.size === 0) return null;
+  const list = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return (
+    <section aria-label="A fazer" className="flex items-center gap-2 overflow-x-auto border-b border-slate-800 bg-slate-950 px-5 py-2">
+      <span className="shrink-0 text-sm font-semibold text-slate-400 uppercase">A fazer</span>
+      {list.map(([name, qty]) => (
+        <span key={name} className="shrink-0 rounded-lg bg-slate-800 px-3 py-1 text-lg">
+          <b className="text-amber-300 tabular-nums">{qty}×</b> {name}
+        </span>
+      ))}
+    </section>
+  );
+}
+
+/** Escolher os itens prontos de um pedido: Espaço/números marcam, Enter imprime, T imprime tudo. */
+function ItemPicker({
+  ticket: t,
+  cursor,
+  marked,
+  onToggle,
+  onAll,
+  onMarked,
+  onClose,
+}: {
+  ticket: KitchenTicket;
+  cursor: number;
+  marked: number[];
+  onToggle: (i: number) => void;
+  onAll: () => void;
+  onMarked: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
+      <div role="dialog" aria-label="O que ficou pronto?" onClick={(e) => e.stopPropagation()} className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-950 p-5">
+        <h2 className="text-2xl font-black">{placeOf(t)} · o que ficou pronto?</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Espaço ou o número marca · <b className="text-white">Enter</b> imprime os marcados (nenhum = pedido todo) · <b className="text-white">T</b> = tudo · Esc cancela
+        </p>
+        <ul className="mt-4 space-y-2">
+          {t.items.map((item, i) => {
+            const on = marked.includes(i);
+            return (
+              <li key={i}>
+                <button
+                  onClick={() => onToggle(i)}
+                  className={`flex w-full items-start gap-3 rounded-xl border-2 px-3 py-2 text-left ${on ? 'border-emerald-500 bg-emerald-950' : 'border-slate-700 bg-slate-900'} ${
+                    i === cursor ? 'outline-2 outline-offset-2 outline-white' : ''
+                  }`}
+                >
+                  <span className="mt-0.5 w-6 shrink-0 text-center text-lg font-bold text-slate-400">{i + 1}</span>
+                  <span className={`mt-1 size-5 shrink-0 rounded border-2 ${on ? 'border-emerald-400 bg-emerald-500' : 'border-slate-500'}`} />
+                  <span className="text-xl font-bold">
+                    <span className="text-amber-300">{item.qty}×</span> {item.name}
+                    {item.notes && <span className="block text-base text-yellow-300 uppercase">» {item.notes}</span>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-700 px-4 py-2">
+            Cancelar
+          </button>
+          <button onClick={onAll} className="rounded-lg bg-slate-700 px-4 py-2 font-semibold">
+            Pedido todo (T)
+          </button>
+          <button onClick={onMarked} disabled={marked.length === 0} className="rounded-lg bg-emerald-600 px-4 py-2 font-bold disabled:opacity-40">
+            Imprimir marcados ({marked.length}) ↵
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

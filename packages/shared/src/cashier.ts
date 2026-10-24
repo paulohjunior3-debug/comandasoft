@@ -468,6 +468,20 @@ export const refundPaymentSchema = z.object({ reason, authorizerPin });
 /** Corrigir a forma de pagamento lançada errada (gerente, com motivo; só com o caixa dele aberto). */
 export const changePaymentMethodSchema = z.object({ method: z.enum(PAYMENT_METHODS, 'Escolha a forma de pagamento'), reason, authorizerPin });
 
+/**
+ * Corrigir como um pagamento foi feito, dividindo em várias formas (ex.: R$ 30 dinheiro +
+ * R$ 40 débito + o resto crédito). A soma tem de ser o valor do pagamento.
+ */
+export const splitPaymentSchema = z.object({
+  parts: z
+    .array(z.object({ method: z.enum(PAYMENT_METHODS, 'Escolha a forma de pagamento'), amountCents: z.number().int().positive('Valor inválido') }))
+    .min(1, 'Informe ao menos uma forma')
+    .max(6),
+  reason,
+  authorizerPin,
+});
+export type SplitPaymentInput = z.infer<typeof splitPaymentSchema>;
+
 /** Contas fechadas de um dia do movimento (sem data: o do caixa aberto ou do último). */
 export const closedBillsQuerySchema = z.object({
   date: z

@@ -67,6 +67,8 @@ export interface TableMapEntry {
   billAlert: boolean;
   /** Já houve pagamento nesta ocupação e a mesa continua com comanda aberta (estrela). */
   partialPaid: boolean;
+  /** "Minhas mesas": quem está logado abriu comanda, lançou pedido ou atendeu nesta ocupação. */
+  mine: boolean;
 }
 
 /**
@@ -134,6 +136,20 @@ export const orderItemInputSchema = z.object({
   expectedUnitPriceCents: z.number().int().min(0).optional(),
 });
 export type OrderItemInput = z.input<typeof orderItemInputSchema>;
+
+/** Corrigir nome e telefone da comanda (gerente/admin direto; garçom e caixa com o PIN de um gerente). */
+export const editComandaSchema = z
+  .object({
+    customerName: z.string().trim().min(2, 'Informe o nome do cliente').max(40, 'Nome muito longo').optional(),
+    phone: z
+      .string()
+      .transform(onlyDigits)
+      .refine((v) => v.length >= 10 && v.length <= 11, 'Informe o telefone com DDD (ex.: (34) 99999-9999)')
+      .optional(),
+    authorizerPin: z.string().regex(/^\d{4,6}$/, 'PIN inválido').optional(),
+  })
+  .refine((v) => v.customerName !== undefined || v.phone !== undefined, 'Nada para alterar.');
+export type EditComandaInput = z.input<typeof editComandaSchema>;
 
 export const createOrderSchema = z.object({
   clientUuid,
