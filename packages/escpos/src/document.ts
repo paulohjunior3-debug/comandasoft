@@ -21,7 +21,9 @@ export type Block =
   /** Texto à esquerda e à direita na mesma linha (ex.: item e valor). */
   | ({ kind: 'pair'; left: string; right: string } & LineStyle)
   | { kind: 'rule'; char?: string }
-  | { kind: 'feed'; lines: number };
+  | { kind: 'feed'; lines: number }
+  /** QR Code (ex.: consulta da NFC-e), centralizado. `size` = tamanho do módulo, de 3 a 8. */
+  | { kind: 'qr'; data: string; size?: number };
 
 export interface PrinterProfile {
   widthMm: 58 | 80;
@@ -84,6 +86,11 @@ export function renderText(blocks: Block[], widthMm: 58 | 80): string {
       out.push((b.char ?? '-').repeat(cols));
       continue;
     }
+    if (b.kind === 'qr') {
+      // Na prévia não dá para desenhar o QR: mostra um quadro no lugar dele.
+      for (const l of ['+----------+', '| QR CODE  |', '|          |', '+----------+']) out.push(place(l, cols, 'center'));
+      continue;
+    }
     const wide = isWide(b.size);
     const width = wide ? Math.floor(cols / 2) : cols;
     const lines = b.kind === 'text' ? wrap(b.text, width) : pairLine(b.left, b.right, width);
@@ -127,6 +134,10 @@ export function renderEscPos(
       bytes.push(...encodeText((b.char ?? '-').repeat(cols), profile.codepage), LF);
       continue;
     }
+    if (b.kind === 'qr') {
+      bytes.push(...qrBytes(b.data, b.size ?? 5));
+      continue;
+    }
     style(b);
     const width = isWide(b.size) ? Math.floor(cols / 2) : cols;
     const lines = b.kind === 'text' ? wrap(b.text, width) : pairLine(b.left, b.right, width);
@@ -139,4 +150,24 @@ export function renderEscPos(
   if (profile.cut) bytes.push(GS, 0x56, 0x42, 0x03); // avança e corta (corte parcial)
   else bytes.push(ESC, 0x64, 4);
   return Uint8Array.from(bytes);
+}
+
+/**
+ * QR Code nativo da impressora (GS ( k, modelo 2), aceito pelas térmicas Epson e Elgin:
+ * modelo, tamanho do módulo, correção de erro M, grava os dados e imprime, centralizado.
+ */
+function qrBytes(data: string, size: number): number[] {
+  const payload = [...Buffer.from(data, 'ascii')];
+  const len = payload.length + 3;
+  const module = Math.min(8, Math.max(3, Math.round(size)));
+  return [
+    ESC, 0x61, 1,
+    GS, 0x28, 0x6b, 4, 0, 0x31, 0x41, 0x32, 0x00,
+    GS, 0x28, 0x6b, 3, 0, 0x31, 0x43, module,
+    GS, 0x28, 0x6b, 3, 0, 0x31, 0x45, 0x31,
+    GS, 0x28, 0x6b, len & 0xff, (len >> 8) & 0xff, 0x31, 0x50, 0x30, ...payload,
+    GS, 0x28, 0x6b, 3, 0, 0x31, 0x51, 0x30,
+    LF,
+    ESC, 0x61, 0,
+  ];
 }

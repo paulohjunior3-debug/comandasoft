@@ -93,6 +93,21 @@ export const fiscalSettingsSchema = z.object({
   defaultOrigin: z.string().regex(/^[0-8]$/, 'Origem inválida'),
   /** E-mail do contador, para mandar os XMLs do mês. */
   accountantEmail: z.union([z.literal(''), z.string().trim().email('E-mail do contador inválido')]),
+  /** Liga a emissão da NFC-e direto com a SEFAZ (desligado: o pedido de cupom fica só registrado). */
+  emissionEnabled: z.boolean(),
+  /** Como o PIX sai na nota: 17 (dinâmico, QR da maquininha) ou 20 (estático, chave/QR fixo). */
+  pixTPag: z.enum(['17', '20']),
+  /** CST de PIS/COFINS dos itens (Simples Nacional costuma ser 07 ou 49; o contador confirma). */
+  pisCofinsCst: z.string().trim().regex(/^\d{2}$/, 'CST de PIS/COFINS com 2 dígitos'),
+  /** Responsável técnico pelo sistema (vai em toda nota: CNPJ, contato, e-mail e telefone). */
+  respTecCnpj: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/\D/g, ''))
+    .refine((v) => v === '' || isValidCnpj(v), 'CNPJ do responsável técnico inválido'),
+  respTecContact: text(60),
+  respTecEmail: z.union([z.literal(''), z.string().trim().email('E-mail do responsável técnico inválido')]),
+  respTecPhone: text(20),
 });
 export type FiscalSettings = z.infer<typeof fiscalSettingsSchema>;
 
@@ -118,10 +133,19 @@ export const DEFAULT_FISCAL_SETTINGS: FiscalSettings = {
   defaultCsosn: '102',
   defaultOrigin: '0',
   accountantEmail: '',
+  emissionEnabled: false,
+  pixTPag: '20',
+  pisCofinsCst: '07',
+  respTecCnpj: '',
+  respTecContact: '',
+  respTecEmail: '',
+  respTecPhone: '',
 };
 
 /** CSC (Código de Segurança do Contribuinte), fornecido pela SEFAZ no credenciamento da NFC-e. */
 export const cscInputSchema = z.object({
+  /** O CSC de homologação (testes) é outro, gerado no ambiente de homologação da SEFAZ. */
+  environment: z.enum(FISCAL_ENVIRONMENTS).default('PRODUCAO'),
   cscId: z.string().trim().regex(/^\d{1,6}$/, 'ID do CSC: só números (ex.: 000001)'),
   cscToken: z.string().trim().min(16, 'Código CSC muito curto').max(36, 'Código CSC muito longo'),
 });
@@ -153,6 +177,9 @@ export interface FiscalStatus {
   settings: FiscalSettings;
   cscConfigured: boolean;
   cscId: string | null;
+  /** CSC do ambiente de homologação (testes). */
+  cscHomConfigured: boolean;
+  cscHomId: string | null;
   certificate: CertificateInfo | null;
   /** Emissora (API fiscal): ainda não escolhida até a fase 5. */
   provider: string | null;
@@ -221,3 +248,48 @@ export interface FiscalMonthSummary {
 }
 
 export const fiscalMonthSchema = z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mês inválido (use AAAA-MM).') });
+
+/** Resultado da emissão de uma NFC-e. */
+export type NfceEmitStatus = 'AUTORIZADA' | 'REJEITADA' | 'ERRO_COMUNICACAO';
+export interface NfceEmitResult {
+  status: NfceEmitStatus;
+  /** Mensagem para o operador (ex.: "Autorizada: NFC-e 74738" ou o motivo da rejeição). */
+  message: string;
+  environment: FiscalEnvironment;
+  series?: number;
+  number?: number;
+  accessKey?: string;
+  documentId?: string;
+  /** O DANFE NFC-e foi para a impressora do caixa. */
+  printed?: boolean;
+}
+
+/** Teste de comunicação com a SEFAZ (status do serviço). */
+export interface SefazStatusResult {
+  environment: FiscalEnvironment;
+  ok: boolean;
+  cStat: string | null;
+  message: string;
+}
+
+/** Nota sem confirmação da SEFAZ (enviada durante uma falha de comunicação). */
+export interface PendingNfce {
+  accessKey: string;
+  number: number;
+  environment: FiscalEnvironment;
+  totalCents: number;
+  since: string;
+}
+
+/** Nota emitida (lista da tela Fiscal). */
+export interface FiscalDocumentRow {
+  id: string;
+  environment: string;
+  series: number;
+  number: number;
+  accessKey: string;
+  status: FiscalDocumentStatus;
+  totalCents: number;
+  protocol: string | null;
+  issuedAt: string;
+}

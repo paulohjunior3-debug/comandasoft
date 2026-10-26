@@ -21,10 +21,13 @@ import { enqueueCashierPrint } from '../../lib/cashier-print';
 import { OPEN_STATUSES } from '../../lib/comandas';
 import { HttpError, notFound, pgError } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
+import { configRow, settingsOf } from '../../fiscal/config';
+import { emitNfce } from '../../fiscal/nfce/emit';
 import { idParams } from '../admin/params';
 import { getRegister, requireOpenSession } from './session';
 
-export async function cashierPaymentRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+export async function cashierPaymentRoutes(app: FastifyInstance, deps: AppDeps) {
+  const { db, printWorker } = deps;
   async function existingResult(paymentId: string): Promise<CreatePaymentResult> {
     const [p] = await db.select().from(payments).where(eq(payments.id, paymentId));
     const [s] = await db.select().from(cashSessions).where(eq(cashSessions.id, p!.cashSessionId));
@@ -160,8 +163,13 @@ export async function cashierPaymentRoutes(app: FastifyInstance, { db, printWork
 
         // Caixa configurado para emitir fiscal em tudo: o pedido do cupom fiscal já sai aqui.
         const fiscalRequested = register.fiscalMode === 'AUTOMATICO' && closedIds.length > 0;
+        let fiscalRequestId: string | undefined;
         if (fiscalRequested) {
-          await tx.insert(fiscalRequests).values({ cashSessionId: session.id, comandaIds: closedIds, automatic: true, requestedBy: request.user!.id });
+          const [fr] = await tx
+            .insert(fiscalRequests)
+            .values({ cashSessionId: session.id, comandaIds: closedIds, automatic: true, requestedBy: request.user!.id })
+            .returning({ id: fiscalRequests.id });
+          fiscalRequestId = fr!.id;
         }
 
         await audit(tx, request, {
@@ -193,10 +201,21 @@ export async function cashierPaymentRoutes(app: FastifyInstance, { db, printWork
           duplicate: false,
           fiscalMode: register.fiscalMode,
           fiscalRequested,
-        } satisfies CreatePaymentResult;
+          fiscalRequestId,
+        };
       });
       printWorker.kick();
-      return reply.code(201).send(result);
+      const { fiscalRequestId, ...out } = result;
+      const body: CreatePaymentResult = out;
+      if (fiscalRequestId && settingsOf(await configRow(db)).emissionEnabled) {
+        try {
+          const r = await emitNfce(deps, { request, comandaIds: result.closedComandaIds, cpfOnNote: true, fiscalRequestId, registerPrinterId: register.printerId });
+          body.fiscal = { status: r.status, message: r.message, number: r.number, accessKey: r.accessKey };
+        } catch (err) {
+          body.fiscal = { status: 'REJEITADA', message: err instanceof Error ? err.message : 'Não foi possível emitir a NFC-e.' };
+        }
+      }
+      return reply.code(201).send(body);
     } catch (err) {
       const pg = pgError(err);
       if (pg?.code === '23505' && pg.constraint === 'payments_client_uuid_unique') {

@@ -20,6 +20,7 @@ import { adminRoutes } from './routes/admin';
 import { authRoutes } from './routes/auth';
 import { cashierRoutes } from './routes/cashier';
 import { kitchenRoutes } from './routes/kitchen';
+import type { Transport } from './fiscal/nfce/sefaz';
 import { printRoutes } from './routes/print';
 import { publicRoutes } from './routes/public';
 import { waiterRoutes } from './routes/waiter';
@@ -41,6 +42,8 @@ export interface AppDeps {
   publicPort: number | null;
   /** Cofre dos segredos fiscais (CSC, certificado A1). */
   secrets: SecretBox;
+  /** Conversa com a SEFAZ (substituível nos testes; padrão: HTTPS com o certificado A1). */
+  sefazTransport?: Transport;
 }
 
 export interface BuildAppOptions {
@@ -60,6 +63,7 @@ export interface BuildAppOptions {
   publicPort?: number | null;
   /** Certificado de confiança (público) servido em /certificado. */
   caCertPath?: string;
+  sefazTransport?: Transport;
 }
 
 const defaultWebDist = paths.webDist;
@@ -76,6 +80,7 @@ export async function buildApp({
   printTransport = emulatorTransport(defaultEmulatorDir),
   publicPort = null,
   caCertPath = paths.fromHome('certs/rootCA.crt'),
+  sefazTransport,
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
@@ -88,6 +93,7 @@ export async function buildApp({
     printWorker: Object.assign(createPrintWorker({ db, transport: printTransport, log: app.log }), { mode: printTransport.mode }),
     publicPort,
     secrets: createSecretBox(cpfSecret, 'fiscal'),
+    sefazTransport,
   };
   app.decorate('printWorker', deps.printWorker);
   app.addHook('onClose', () => deps.printWorker.stop());

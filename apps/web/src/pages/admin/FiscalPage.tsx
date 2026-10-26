@@ -8,24 +8,31 @@ import {
   TAX_REGIMES,
   UFS,
   type CertificateInfo,
+  type FiscalDocumentRow,
   type FiscalEnvironment,
   type FiscalMonthSummary,
   type FiscalSettings,
   type FiscalStatus,
+  type NfceEmitResult,
+  type PendingNfce,
+  type SefazStatusResult,
   type TaxRegime,
 } from '@sistema-bar/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Badge, Button, ErrorBanner, Loading, PageHeader, SelectField, TextField } from '../../components/ui';
+import { Badge, Button, ErrorBanner, Loading, PageHeader, SelectField, TextField, Toggle } from '../../components/ui';
 import { apiDownload } from '../../lib/api';
 import { errorMessage, useApiMutation, useApiQuery } from '../../lib/queries';
 
 const STATUS = '/admin/fiscal/status';
+const DOCS = '/admin/fiscal/documents';
+const PENDING = '/admin/fiscal/pending';
 const dateBR = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 /**
- * Admin → Fiscal (SPEC 5.8): tudo o que a NFC-e vai precisar, preparado antes de escolher a
- * emissora. O certificado e o CSC ficam cifrados no servidor e nunca voltam para a tela.
+ * Admin → Fiscal (SPEC 5.8): emissão da NFC-e direto com a SEFAZ-MG. Primeiro em homologação
+ * (teste, sem valor fiscal), depois em produção. O certificado e o CSC ficam cifrados no
+ * servidor e nunca voltam para a tela.
  */
 export function FiscalPage() {
   const status = useApiQuery<FiscalStatus>(STATUS);
@@ -37,7 +44,7 @@ export function FiscalPage() {
     <>
       <PageHeader
         title="Fiscal (NFC-e)"
-        description="Prepare aqui os dados da nota fiscal. A emissão é ligada quando o estabelecimento contratar a emissora, junto com o contador."
+        description="Emissão da NFC-e direto com a SEFAZ-MG. Teste tudo em homologação (sem valor fiscal) antes de passar para produção, junto com o contador."
         action={
           <Link to="/admin/fiscal/produtos" className="rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium hover:bg-slate-800">
             Dados fiscais dos produtos
@@ -64,8 +71,10 @@ export function FiscalPage() {
           )}
         </Section>
 
+        <EmissionSection environment={s.settings.environment} enabled={s.settings.emissionEnabled} />
         <CertificateSection certificate={s.certificate} emitterCnpj={s.settings.cnpj} />
-        <CscSection configured={s.cscConfigured} cscId={s.cscId} />
+        <CscSection environment="HOMOLOGACAO" configured={s.cscHomConfigured} cscId={s.cscHomId} />
+        <CscSection environment="PRODUCAO" configured={s.cscConfigured} cscId={s.cscId} />
         <SettingsSection initial={s.settings} />
         <XmlSection />
       </div>
@@ -169,15 +178,17 @@ function CertificateSection({ certificate: c, emitterCnpj }: { certificate: Cert
 
 // ---------- CSC ----------
 
-function CscSection({ configured, cscId }: { configured: boolean; cscId: string | null }) {
-  const save = useApiMutation<{ cscId: string; cscToken: string }>([STATUS]);
+function CscSection({ environment, configured, cscId }: { environment: FiscalEnvironment; configured: boolean; cscId: string | null }) {
+  const save = useApiMutation<{ environment: FiscalEnvironment; cscId: string; cscToken: string }>([STATUS]);
   const [id, setId] = useState('');
   const [token, setToken] = useState('');
   const [editing, setEditing] = useState(!configured);
   return (
-    <Section title="CSC da NFC-e">
+    <Section title={`CSC da NFC-e — ${environment === 'PRODUCAO' ? 'produção' : 'homologação'}`}>
       <p className="text-sm text-slate-400">
-        Código de Segurança do Contribuinte, gerado no credenciamento da NFC-e no site da SEFAZ. Vai no QR Code de cada cupom.
+        {environment === 'PRODUCAO'
+          ? 'Código de Segurança do Contribuinte de produção, gerado no portal da SEFAZ-MG. Vai no QR Code de cada cupom.'
+          : 'O CSC de homologação é outro, gerado no mesmo portal da SEFAZ-MG, só para os testes.'}
       </p>
       {configured && !editing ? (
         <div className="flex items-center gap-3 text-sm">
@@ -199,7 +210,7 @@ function CscSection({ configured, cscId }: { configured: boolean; cscId: string 
               disabled={save.isPending}
               onClick={() =>
                 save.mutate(
-                  { method: 'PUT', path: '/admin/fiscal/csc', body: { cscId: id, cscToken: token } },
+                  { method: 'PUT', path: '/admin/fiscal/csc', body: { environment, cscId: id, cscToken: token } },
                   {
                     onSuccess: () => {
                       setEditing(false);
@@ -300,7 +311,32 @@ function SettingsSection({ initial }: { initial: FiscalSettings }) {
           ))}
         </SelectField>
       </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SelectField label="PIX na nota (tPag)" value={form.pixTPag} onChange={(e) => set('pixTPag', e.target.value as FiscalSettings['pixTPag'])}>
+          <option value="20">20 - PIX estático (QR fixo / chave)</option>
+          <option value="17">17 - PIX dinâmico (QR gerado na maquininha)</option>
+        </SelectField>
+        {field('pisCofinsCst', 'CST de PIS/COFINS', { inputMode: 'numeric', hint: 'Simples Nacional: normalmente 07 ou 49 (o contador confirma)' })}
+      </div>
+      <p className="pt-2 text-sm font-medium text-slate-300">Responsável técnico (vai em toda nota)</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {field('respTecCnpj', 'CNPJ', { inputMode: 'numeric' })}
+        {field('respTecContact', 'Nome do contato')}
+        {field('respTecEmail', 'E-mail', { type: 'email' })}
+        {field('respTecPhone', 'Telefone', { inputMode: 'tel' })}
+      </div>
       {field('accountantEmail', 'E-mail do contador', { type: 'email', hint: 'Para quem os XMLs do mês serão enviados.' })}
+      <Toggle
+        label="Emitir NFC-e direto com a SEFAZ"
+        checked={form.emissionEnabled}
+        onChange={(v) => set('emissionEnabled', v)}
+        hint="Ligado: o pedido de cupom fiscal no caixa emite a nota na hora e imprime o DANFE. Desligado: o pedido só fica registrado."
+      />
+      {form.emissionEnabled && form.environment === 'PRODUCAO' && (
+        <p className="rounded-lg bg-amber-950 p-3 text-sm text-amber-200">
+          Produção: as notas têm valor fiscal. Confira com o contador a série e o próximo número para não repetir os do sistema antigo.
+        </p>
+      )}
       <ErrorBanner message={errorMessage(save.error)} />
       <div className="flex items-center justify-end gap-3">
         {saved && <span className="text-sm text-emerald-400">Dados fiscais salvos.</span>}
@@ -310,6 +346,112 @@ function SettingsSection({ initial }: { initial: FiscalSettings }) {
       </div>
     </Section>
   );
+}
+
+// ---------- Emissão: teste de comunicação, nota de teste, notas sem confirmação e últimas notas ----------
+
+const STATUS_TONE: Record<string, 'ok' | 'warn' | 'bad' | 'neutral'> = { AUTORIZADA: 'ok', CONTINGENCIA: 'warn', CANCELADA: 'neutral', REJEITADA: 'bad' };
+
+function EmissionSection({ environment, enabled }: { environment: FiscalEnvironment; enabled: boolean }) {
+  const docs = useApiQuery<FiscalDocumentRow[]>(DOCS);
+  const pending = useApiQuery<PendingNfce[]>(PENDING);
+  const ping = useApiMutation<undefined, SefazStatusResult>([]);
+  const testNote = useApiMutation<undefined, NfceEmitResult>([DOCS, PENDING, STATUS]);
+  const resolve = useApiMutation<undefined, NfceEmitResult[]>([DOCS, PENDING]);
+  const [error, setError] = useState<string | null>(null);
+  const hom = environment === 'HOMOLOGACAO';
+
+  const xml = async (d: FiscalDocumentRow) => {
+    setError(null);
+    try {
+      await apiDownload(`/admin/fiscal/documents/${d.id}/xml`, `${d.accessKey}-nfce.xml`);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  };
+
+  return (
+    <Section title={`Emissão — ${hom ? 'homologação (teste, sem valor fiscal)' : 'produção'}`}>
+      <p className="text-sm text-slate-400">
+        {enabled ? 'Emissão ligada: o cupom fiscal pedido no caixa sai na hora.' : 'Emissão desligada: ligue em "Emitir NFC-e direto com a SEFAZ", mais abaixo, depois dos testes.'}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => ping.mutate({ method: 'POST', path: '/admin/fiscal/sefaz-status' })} disabled={ping.isPending}>
+          {ping.isPending ? 'Consultando…' : 'Testar comunicação com a SEFAZ'}
+        </Button>
+        {hom && (
+          <Button variant="primary" onClick={() => testNote.mutate({ method: 'POST', path: '/admin/fiscal/test-note' })} disabled={testNote.isPending}>
+            {testNote.isPending ? 'Emitindo…' : 'Emitir NFC-e de teste'}
+          </Button>
+        )}
+      </div>
+      {ping.data && <Result ok={ping.data.ok} text={`SEFAZ-MG (${ping.data.environment === 'PRODUCAO' ? 'produção' : 'homologação'}): ${ping.data.message}`} />}
+      {testNote.data && <Result ok={testNote.data.status === 'AUTORIZADA'} text={testNote.data.message} />}
+      <ErrorBanner message={error ?? errorMessage(ping.error) ?? errorMessage(testNote.error) ?? errorMessage(resolve.error)} />
+
+      {!!pending.data?.length && (
+        <div className="space-y-2 rounded-lg border border-amber-700 p-3">
+          <p className="text-sm font-medium text-amber-300">Notas sem confirmação da SEFAZ (a internet caiu no envio)</p>
+          <ul className="text-sm text-slate-300">
+            {pending.data.map((p) => (
+              <li key={p.accessKey}>
+                NFC-e {p.number} · {formatBRL(p.totalCents)} · desde {new Date(p.since).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                {p.environment !== environment && <span className="text-slate-500"> (outro ambiente)</span>}
+              </li>
+            ))}
+          </ul>
+          <Button onClick={() => resolve.mutate({ method: 'POST', path: '/admin/fiscal/pending/resolve' })} disabled={resolve.isPending}>
+            {resolve.isPending ? 'Consultando…' : 'Consultar na SEFAZ agora'}
+          </Button>
+          {resolve.data?.map((r, i) => <Result key={i} ok={r.status === 'AUTORIZADA'} text={r.message} />)}
+        </div>
+      )}
+
+      <p className="pt-2 text-sm font-medium text-slate-300">Últimas notas</p>
+      {!docs.data?.length ? (
+        <p className="text-sm text-slate-500">Nenhuma nota emitida ainda.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-slate-500">
+              <tr>
+                <th className="py-1 pr-3">Nº</th>
+                <th className="pr-3">Data</th>
+                <th className="pr-3">Ambiente</th>
+                <th className="pr-3 text-right">Valor</th>
+                <th className="pr-3">Situação</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {docs.data.map((d) => (
+                <tr key={d.id} className="border-t border-slate-800">
+                  <td className="py-1.5 pr-3 tabular-nums">
+                    {d.series}-{d.number}
+                  </td>
+                  <td className="pr-3 whitespace-nowrap">{new Date(d.issuedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}</td>
+                  <td className="pr-3">{d.environment === 'PRODUCAO' ? 'Produção' : 'Homologação'}</td>
+                  <td className="pr-3 text-right tabular-nums">{formatBRL(d.totalCents)}</td>
+                  <td className="pr-3">
+                    <Badge tone={STATUS_TONE[d.status] ?? 'neutral'}>{d.status.toLowerCase()}</Badge>
+                  </td>
+                  <td className="text-right">
+                    <button type="button" className="text-amber-400 hover:underline" onClick={() => xml(d)}>
+                      XML
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function Result({ ok, text }: { ok: boolean; text: string }) {
+  return <p className={`rounded-lg p-3 text-sm ${ok ? 'bg-emerald-950 text-emerald-200' : 'bg-red-950 text-red-200'}`}>{text}</p>;
 }
 
 // ---------- XMLs para a contabilidade ----------

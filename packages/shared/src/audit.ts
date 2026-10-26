@@ -74,6 +74,9 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
   TAXA_SERVICO_DESLIGADA: { label: 'Desligou a taxa de serviço', group: 'CONFIGURACOES', sensitive: true },
 
   REIMPRESSAO: { label: 'Reimprimiu cupom', group: 'IMPRESSAO' },
+  NFCE_AUTORIZADA: { label: 'NFC-e autorizada', group: 'VENDAS' },
+  NFCE_REJEITADA: { label: 'NFC-e rejeitada pela SEFAZ', group: 'VENDAS', sensitive: true },
+  NFCE_SEM_COMUNICACAO: { label: 'NFC-e sem comunicação com a SEFAZ', group: 'VENDAS', sensitive: true },
   PAINEL_REVERTIDO: { label: 'Voltou pedido para o painel da cozinha', group: 'IMPRESSAO' },
 
   TRANSFERENCIA: { label: 'Transferiu comanda de mesa', group: 'VENDAS' },

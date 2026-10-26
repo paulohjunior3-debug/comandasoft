@@ -25,7 +25,7 @@ export interface TestContext {
 }
 
 /** App completo sobre um PostgreSQL em memória (PGlite), com um usuário por perfil. */
-export async function createTestContext(): Promise<TestContext> {
+export async function createTestContext(options: { sefazTransport?: import('../src/fiscal/nfce/sefaz').Transport } = {}): Promise<TestContext> {
   const pg = new PGlite();
   const db = drizzle(pg, { schema, casing: 'snake_case' }) as unknown as Db;
   await migrate(drizzle(pg), { migrationsFolder });
@@ -58,6 +58,7 @@ export async function createTestContext(): Promise<TestContext> {
     webDist: false,
     listInstalledPrinters: async () => installedPrinters,
     printTransport,
+    sefazTransport: options.sefazTransport,
   });
 
   return {

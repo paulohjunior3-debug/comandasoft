@@ -477,7 +477,10 @@ function FinalizeModal({ registerId, info, onClose }: { registerId: string; info
   const fiscal = useMutation({
     mutationFn: () => api<FiscalRequestResult>('/cashier/fiscal-requests', { method: 'POST', body: JSON.stringify({ ...body, cpfOnNote }) }),
   });
-  const fiscalDone = info.fiscalRequested || fiscal.isSuccess;
+  // Resultado da NFC-e: a emitida ao quitar (caixa automático) ou a pedida agora.
+  const result = fiscal.data ?? (info.fiscal ? { id: '', ...info.fiscal } : undefined);
+  const failed = result?.status === 'REJEITADA' || result?.status === 'ERRO_COMUNICACAO';
+  const fiscalDone = (info.fiscalRequested || fiscal.isSuccess) && !failed;
 
   return (
     <Modal
@@ -499,15 +502,24 @@ function FinalizeModal({ registerId, info, onClose }: { registerId: string; info
           {receipt.isSuccess ? 'Cupom enviado ✓ (imprimir de novo)' : 'Imprimir cupom (não fiscal)'}
         </Button>
         <Button className="py-3" onClick={() => fiscal.mutate()} disabled={fiscal.isPending || fiscalDone}>
-          {fiscalDone ? 'Cupom fiscal solicitado ✓' : 'Emitir cupom fiscal'}
+          {fiscal.isPending
+            ? 'Emitindo…'
+            : result?.status === 'AUTORIZADA'
+              ? `NFC-e ${result.number} autorizada ✓`
+              : fiscalDone
+                ? 'Cupom fiscal solicitado ✓'
+                : failed
+                  ? 'Tentar o cupom fiscal de novo'
+                  : 'Emitir cupom fiscal'}
         </Button>
       </div>
       {!fiscalDone && <Toggle label="CPF do cliente na nota (se a comanda tiver CPF)" checked={cpfOnNote} onChange={setCpfOnNote} />}
-      {info.fiscalRequested && <p className="text-sm text-emerald-300">Este caixa pede o cupom fiscal automaticamente.</p>}
-      {fiscalDone && (
-        <p className="text-xs text-slate-500">
-          A emissão da NFC-e é a próxima fase do sistema. O pedido ficou registrado e será emitido quando o módulo fiscal estiver ligado.
-        </p>
+      {info.fiscalRequested && !result && <p className="text-sm text-emerald-300">Este caixa pede o cupom fiscal automaticamente.</p>}
+      {result?.message && (
+        <p className={`rounded-lg p-3 text-sm ${result.status === 'AUTORIZADA' ? 'bg-emerald-950 text-emerald-200' : 'bg-red-950 text-red-200'}`}>{result.message}</p>
+      )}
+      {fiscalDone && result?.status === 'AGUARDANDO_MODULO_FISCAL' && (
+        <p className="text-xs text-slate-500">A emissão direta está desligada (Administração › Fiscal). O pedido ficou registrado.</p>
       )}
     </Modal>
   );

@@ -9,12 +9,15 @@ import { billTicket, enqueueCashierPrint } from '../../lib/cashier-print';
 import { HttpError, notFound } from '../../lib/errors';
 import { getSettings } from '../../lib/settings';
 import { getRegister, requireOpenSession } from './session';
+import { configRow, settingsOf } from '../../fiscal/config';
+import { emitNfce } from '../../fiscal/nfce/emit';
 
 /**
  * Finalização da conta quitada: o caixa escolhe imprimir o cupom não fiscal, pedir o cupom
  * fiscal ou só finalizar (estabelecimentos com dois caixas/maquininhas tratam diferente).
  */
-export async function cashierFinalizeRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+export async function cashierFinalizeRoutes(app: FastifyInstance, deps: AppDeps) {
+  const { db, printWorker } = deps;
   /** Cupom não fiscal (de consumo) das comandas, na impressora do caixa. */
   app.post('/receipts', async (request) => {
     const { registerId, comandaIds } = receiptRequestSchema.parse(request.body);
@@ -55,6 +58,15 @@ export async function cashierFinalizeRoutes(app: FastifyInstance, { db, printWor
       return created!;
     });
     reply.code(201);
-    return { id: row.id, status: 'AGUARDANDO_MODULO_FISCAL' };
+    // Emissão direta ligada (Administração > Fiscal): emite agora e imprime o DANFE no caixa.
+    const fiscal = settingsOf(await configRow(db));
+    if (!fiscal.emissionEnabled) return { id: row.id, status: 'AGUARDANDO_MODULO_FISCAL' };
+    try {
+      const r = await emitNfce(deps, { request, comandaIds: ids, cpfOnNote: input.cpfOnNote, fiscalRequestId: row.id, registerPrinterId: register.printerId });
+      return { id: row.id, status: r.status, message: r.message, number: r.number, accessKey: r.accessKey };
+    } catch (err) {
+      // Configuração incompleta, produto sem NCM...: o pedido fica registrado e o caixa vê o motivo.
+      return { id: row.id, status: 'REJEITADA', message: err instanceof Error ? err.message : 'Não foi possível emitir a NFC-e.' };
+    }
   });
 }
