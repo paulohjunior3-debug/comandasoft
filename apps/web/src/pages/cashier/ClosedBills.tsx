@@ -1,10 +1,20 @@
-import { formatBRL, parseBRL, PAYMENT_METHOD_LABELS, PAYMENT_METHODS, type ClosedBillsResponse, type ClosedTableBill, type PaymentMethod } from '@sistema-bar/shared';
+import {
+  formatBRL,
+  parseBRL,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHODS,
+  type CanceledTableBill,
+  type ClosedBillsResponse,
+  type ClosedTableBill,
+  type PaymentMethod,
+} from '@sistema-bar/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Badge, Button, ErrorBanner, Loading, Modal, TextField } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatTime, maskPhone } from '../../lib/format';
 import { errorMessage } from '../../lib/queries';
+import { RestoreModal } from './RestoreModal';
 import { usePin } from './usePin';
 
 /**
@@ -73,7 +83,65 @@ export function ClosedBills({ registerId }: { registerId?: string }) {
           ))}
         </ul>
       )}
+      {!!list.data?.canceled.length && (
+        <section className="space-y-2 pt-2">
+          <h3 className="text-sm font-semibold tracking-wide text-slate-400 uppercase">Mesas canceladas</h3>
+          <ul className="space-y-2">
+            {list.data.canceled.map((c) => (
+              <CanceledCard key={c.comandaIds.join(',')} table={c} listPath={path} />
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
+  );
+}
+
+/** Mesa cancelada no dia: descancelar volta as comandas abertas, com os itens do cancelamento. */
+function CanceledCard({ table: t, listPath }: { table: CanceledTableBill; listPath: string }) {
+  const qc = useQueryClient();
+  const pin = usePin();
+  const [restoring, setRestoring] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const label = t.tableLabel ?? `Mesa ${t.tableNumber}`;
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-red-900/60 bg-slate-900 p-3 text-sm">
+      <span>
+        <strong>{label}</strong> · {t.customers.join(', ')} · {formatBRL(t.itemsCents)}
+        <span className="block text-xs text-slate-500">
+          Cancelada {dayTime(t.canceledAt)}
+          {t.reason && ` · ${t.reason}`}
+        </span>
+      </span>
+      {notice ? (
+        <span className="text-emerald-400">{notice}</span>
+      ) : (
+        <Button onClick={() => setRestoring(true)}>↩ Descancelar</Button>
+      )}
+      {restoring && (
+        <RestoreModal
+          title={`Descancelar ${label.toLowerCase()}`}
+          description={`As comandas de ${t.customers.join(', ')} voltam abertas, com os itens cancelados junto com a mesa. Pede o PIN do gerente.`}
+          onClose={() => setRestoring(false)}
+          submit={(body) =>
+            pin
+              .run((authorizerPin) =>
+                api<{ restoredItems: number }>('/cashier/comandas/restore', {
+                  method: 'POST',
+                  body: JSON.stringify({ comandaIds: t.comandaIds, ...body, authorizerPin }),
+                }),
+              )
+              .then((r) => {
+                setRestoring(false);
+                setNotice(`${label} aberta de novo, com ${r.restoredItems} item(ns).`);
+                void qc.invalidateQueries({ queryKey: [listPath] });
+                void qc.invalidateQueries({ queryKey: ['/cashier/tables'] });
+              })
+          }
+        />
+      )}
+      {pin.element}
+    </li>
   );
 }
 

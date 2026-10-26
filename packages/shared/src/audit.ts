@@ -36,6 +36,8 @@ export const AUDIT_ACTIONS: Record<string, { label: string; group: AuditGroup; s
 
   ITEM_CANCELADO: { label: 'Cancelou item', group: 'CANCELAMENTOS', sensitive: true },
   COMANDA_CANCELADA: { label: 'Cancelou mesa/comanda', group: 'CANCELAMENTOS', sensitive: true },
+  ITEM_DESCANCELADO: { label: 'Descancelou item', group: 'CANCELAMENTOS', sensitive: true },
+  COMANDA_DESCANCELADA: { label: 'Descancelou mesa/comanda', group: 'CANCELAMENTOS', sensitive: true },
   ESTORNO: { label: 'Estornou pagamento', group: 'CANCELAMENTOS', sensitive: true },
   PAGAMENTO_FORMA_ALTERADA: { label: 'Alterou a forma de pagamento', group: 'CANCELAMENTOS', sensitive: true },
   DESCONTO: { label: 'Deu desconto', group: 'CANCELAMENTOS', sensitive: true },

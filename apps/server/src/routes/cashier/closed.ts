@@ -5,6 +5,7 @@ import {
   closedBillsQuerySchema,
   closedBillsPrintSchema,
   suggestedBusinessDate,
+  type CanceledTableBill,
   type ClosedBillsResponse,
   type ClosedTableBill,
   type ComandaTotals,
@@ -13,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gte, inArray, lte } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
-import { cashRegisters, cashSessions, comandas, diningTables, paymentComandas, payments, printers, users } from '../../db/schema';
+import { cashRegisters, cashSessions, comandas, diningTables, orderItems, orderItemShares, paymentComandas, payments, printers, users } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { authorizeManager } from '../../lib/authorize';
 import { loadBill } from '../../lib/billing';
@@ -29,6 +30,43 @@ import { getRegister } from './session';
  * pedindo, e para corrigir a forma de pagamento lançada errada (ex.: era dinheiro, foi cartão).
  */
 export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorker }: AppDeps) {
+  /** Mesas canceladas no período: as comandas encerradas juntas (mesmo instante) formam uma. */
+  async function canceledTables(from: Date, to: Date, ranges: (readonly [number, number])[]): Promise<CanceledTableBill[]> {
+    const rows = (
+      await db
+        .select({ c: comandas, tableNumber: diningTables.number, isCounter: diningTables.isCounter })
+        .from(comandas)
+        .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+        .where(and(eq(comandas.status, 'CANCELADA'), gte(comandas.closedAt, from), lte(comandas.closedAt, to)))
+    ).filter((r) => ranges.some(([a, b]) => r.c.closedAt!.getTime() >= a && r.c.closedAt!.getTime() <= b));
+    if (!rows.length) return [];
+    const items = await db
+      .select({ comandaId: orderItemShares.comandaId, amountCents: orderItemShares.amountCents, canceledAt: orderItems.canceledAt, reason: orderItems.cancelReason })
+      .from(orderItemShares)
+      .innerJoin(orderItems, eq(orderItems.id, orderItemShares.orderItemId))
+      .where(and(inArray(orderItemShares.comandaId, rows.map((r) => r.c.id)), eq(orderItems.status, 'CANCELADO')));
+    const groups = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const key = `${r.c.tableId}|${r.c.closedAt!.getTime()}`;
+      groups.set(key, [...(groups.get(key) ?? []), r]);
+    }
+    return [...groups.values()]
+      .map((g) => {
+        const at = g[0]!.c.closedAt!;
+        const mine = items.filter((i) => g.some((r) => r.c.id === i.comandaId) && i.canceledAt?.getTime() === at.getTime());
+        return {
+          comandaIds: g.map((r) => r.c.id),
+          tableNumber: g[0]!.tableNumber,
+          tableLabel: g[0]!.isCounter ? 'Balcão' : null,
+          customers: g.map((r) => r.c.customerName),
+          canceledAt: at.toISOString(),
+          reason: mine[0]?.reason ?? null,
+          itemsCents: mine.reduce((s, i) => s + i.amountCents, 0),
+        };
+      })
+      .sort((a, b) => b.canceledAt.localeCompare(a.canceledAt));
+  }
+
   app.get('/closed-comandas', async (request): Promise<ClosedBillsResponse> => {
     const query = closedBillsQuerySchema.parse(request.query);
     // Sem data: o dia do caixa aberto (ou do último que abriu).
@@ -49,7 +87,7 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
       openedAt: r.s.openedAt.toISOString(),
       closedAt: r.s.closedAt?.toISOString() ?? null,
     }));
-    if (sessions.length === 0) return { date, sessions: sessionInfo, bills: [] };
+    if (sessions.length === 0) return { date, sessions: sessionInfo, bills: [], canceled: [] };
     const ranges = sessions.map((s) => [s.openedAt.getTime(), (s.closedAt ?? new Date()).getTime()] as const);
     const from = new Date(Math.min(...ranges.map((r) => r[0])));
     const to = new Date(Math.max(...ranges.map((r) => r[1])));
@@ -61,7 +99,8 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
         .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
         .where(and(eq(comandas.status, 'FECHADA'), gte(comandas.closedAt, from), lte(comandas.closedAt, to)))
     ).filter((r) => ranges.some(([a, b]) => r.c.closedAt!.getTime() >= a && r.c.closedAt!.getTime() <= b));
-    if (rows.length === 0) return { date, sessions: sessionInfo, bills: [] };
+    const canceled = await canceledTables(from, to, ranges);
+    if (rows.length === 0) return { date, sessions: sessionInfo, bills: [], canceled };
 
     const pays = await db
       .select({ p: payments, comandaId: paymentComandas.comandaId, userName: users.name, sessionClosedAt: cashSessions.closedAt })
@@ -121,7 +160,7 @@ export async function cashierClosedRoutes(app: FastifyInstance, { db, printWorke
       flush();
     }
     bills.sort((a, b) => b.closedAt.localeCompare(a.closedAt));
-    return { date, sessions: sessionInfo, bills };
+    return { date, sessions: sessionInfo, bills, canceled };
   });
 
   /** Reimprime o descritivo (cupom de consumo) de uma conta fechada, marcado como reimpressão. */

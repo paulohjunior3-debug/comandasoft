@@ -530,6 +530,19 @@ export interface ClosedBillsResponse {
   /** Caixas desse dia do movimento: de quando a quando (closedAt null = ainda aberto). */
   sessions: { registerName: string; openedAt: string; closedAt: string | null }[];
   bills: ClosedTableBill[];
+  /** Mesas (comandas) canceladas no dia do movimento: dá para descancelar. */
+  canceled: CanceledTableBill[];
+}
+
+export interface CanceledTableBill {
+  comandaIds: string[];
+  tableNumber: number;
+  tableLabel: string | null;
+  customers: string[];
+  canceledAt: string;
+  reason: string | null;
+  /** Valor dos itens cancelados junto com a mesa. */
+  itemsCents: number;
 }
 
 /** Cancelar item lançado (SPEC 4): todo ou parte da quantidade, com motivo e PIN de gerente/admin. */
@@ -547,6 +560,19 @@ export const cancelComandasSchema = z.object({
   authorizerPin,
 });
 export type CancelComandasInput = z.infer<typeof cancelComandasSchema>;
+
+/** Descancelar item cancelado por engano (PIN de gerente); resend = mandar de novo à cozinha/bar. */
+export const restoreItemSchema = z.object({ reason, authorizerPin, resend: z.boolean().default(true) });
+export type RestoreItemInput = z.input<typeof restoreItemSchema>;
+
+/** Descancelar a mesa: as comandas canceladas voltam a ficar abertas, com os itens cancelados junto. */
+export const restoreComandasSchema = z.object({
+  comandaIds: z.array(z.string().uuid()).min(1, 'Escolha ao menos uma comanda').max(50),
+  reason,
+  authorizerPin,
+  resend: z.boolean().default(true),
+});
+export type RestoreComandasInput = z.input<typeof restoreComandasSchema>;
 
 /**
  * Mover item lançado na comanda errada: para outra comanda da mesa ou de outra mesa, inteiro
