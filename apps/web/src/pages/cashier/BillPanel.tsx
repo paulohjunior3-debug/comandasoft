@@ -26,6 +26,7 @@ const formatDayTime = (iso: string) =>
 import { errorMessage } from '../../lib/queries';
 import { LaunchItemsModal, MoveItemModal, OpenTableModal } from './CashierActions';
 import { EditComandaModal } from './EditComandaModal';
+import { RestoreModal } from './RestoreModal';
 import { kbdClass, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
 
@@ -123,6 +124,7 @@ export function BillPanel({
   const [selected, setSelected] = useState<string[]>(() => preselect ?? table.comandas.map((c) => c.id));
   const [modal, setModal] = useState<'DESCONTO' | 'TAXA_SERVICO_REMOVIDA' | 'COUVERT_REMOVIDO' | null>(null);
   const [canceling, setCanceling] = useState<BillItem | null>(null);
+  const [restoring, setRestoring] = useState<BillItem | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [addingComanda, setAddingComanda] = useState(false);
@@ -284,7 +286,7 @@ export function BillPanel({
         <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
           <div className="space-y-4">
             {b.comandas.map((c) => (
-              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onMoveItem={setMoving} onEdit={() => setEditingComanda(c)} />
+              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onRestoreItem={setRestoring} onMoveItem={setMoving} onEdit={() => setEditingComanda(c)} />
             ))}
 
             {b.adjustments.length > 0 && (
@@ -487,6 +489,27 @@ export function BillPanel({
           }
         />
       )}
+      {restoring && (
+        <RestoreModal
+          title={`Descancelar ${restoring.qty}× ${restoring.productName}`}
+          description="O item volta para a conta. Pede o PIN do gerente e fica na auditoria."
+          onClose={() => setRestoring(null)}
+          submit={(body) =>
+            pin
+              .run((authorizerPin) =>
+                api<{ sent: boolean }>(`/cashier/order-items/${restoring.orderItemId}/restore`, {
+                  method: 'POST',
+                  body: JSON.stringify({ ...body, authorizerPin }),
+                }),
+              )
+              .then((r) => {
+                refresh();
+                setRestoring(null);
+                setNotice(`${restoring.qty}× ${restoring.productName} descancelado.${r.sent ? ' Enviado de novo para o setor.' : ''}`);
+              })
+          }
+        />
+      )}
       {editingComanda && (
         <EditComandaModal
           comanda={editingComanda}
@@ -507,12 +530,14 @@ function ComandaBlock({
   comanda: c,
   bill,
   onCancelItem,
+  onRestoreItem,
   onMoveItem,
   onEdit,
 }: {
   comanda: BillComanda;
   bill: Bill;
   onCancelItem: (item: BillItem) => void;
+  onRestoreItem: (item: BillItem) => void;
   onMoveItem: (item: BillItem) => void;
   onEdit: () => void;
 }) {
@@ -560,6 +585,15 @@ function ComandaBlock({
               )}
             </span>
             <span className={i.canceled ? 'line-through' : ''}>{formatBRL(i.amountCents)}</span>
+            {open && i.canceled && (
+              <button
+                onClick={() => onRestoreItem(i)}
+                className="rounded px-2 py-0.5 text-xs text-emerald-300 hover:bg-emerald-950"
+                title="Cancelou errado? Volta o item para a conta (pede o PIN do gerente)."
+              >
+                Descancelar
+              </button>
+            )}
             {open && !i.canceled && i.paidCents === 0 && (
               <button
                 onClick={() => onMoveItem(i)}

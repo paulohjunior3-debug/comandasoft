@@ -30,7 +30,8 @@ interface CartLine {
 
 /**
  * Lançamento (SPEC 5.3): escolher comanda(s) → navegar/buscar no cardápio → quantidade e
- * observação → revisar → Enviar. Várias comandas = itens rateados igualmente entre elas.
+ * observação → revisar → Enviar. Uma comanda por vez; dividir entre várias (itens rateados
+ * igualmente) só ligando "Dividir entre várias" e confirmando na revisão, para não ratear sem querer.
  */
 export function OrderPage() {
   const { tableId } = useParams<{ tableId: string }>();
@@ -50,6 +51,8 @@ export function OrderPage() {
   const [cart, setCart] = useState<CartLine[]>([]);
   const [reviewing, setReviewing] = useState(false);
   const [newComanda, setNewComanda] = useState(false);
+  // Modo dividir: só nele um toque soma comandas; fora dele o toque troca a comanda escolhida.
+  const [splitMode, setSplitMode] = useState(false);
 
   // Comandas do servidor + abertas offline. A seleção usa o clientUuid, que o servidor também aceita.
   const comandas = (
@@ -89,9 +92,15 @@ export function OrderPage() {
 
   const toggleComanda = (id: string) =>
     setSelected((s) => {
+      if (!splitMode) return [id];
       const base = s.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : s;
       return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
     });
+  const toggleSplit = () => {
+    // Saindo do modo dividir: fica só a primeira comanda escolhida.
+    if (splitMode) setSelected((s) => s.slice(0, 1));
+    setSplitMode(!splitMode);
+  };
 
   if (!table.data || !menu.data) {
     return (
@@ -112,9 +121,21 @@ export function OrderPage() {
       {/* Para quem */}
       <section className="border-b border-slate-800 px-4 py-3">
         <div className="mx-auto max-w-3xl">
-          <p className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">
-            Para quem {effectiveSelected.length > 1 && <span className="text-amber-400 normal-case">· rateado entre {effectiveSelected.length}</span>}
-          </p>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
+              Para quem {effectiveSelected.length > 1 && <span className="text-amber-400 normal-case">· dividido entre {effectiveSelected.length}</span>}
+            </p>
+            {comandas.length > 1 && (
+              <button
+                onClick={toggleSplit}
+                aria-pressed={splitMode}
+                className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs ${splitMode ? 'border-amber-500 bg-amber-500/15 text-amber-300' : 'border-slate-700 text-slate-400'}`}
+              >
+                {splitMode ? '✓ Dividindo — toque para sair' : 'Dividir entre várias'}
+              </button>
+            )}
+          </div>
+          {splitMode && <p className="mb-2 text-xs text-amber-300">Toque em cada comanda que vai dividir os itens deste pedido.</p>}
           <div className="flex gap-2 overflow-x-auto pb-1">
             {comandas.map((c) => {
               const on = effectiveSelected.includes(c.id);
@@ -203,7 +224,11 @@ export function OrderPage() {
       {itemCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-950/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <Button variant="primary" className="mx-auto flex w-full max-w-3xl justify-between py-3.5 text-base" onClick={() => setReviewing(true)}>
-            <span>Revisar pedido · {itemCount} {itemCount === 1 ? 'item' : 'itens'}</span>
+            <span className="min-w-0 truncate text-left">
+              Revisar · {itemCount} {itemCount === 1 ? 'item' : 'itens'}
+              {effectiveSelected.length === 1 && ` · ${comandas.find((c) => c.id === effectiveSelected[0])?.customerName ?? ''}`}
+              {effectiveSelected.length > 1 && ` · dividido entre ${effectiveSelected.length}`}
+            </span>
             <span>{formatBRL(total)}</span>
           </Button>
         </div>
@@ -228,7 +253,7 @@ export function OrderPage() {
           onClose={() => setNewComanda(false)}
           onCreated={(c) => {
             setNewComanda(false);
-            setSelected((s) => [...(s.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : s), c.clientUuid]);
+            setSelected((s) => (splitMode ? [...(s.length === 0 && comandas.length === 1 ? [comandas[0]!.id] : s), c.clientUuid] : [c.clientUuid]));
           }}
         />
       )}
@@ -258,6 +283,9 @@ function ReviewModal({
   const [clientUuid] = useState(() => crypto.randomUUID());
   const [createdAtDevice] = useState(() => new Date().toISOString());
   const [takeaway, setTakeaway] = useState(false);
+  // Várias comandas: o garçom confirma que é para dividir (evita ratear por um toque errado).
+  const [splitOk, setSplitOk] = useState(false);
+  const needsSplitOk = comandaIds.length > 1 && !splitOk;
   const send = useMutation({
     mutationFn: async () => {
       const body = {
@@ -304,18 +332,28 @@ function ReviewModal({
       footer={
         <>
           <Button onClick={onClose}>Voltar</Button>
-          <Button variant="primary" onClick={submit} disabled={send.isPending || comandaIds.length === 0 || cart.length === 0}>
+          <Button variant="primary" onClick={submit} disabled={send.isPending || comandaIds.length === 0 || cart.length === 0 || needsSplitOk}>
             {send.isPending ? 'Enviando…' : `Enviar · ${formatBRL(total)}`}
           </Button>
         </>
       }
     >
       <ErrorBanner message={comandaIds.length === 0 ? 'Escolha para quem é o pedido.' : errorMessage(send.error)} />
-      {comandaIds.length > 0 && (
+      {comandaIds.length === 1 && (
         <p className="text-sm text-slate-300">
-          Para <strong>{comandaNames.join(', ')}</strong>
-          {comandaIds.length > 1 && <span className="text-amber-400"> (dividido igualmente)</span>}
+          Para <strong>{comandaNames[0]}</strong>
         </p>
+      )}
+      {comandaIds.length > 1 && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-amber-600 bg-amber-950/40 p-3 text-sm">
+          <input type="checkbox" checked={splitOk} onChange={(e) => setSplitOk(e.target.checked)} className="mt-0.5 size-5 accent-amber-500" />
+          <span>
+            <strong className="text-amber-300">Dividir entre {comandaIds.length} comandas?</strong>
+            <span className="block text-slate-300">
+              Cada item deste pedido fica rateado igualmente entre <strong>{comandaNames.join(', ')}</strong>. Marque para confirmar.
+            </span>
+          </span>
+        </label>
       )}
       <TakeawayButton checked={takeaway} onChange={setTakeaway} />
       <ul className="space-y-3">
