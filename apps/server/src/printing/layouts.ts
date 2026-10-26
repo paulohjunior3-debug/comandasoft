@@ -28,6 +28,7 @@ function production(t: ProductionTicket): Block[] {
     { kind: 'text', text: t.customers.join(', ').toUpperCase(), align: 'center', size: 'tall', bold: true },
     { kind: 'text', text: `${t.waiter} · ${hour(t.createdAt)} · #${t.orderRef}`, align: 'center' },
   ];
+  if (t.notice) blocks.push({ kind: 'text', text: `*** ${t.notice} ***`, align: 'center', bold: true, size: 'tall' });
   if (t.takeaway) blocks.push({ kind: 'text', text: '*** PARA VIAGEM ***', align: 'center', bold: true, size: 'big' });
   if (t.reprint) blocks.push({ kind: 'text', text: '*** REIMPRESSÃO ***', align: 'center', bold: true, size: 'tall' });
   blocks.push({ kind: 'rule' });

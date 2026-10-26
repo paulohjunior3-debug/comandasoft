@@ -1,5 +1,5 @@
-import type { MyOrder } from '@sistema-bar/shared';
-import { useQuery } from '@tanstack/react-query';
+import type { MyOrder, OrderTakeawayResult } from '@sistema-bar/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Badge, ErrorBanner, Loading } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -69,7 +69,10 @@ export function MyOrdersPage() {
                 </span>
                 <span className="shrink-0 text-sm text-slate-400">{formatTime(o.receivedAt)}</span>
               </div>
-              {o.takeaway && <Badge tone="warn">Para viagem</Badge>}
+              <div className="mt-1 flex items-center gap-2">
+                {o.takeaway && <Badge tone="warn">Para viagem</Badge>}
+                <TakeawayToggle orderId={o.id} takeaway={o.takeaway} />
+              </div>
               <ul className="mt-1.5 space-y-0.5 text-sm">
                 {o.items.map((i, n) => (
                   <li key={n} className={i.canceled ? 'text-slate-500 line-through' : ''}>
@@ -84,5 +87,28 @@ export function MyOrdersPage() {
         )}
       </main>
     </div>
+  );
+}
+
+/** Esqueceu de marcar para viagem: muda o lançamento já enviado (a cozinha/bar é avisada). */
+function TakeawayToggle({ orderId, takeaway }: { orderId: string; takeaway: boolean }) {
+  const qc = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: () => api<OrderTakeawayResult>(`/waiter/orders/${orderId}/takeaway`, { method: 'POST', body: JSON.stringify({ takeaway: !takeaway }) }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['/waiter/orders/mine'] }),
+    onError: (err) => alert(errorMessage(err)),
+  });
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault(); // o cartão é um link para a mesa
+        if (!takeaway || confirm('Este pedido não é mais para viagem?')) toggle.mutate();
+      }}
+      disabled={toggle.isPending}
+      className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs text-slate-300 active:bg-slate-800"
+    >
+      {toggle.isPending ? 'Salvando…' : takeaway ? 'Desmarcar viagem' : '🥡 Marcar para viagem'}
+    </button>
   );
 }

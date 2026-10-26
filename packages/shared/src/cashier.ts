@@ -306,6 +306,9 @@ export const billRequestSchema = z.object({
 
 export interface BillItem {
   orderItemId: string;
+  /** Lançamento (pedido) do item e se foi marcado para viagem. */
+  orderId: string;
+  takeaway: boolean;
   comandaId: string;
   productName: string;
   qty: number;

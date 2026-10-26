@@ -22,6 +22,8 @@ export interface ProductionTicket {
   takeaway?: boolean;
   /** Marcado nas reimpressões para a cozinha não preparar de novo. */
   reprint?: boolean;
+  /** Aviso de alteração de um pedido já impresso (ex.: "AGORA É PARA VIAGEM"). */
+  notice?: string;
 }
 
 /** Aviso ao setor (bar, cozinha) de que um item lançado foi cancelado: não preparar. */

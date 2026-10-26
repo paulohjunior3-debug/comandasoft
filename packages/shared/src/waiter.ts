@@ -151,6 +151,17 @@ export const editComandaSchema = z
   .refine((v) => v.customerName !== undefined || v.phone !== undefined, 'Nada para alterar.');
 export type EditComandaInput = z.input<typeof editComandaSchema>;
 
+/** Quantidade de pessoas da comanda (esqueceu na abertura). Diminuir pede PIN de gerente (mexe no couvert). */
+export const peopleCountSchema = z.object({
+  peopleCount: z.number().int().min(1, 'Ao menos 1 pessoa').max(30, 'Máximo de 30 pessoas'),
+  authorizerPin: z.string().regex(/^\d{4,6}$/, 'PIN inválido').optional(),
+});
+export type PeopleCountInput = z.input<typeof peopleCountSchema>;
+
+/** Marcar (ou desmarcar) um lançamento já enviado como para viagem. */
+export const orderTakeawaySchema = z.object({ takeaway: z.boolean() });
+export type OrderTakeawayResult = { orderId: string; takeaway: boolean; changed: boolean; notified: number };
+
 export const createOrderSchema = z.object({
   clientUuid,
   tableId: z.string().uuid(),

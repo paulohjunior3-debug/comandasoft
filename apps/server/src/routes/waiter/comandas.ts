@@ -1,4 +1,4 @@
-import { editComandaSchema, openComandaSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem, type ComandaTotals } from '@sistema-bar/shared';
+import { editComandaSchema, openComandaSchema, peopleCountSchema, WAITER_ERRORS, type ComandaDetail, type ComandaItem, type ComandaTotals } from '@sistema-bar/shared';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
@@ -234,6 +234,38 @@ export async function waiterComandaRoutes(app: FastifyInstance, { db, cpf }: App
       if (pg?.code === '23505' && pg.constraint === 'comandas_open_name_per_table_unique') throw duplicateName(name, row.tableNumber);
       throw err;
     }
+    return summaryOf(c.id);
+  });
+
+  /**
+   * Pessoas da comanda (esqueceu de pôr na abertura): o couvert do dia é recalculado na conta.
+   * Aumentar: qualquer um; diminuir: gerente/admin, ou com o PIN de um gerente. Fica na auditoria.
+   */
+  app.post('/:id/people', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+    const { id: ref } = idParams.parse(request.params);
+    const input = peopleCountSchema.parse(request.body);
+    const [row] = await db
+      .select({ c: comandas, tableNumber: diningTables.number })
+      .from(comandas)
+      .innerJoin(diningTables, eq(diningTables.id, comandas.tableId))
+      .where(or(eq(comandas.id, ref), eq(comandas.clientUuid, ref)));
+    if (!row) throw notFound('Comanda');
+    const c = row.c;
+    if (!(OPEN_STATUSES as readonly string[]).includes(c.status)) {
+      throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_OPEN, 'Esta comanda já foi encerrada.');
+    }
+    if (input.peopleCount === c.peopleCount) return summaryOf(c.id);
+    const authorizer = input.peopleCount < c.peopleCount ? await authorizeManager(db, request, input.authorizerPin) : null;
+    await db.transaction(async (tx) => {
+      await tx.update(comandas).set({ peopleCount: input.peopleCount }).where(eq(comandas.id, c.id));
+      await audit(tx, request, {
+        action: 'COMANDA_PESSOAS',
+        entity: 'comanda',
+        entityId: c.id,
+        before: { peopleCount: c.peopleCount },
+        after: { peopleCount: input.peopleCount, customerName: c.customerName, table: row.tableNumber, authorizedBy: authorizer?.name },
+      });
+    });
     return summaryOf(c.id);
   });
 
