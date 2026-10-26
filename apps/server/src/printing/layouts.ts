@@ -1,6 +1,6 @@
 import type { Block } from '@sistema-bar/escpos';
 import { formatBRL } from '@sistema-bar/shared';
-import type { BillTicket, CancelTicket, CashTicket, CompanyHeader, ProductionTicket, TestTicket, TicketPayload } from './tickets';
+import type { BillTicket, CancelTicket, CashTicket, CompanyHeader, NfceTicket, ProductionTicket, TestTicket, TicketPayload } from './tickets';
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString('pt-BR', {
@@ -37,6 +37,64 @@ function production(t: ProductionTicket): Block[] {
   }
   blocks.push({ kind: 'rule' }, { kind: 'feed', lines: 1 });
   return blocks;
+}
+
+/** Chave de acesso em grupos de 4 (como no DANFE). */
+const groups4 = (key: string) => key.replace(/(\d{4})(?=\d)/g, '$1 ');
+const cnpjMask = (v: string) => v.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+const qtyText = (q: number) => (Number.isInteger(q) ? String(q) : q.toFixed(3).replace('.', ','));
+const fullDate = (iso: string) =>
+  new Date(iso).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+/**
+ * DANFE NFC-e (Manual de Especificações do DANFE NFC-e): emitente, itens, totais, pagamento,
+ * consulta pela chave, consumidor, número/série/protocolo e o QR Code.
+ */
+function nfce(t: NfceTicket): Block[] {
+  const b: Block[] = [
+    { kind: 'text', text: t.emitter.legalName, align: 'center', bold: true },
+    { kind: 'text', text: `CNPJ ${cnpjMask(t.emitter.cnpj)}  IE ${t.emitter.ie}`, align: 'center' },
+    { kind: 'text', text: t.emitter.address, align: 'center' },
+    { kind: 'rule' },
+    { kind: 'text', text: 'DANFE NFC-e - Documento Auxiliar da Nota Fiscal de Consumidor Eletrônica', align: 'center', bold: true },
+  ];
+  if (t.homologacao) b.push({ kind: 'text', text: 'EMITIDA EM AMBIENTE DE HOMOLOGAÇÃO - SEM VALOR FISCAL', align: 'center', bold: true });
+  if (t.reprint) b.push({ kind: 'text', text: '*** 2ª VIA ***', align: 'center', bold: true });
+  b.push({ kind: 'rule' }, { kind: 'text', text: 'Cód  Descrição   Qtd  Un  Vl unit  Vl total', bold: true });
+  for (const i of t.items) {
+    b.push({ kind: 'text', text: `${i.code} ${i.name}` });
+    b.push({ kind: 'pair', left: `   ${qtyText(i.qty)} ${i.unit} x ${money(i.unitCents)}`, right: money(i.totalCents) });
+  }
+  b.push(
+    { kind: 'rule' },
+    { kind: 'pair', left: 'Qtde. total de itens', right: String(t.items.length) },
+    { kind: 'pair', left: 'Valor total R$', right: money(t.itemsCents) },
+  );
+  if (t.discountCents) b.push({ kind: 'pair', left: 'Desconto R$', right: money(t.discountCents) });
+  b.push({ kind: 'pair', left: 'Valor a pagar R$', right: money(t.totalCents), bold: true }, { kind: 'pair', left: 'FORMA DE PAGAMENTO', right: 'VALOR PAGO R$' });
+  for (const p of t.payments) b.push({ kind: 'pair', left: p.label, right: money(p.amountCents) });
+  if (t.changeCents) b.push({ kind: 'pair', left: 'Troco R$', right: money(t.changeCents) });
+  b.push(
+    { kind: 'rule' },
+    { kind: 'text', text: 'Consulte pela Chave de Acesso em', align: 'center' },
+    { kind: 'text', text: t.urlChave, align: 'center' },
+    { kind: 'text', text: groups4(t.accessKey), align: 'center' },
+    { kind: 'rule' },
+    {
+      kind: 'text',
+      text: t.cpf ? `CONSUMIDOR CPF: ${t.cpf.slice(0, 3)}.***.***-${t.cpf.slice(-2)}` : 'CONSUMIDOR NÃO IDENTIFICADO',
+      align: 'center',
+    },
+    { kind: 'text', text: `NFC-e nº ${String(t.number).padStart(9, '0')}  Série ${String(t.series).padStart(3, '0')}  ${fullDate(t.issuedAt)}`, align: 'center' },
+  );
+  if (t.protocol) {
+    b.push({ kind: 'text', text: `Protocolo de autorização: ${t.protocol}`, align: 'center' });
+    if (t.authorizedAt) b.push({ kind: 'text', text: `Data de autorização: ${fullDate(t.authorizedAt)}`, align: 'center' });
+  }
+  b.push({ kind: 'qr', data: t.qrCode, size: 5 });
+  if (t.homologacao) b.push({ kind: 'text', text: 'SEM VALOR FISCAL', align: 'center', bold: true });
+  b.push({ kind: 'text', text: 'Tributos totais incidentes (Lei Federal 12.741/2012): R$ 0,00', align: 'center' }, { kind: 'feed', lines: 1 });
+  return b;
 }
 
 /** Cancelamento (SPEC 5.5): o setor para de preparar o item. Bem chamativo, para não passar batido. */
@@ -202,6 +260,8 @@ export function ticketBlocks(payload: TicketPayload): Block[] {
       return cash(payload);
     case 'GAVETA':
       return [];
+    case 'NFCE':
+      return nfce(payload);
   }
 }
 
@@ -222,5 +282,7 @@ export function describeTicket(payload: TicketPayload): string {
       const items = payload.items.reduce((s, i) => s + i.qty, 0);
       return `${placeShort(payload)} · ${payload.customers.join(', ')} · ${items} ${items === 1 ? 'item' : 'itens'}`;
     }
+    case 'NFCE':
+      return `NFC-e ${payload.number}${payload.homologacao ? ' (homologação)' : ''} · ${money(payload.totalCents)}`;
   }
 }

@@ -115,4 +115,28 @@ export interface DrawerTicket {
   reprint?: boolean;
 }
 
-export type TicketPayload = ProductionTicket | CancelTicket | TestTicket | BillTicket | CashTicket | DrawerTicket;
+/** DANFE NFC-e: o cupom fiscal impresso, com a chave de acesso e o QR Code da consulta. */
+export interface NfceTicket {
+  kind: 'NFCE';
+  homologacao: boolean;
+  emitter: { legalName: string; cnpj: string; ie: string; address: string };
+  items: { code: string; name: string; qty: number; unit: string; unitCents: number; totalCents: number }[];
+  itemsCents: number;
+  discountCents: number;
+  totalCents: number;
+  payments: { label: string; amountCents: number }[];
+  changeCents: number;
+  /** CPF do consumidor (só os 3 primeiros e 2 últimos dígitos aparecem no papel). */
+  cpf: string | null;
+  series: number;
+  number: number;
+  issuedAt: string;
+  accessKey: string;
+  protocol: string | null;
+  authorizedAt: string | null;
+  qrCode: string;
+  urlChave: string;
+  reprint?: boolean;
+}
+
+export type TicketPayload = ProductionTicket | CancelTicket | TestTicket | BillTicket | CashTicket | DrawerTicket | NfceTicket;

@@ -1,7 +1,7 @@
 import { formatBRL, PAYMENT_METHOD_LABELS, type Bill, type Settings } from '@sistema-bar/shared';
 import { and, eq } from 'drizzle-orm';
 import { printers, printJobs } from '../db/schema';
-import type { BillTicket, CashTicket, CompanyHeader, DrawerTicket } from '../printing/tickets';
+import type { BillTicket, CashTicket, CompanyHeader, DrawerTicket, NfceTicket } from '../printing/tickets';
 import type { Queryable } from './billing';
 
 export const companyOf = (s: Settings): CompanyHeader => ({
@@ -12,9 +12,9 @@ export const companyOf = (s: Settings): CompanyHeader => ({
   footer: s.receiptFooter,
 });
 
-type CashierPayload = BillTicket | CashTicket | DrawerTicket;
+type CashierPayload = BillTicket | CashTicket | DrawerTicket | NfceTicket;
 
-const JOB_TYPE = { CONTA: 'PRE_CONTA', CAIXA: 'CAIXA', GAVETA: 'GAVETA' } as const;
+const JOB_TYPE = { CONTA: 'PRE_CONTA', CAIXA: 'CAIXA', GAVETA: 'GAVETA', NFCE: 'DANFE' } as const;
 
 /**
  * Coloca um cupom na fila da impressora do caixa: a do próprio caixa (Caixa Carlos tem a sua),

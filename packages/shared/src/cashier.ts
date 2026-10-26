@@ -437,6 +437,8 @@ export interface CreatePaymentResult {
   fiscalMode: FiscalMode;
   /** true quando o cupom fiscal já foi pedido automaticamente (caixa em modo AUTOMATICO). */
   fiscalRequested: boolean;
+  /** Emissão direta ligada: resultado da NFC-e emitida automaticamente. */
+  fiscal?: Omit<FiscalRequestResult, 'id'>;
 }
 
 // ---------- Finalização da conta ----------
@@ -460,7 +462,11 @@ export const fiscalRequestSchema = z.object({
 
 export interface FiscalRequestResult {
   id: string;
-  status: 'AGUARDANDO_MODULO_FISCAL';
+  /** Sem a emissão ligada: fica registrado. Com ela: o resultado da NFC-e. */
+  status: 'AGUARDANDO_MODULO_FISCAL' | 'AUTORIZADA' | 'REJEITADA' | 'ERRO_COMUNICACAO';
+  message?: string;
+  number?: number;
+  accessKey?: string;
 }
 
 export const refundPaymentSchema = z.object({ reason, authorizerPin });

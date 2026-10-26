@@ -94,6 +94,8 @@ export interface FinalizeInfo {
   changeCents: number;
   fiscalMode: CreatePaymentResult['fiscalMode'];
   fiscalRequested: boolean;
+  /** NFC-e emitida automaticamente (caixa em modo automático com a emissão ligada). */
+  fiscal?: CreatePaymentResult['fiscal'];
 }
 
 /**
@@ -372,6 +374,7 @@ export function BillPanel({
                       changeCents: r.changeCents,
                       fiscalMode: r.fiscalMode,
                       fiscalRequested: r.fiscalRequested,
+                      fiscal: r.fiscal,
                     });
                   } else {
                     setNotice((r.changeCents ? `Troco: ${formatBRL(r.changeCents)}. ` : '') + 'Pagamento registrado.');

@@ -25,7 +25,7 @@ export interface TestContext {
 }
 
 /** App completo sobre um PostgreSQL em memória (PGlite), com um usuário por perfil. */
-export async function createTestContext(options: Pick<BuildAppOptions, 'license'> = {}): Promise<TestContext> {
+export async function createTestContext(options: Pick<BuildAppOptions, 'license' | 'sefazTransport'> = {}): Promise<TestContext> {
   const pg = new PGlite();
   const db = drizzle(pg, { schema, casing: 'snake_case' }) as unknown as Db;
   await migrate(drizzle(pg), { migrationsFolder });

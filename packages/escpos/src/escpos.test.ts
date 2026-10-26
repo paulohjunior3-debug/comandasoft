@@ -57,3 +57,15 @@ describe('layout', () => {
     expect(has(renderEscPos([], profile))).toBe(false);
   });
 });
+
+describe('QR Code', () => {
+  it('gera o comando GS ( k com os dados e aparece como quadro na prévia', () => {
+    const url = 'https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml?p=123|2|2|1|abc';
+    const bytes = [...renderEscPos([{ kind: 'qr', data: url }], { widthMm: 80, codepage: 'CP860', cut: false })];
+    const store = [0x1d, 0x28, 0x6b, (url.length + 3) & 0xff, (url.length + 3) >> 8, 0x31, 0x50, 0x30];
+    const at = bytes.findIndex((_, i) => store.every((v, j) => bytes[i + j] === v));
+    expect(at).toBeGreaterThan(0);
+    expect(Buffer.from(bytes.slice(at + store.length, at + store.length + url.length)).toString('ascii')).toBe(url);
+    expect(renderText([{ kind: 'qr', data: url }], 80)).toContain('QR CODE');
+  });
+});

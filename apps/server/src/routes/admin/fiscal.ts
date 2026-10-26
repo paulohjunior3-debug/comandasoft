@@ -1,58 +1,31 @@
 import {
   certificateUploadSchema,
   cscInputSchema,
-  DEFAULT_FISCAL_SETTINGS,
   fiscalMonthSchema,
   fiscalSettingsSchema,
   productFiscalBulkSchema,
   type CertificateInfo,
+  type FiscalDocumentRow,
   type FiscalMonthSummary,
-  type FiscalSettings,
   type FiscalStatus,
+  type NfceEmitResult,
+  type PendingNfce,
+  type SefazStatusResult,
   type ProductFiscalRow,
 } from '@sistema-bar/shared';
-import { and, asc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import { strToU8, zipSync } from 'fflate';
 import type { AppDeps } from '../../app';
-import type { Db } from '../../db/client';
-import { categories, fiscalConfig, fiscalDocuments, products } from '../../db/schema';
+import { categories, fiscalDocuments, products } from '../../db/schema';
 import { parsePfx } from '../../fiscal/certificate';
+import { certificateOf, configRow, cscKeyOf, HOMOLOGACAO, settingsOf, upsertConfig } from '../../fiscal/config';
+import { emitNfce, nfceMissing, pendingNotes, resolvePendingNotes, sefazStatus } from '../../fiscal/nfce/emit';
 import { audit } from '../../lib/audit';
 import { HttpError } from '../../lib/errors';
 
-const KEY = 'main';
-const DAY = 24 * 60 * 60 * 1000;
-
-async function configRow(db: Db) {
-  const [row] = await db.select().from(fiscalConfig).where(eq(fiscalConfig.key, KEY));
-  return row ?? null;
-}
-
-function settingsOf(row: Awaited<ReturnType<typeof configRow>>): FiscalSettings {
-  const parsed = fiscalSettingsSchema.safeParse({ ...DEFAULT_FISCAL_SETTINGS, ...((row?.data as object | undefined) ?? {}) });
-  return parsed.success ? parsed.data : DEFAULT_FISCAL_SETTINGS;
-}
-
-function certificateOf(row: Awaited<ReturnType<typeof configRow>>): CertificateInfo | null {
-  if (!row?.certPfxEnc || !row.certValidUntil || !row.certValidFrom || !row.certUploadedAt) return null;
-  return {
-    subject: row.certSubject ?? '',
-    cnpj: row.certCnpj,
-    validFrom: row.certValidFrom.toISOString(),
-    validUntil: row.certValidUntil.toISOString(),
-    uploadedAt: row.certUploadedAt.toISOString(),
-    daysLeft: Math.floor((row.certValidUntil.getTime() - Date.now()) / DAY),
-  };
-}
-
-/** Grava (cria ou atualiza) a linha única da configuração fiscal. */
-async function upsert(db: Pick<Db, 'insert'>, values: Partial<typeof fiscalConfig.$inferInsert> & { data?: unknown }) {
-  await db
-    .insert(fiscalConfig)
-    .values({ key: KEY, data: values.data ?? DEFAULT_FISCAL_SETTINGS, ...values })
-    .onConflictDoUpdate({ target: fiscalConfig.key, set: values });
-}
+const upsert = upsertConfig;
 
 /** Mês "AAAA-MM" em Brasília → intervalo UTC. */
 function monthRange(month: string) {
@@ -66,7 +39,8 @@ function monthRange(month: string) {
  * Admin → Fiscal (SPEC 5.8): preparação da NFC-e. Dados do emitente, CSC e certificado A1
  * (cifrados), dados fiscais dos produtos e os XMLs das notas para a contabilidade.
  */
-export async function fiscalRoutes(app: FastifyInstance, { db, secrets }: AppDeps) {
+export async function fiscalRoutes(app: FastifyInstance, deps: AppDeps) {
+  const { db, secrets } = deps;
   app.get('/status', async (): Promise<FiscalStatus> => {
     const row = await configRow(db);
     const settings = settingsOf(row);
@@ -83,7 +57,12 @@ export async function fiscalRoutes(app: FastifyInstance, { db, secrets }: AppDep
     const readiness = [
       { key: 'emitente', label: 'Razão social, CNPJ e inscrição estadual', ok: Boolean(settings.legalName && settings.cnpj && settings.stateRegistration) },
       { key: 'endereco', label: 'Endereço completo com código IBGE do município', ok: addressOk },
-      { key: 'csc', label: 'CSC da NFC-e (SEFAZ)', ok: Boolean(row?.cscTokenEnc), hint: 'Gerado no credenciamento da NFC-e na SEFAZ.' },
+      {
+        key: 'csc',
+        label: `CSC da NFC-e (${settings.environment === 'PRODUCAO' ? 'produção' : 'homologação'})`,
+        ok: Boolean((await configRow(db, cscKeyOf(settings.environment)))?.cscTokenEnc),
+        hint: 'Gerado no portal da SEFAZ-MG; o de homologação é outro.',
+      },
       {
         key: 'certificado',
         label: 'Certificado digital A1 válido',
@@ -97,12 +76,26 @@ export async function fiscalRoutes(app: FastifyInstance, { db, secrets }: AppDep
         hint: certificate && !certificate.cnpj ? 'O certificado não informa o CNPJ; confira com o contador.' : undefined,
       },
       { key: 'produtos', label: 'NCM em todos os produtos ativos', ok: active > 0 && missing === 0, hint: missing ? `${missing} produto(s) sem NCM.` : undefined },
-      { key: 'emissora', label: 'Emissora de NFC-e contratada e ligada', ok: Boolean(row?.provider), hint: 'Próxima etapa: escolher a emissora com o contador.' },
+      {
+        key: 'resp-tec',
+        label: 'Responsável técnico (vai em toda nota)',
+        ok: Boolean(settings.respTecCnpj && settings.respTecContact && settings.respTecEmail && settings.respTecPhone),
+        hint: 'CNPJ, contato, e-mail e telefone de quem dá suporte ao sistema.',
+      },
+      {
+        key: 'emissao',
+        label: `Emissão direta com a SEFAZ ligada (${settings.environment === 'PRODUCAO' ? 'produção' : 'homologação'})`,
+        ok: settings.emissionEnabled && (await nfceMissing(db, settings)).length === 0,
+        hint: settings.emissionEnabled ? 'Confira os itens acima.' : 'Ligue em "Emitir NFC-e direto com a SEFAZ" (Emitente e numeração) depois de testar.',
+      },
     ];
+    const hom = await configRow(db, HOMOLOGACAO);
     return {
       settings,
       cscConfigured: Boolean(row?.cscTokenEnc),
       cscId: row?.cscId ?? null,
+      cscHomConfigured: Boolean(hom?.cscTokenEnc),
+      cscHomId: hom?.cscId ?? null,
       certificate,
       provider: row?.provider ?? null,
       productsMissingNcm: missing,
@@ -122,13 +115,56 @@ export async function fiscalRoutes(app: FastifyInstance, { db, secrets }: AppDep
   });
 
   app.put('/csc', async (request) => {
-    const { cscId, cscToken } = cscInputSchema.parse(request.body);
+    const { environment, cscId, cscToken } = cscInputSchema.parse(request.body);
     await db.transaction(async (tx) => {
-      await upsert(tx, { cscId, cscTokenEnc: secrets.seal(cscToken) });
+      await upsert(tx, { cscId, cscTokenEnc: secrets.seal(cscToken) }, cscKeyOf(environment));
       // O código em si não vai para a auditoria.
-      await audit(tx, request, { action: 'FISCAL_CSC_ALTERADO', entity: 'fiscal_config', after: { cscId } });
+      await audit(tx, request, { action: 'FISCAL_CSC_ALTERADO', entity: 'fiscal_config', after: { cscId, environment } });
     });
-    return { cscConfigured: true, cscId };
+    return { cscConfigured: true, cscId, environment };
+  });
+
+  // ---- Emissão direta com a SEFAZ (NFC-e) ----
+
+  /** Teste de comunicação: status do serviço da NFC-e no ambiente configurado. */
+  app.post('/sefaz-status', async (): Promise<SefazStatusResult> => sefazStatus(deps));
+
+  /** Nota de teste em homologação (um produto, pago em dinheiro), impressa no caixa. */
+  app.post('/test-note', async (request): Promise<NfceEmitResult> => emitNfce(deps, { request, comandaIds: [], cpfOnNote: false, test: true }));
+
+  /** Notas que foram para a SEFAZ sem resposta (falha de comunicação), esperando a consulta. */
+  app.get('/pending', async (): Promise<PendingNfce[]> =>
+    (await pendingNotes(deps)).map((n) => ({ accessKey: n.accessKey, number: n.number, environment: n.env, totalCents: n.totalCents, since: n.updatedAt.toISOString() })),
+  );
+
+  /** Consulta as notas sem confirmação e reenvia as que a SEFAZ não recebeu. */
+  app.post('/pending/resolve', async (request): Promise<NfceEmitResult[]> => resolvePendingNotes(deps, request));
+
+  /** Últimas notas emitidas (os dois ambientes). */
+  app.get('/documents', async (): Promise<FiscalDocumentRow[]> => {
+    const rows = await db.select().from(fiscalDocuments).orderBy(desc(fiscalDocuments.issuedAt)).limit(30);
+    return rows.map((d) => ({
+      id: d.id,
+      environment: d.environment,
+      series: d.series,
+      number: d.number,
+      accessKey: d.accessKey,
+      status: d.status,
+      totalCents: d.totalCents,
+      protocol: d.protocol,
+      issuedAt: d.issuedAt.toISOString(),
+    }));
+  });
+
+  /** XML de uma nota (para conferir ou mandar ao contador). */
+  app.get('/documents/:id/xml', async (request, reply) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+    const [d] = await db.select().from(fiscalDocuments).where(eq(fiscalDocuments.id, id));
+    if (!d?.xml) throw new HttpError(404, 'NOT_FOUND', 'XML não encontrado.');
+    return reply
+      .header('content-type', 'application/xml; charset=utf-8')
+      .header('content-disposition', `attachment; filename="${d.accessKey}-nfce.xml"`)
+      .send(d.xml);
   });
 
   app.post('/certificate', { bodyLimit: 400_000 }, async (request): Promise<CertificateInfo> => {

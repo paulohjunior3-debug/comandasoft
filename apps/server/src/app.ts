@@ -22,6 +22,7 @@ import { authRoutes } from './routes/auth';
 import { cashierRoutes } from './routes/cashier';
 import { kitchenRoutes } from './routes/kitchen';
 import { licenseRoutes } from './routes/license';
+import type { Transport } from './fiscal/nfce/sefaz';
 import { printRoutes } from './routes/print';
 import { publicRoutes } from './routes/public';
 import { waiterRoutes } from './routes/waiter';
@@ -46,6 +47,8 @@ export interface AppDeps {
   secrets: SecretBox;
   /** Licença do sistema: estado, bloqueio de abrir caixa/lançar pedido e renovação. */
   license: LicenseService;
+  /** Conversa com a SEFAZ (substituível nos testes; padrão: HTTPS com o certificado A1). */
+  sefazTransport?: Transport;
 }
 
 export interface BuildAppOptions {
@@ -67,6 +70,7 @@ export interface BuildAppOptions {
   caCertPath?: string;
   /** Licença: padrão bloqueia só no servidor empacotado, com as chaves embutidas. */
   license?: Partial<Omit<LicenseServiceOptions, 'db'>>;
+  sefazTransport?: Transport;
 }
 
 const defaultWebDist = paths.webDist;
@@ -84,6 +88,7 @@ export async function buildApp({
   publicPort = null,
   caCertPath = paths.fromHome('certs/rootCA.crt'),
   license,
+  sefazTransport,
 }: BuildAppOptions) {
   const app = Fastify({ trustProxy: true, ...fastify });
   const tokens = createTokenService(jwtSecret);
@@ -98,6 +103,7 @@ export async function buildApp({
     publicPort,
     secrets: createSecretBox(cpfSecret, 'fiscal'),
     license: createLicenseService({ db, enforce: isBundled, version, log: app.log, ...license }),
+    sefazTransport,
   };
   app.decorate('printWorker', deps.printWorker);
   app.decorate('license', deps.license);
