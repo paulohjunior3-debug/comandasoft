@@ -26,6 +26,7 @@ const formatDayTime = (iso: string) =>
 import { errorMessage } from '../../lib/queries';
 import { LaunchItemsModal, MoveItemModal, OpenTableModal } from './CashierActions';
 import { EditComandaModal } from './EditComandaModal';
+import { PeopleModal } from './PeopleModal';
 import { RestoreModal } from './RestoreModal';
 import { kbdClass, useShortcut } from './shortcuts';
 import { usePin } from './usePin';
@@ -125,6 +126,7 @@ export function BillPanel({
   const [modal, setModal] = useState<'DESCONTO' | 'TAXA_SERVICO_REMOVIDA' | 'COUVERT_REMOVIDO' | null>(null);
   const [canceling, setCanceling] = useState<BillItem | null>(null);
   const [restoring, setRestoring] = useState<BillItem | null>(null);
+  const [editingPeople, setEditingPeople] = useState<BillComanda | null>(null);
   const [transferring, setTransferring] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [addingComanda, setAddingComanda] = useState(false);
@@ -286,7 +288,19 @@ export function BillPanel({
         <div className="grid gap-4 xl:grid-cols-[1fr_380px]">
           <div className="space-y-4">
             {b.comandas.map((c) => (
-              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onRestoreItem={setRestoring} onMoveItem={setMoving} onEdit={() => setEditingComanda(c)} />
+              <ComandaBlock key={c.id} comanda={c} bill={b} onCancelItem={setCanceling} onRestoreItem={setRestoring} onMoveItem={setMoving} onEdit={() => setEditingComanda(c)}
+                onPeople={() => setEditingPeople(c)}
+                onTakeaway={(i) => {
+                  const to = !i.takeaway;
+                  const same = b.items.filter((x) => x.orderId === i.orderId && !x.canceled).length;
+                  if (!confirm(`${to ? 'Marcar' : 'Desmarcar'} como para viagem o lançamento de ${formatDayTime(i.orderedAt)} (${same} item(ns))? A cozinha/bar é avisada.`)) return;
+                  action.mutate(() =>
+                    api<{ notified: number }>(`/waiter/orders/${i.orderId}/takeaway`, { method: 'POST', body: JSON.stringify({ takeaway: to }) }).then((r) =>
+                      setNotice(`Lançamento ${to ? 'marcado' : 'desmarcado'} para viagem.${r.notified ? ' Aviso enviado ao setor.' : ''}`),
+                    ),
+                  );
+                }}
+              />
             ))}
 
             {b.adjustments.length > 0 && (
@@ -489,6 +503,17 @@ export function BillPanel({
           }
         />
       )}
+      {editingPeople && (
+        <PeopleModal
+          comanda={editingPeople}
+          onClose={() => setEditingPeople(null)}
+          onSaved={(n) => {
+            setEditingPeople(null);
+            setNotice(`${editingPeople.customerName}: ${n} pessoa(s).`);
+            refresh();
+          }}
+        />
+      )}
       {restoring && (
         <RestoreModal
           title={`Descancelar ${restoring.qty}× ${restoring.productName}`}
@@ -533,9 +558,13 @@ function ComandaBlock({
   onRestoreItem,
   onMoveItem,
   onEdit,
+  onPeople,
+  onTakeaway,
 }: {
   comanda: BillComanda;
   bill: Bill;
+  onPeople: () => void;
+  onTakeaway: (item: BillItem) => void;
   onCancelItem: (item: BillItem) => void;
   onRestoreItem: (item: BillItem) => void;
   onMoveItem: (item: BillItem) => void;
@@ -554,6 +583,13 @@ function ComandaBlock({
               ✏️ corrigir
             </button>
           )}
+          {open ? (
+            <button onClick={onPeople} className="ml-2 text-xs font-normal text-sky-300 underline" title="Alterar a quantidade de pessoas (couvert)">
+              👥 {c.peopleCount}
+            </button>
+          ) : (
+            c.peopleCount > 1 && <span className="ml-2 text-xs font-normal text-slate-400">👥 {c.peopleCount}</span>
+          )}
         </span>
         <span className="text-sm text-slate-400">
           {[!c.phone && 'sem telefone', c.cpfLast3 && `CPF final ${c.cpfLast3}`].filter(Boolean).join(' · ')}
@@ -568,6 +604,7 @@ function ComandaBlock({
             <span className="flex-1">
               <span className={i.canceled ? 'line-through' : ''}>{i.productName}</span>
               {i.canceled && <span className="ml-2 text-xs text-red-400 no-underline">cancelado</span>}
+              {i.takeaway && !i.canceled && <span className="ml-2 rounded bg-orange-500/20 px-1 text-xs text-orange-300">viagem</span>}
               <span className="block text-xs text-slate-500">
                 {formatDayTime(i.orderedAt)} · {i.waiterName}
                 {i.notes && <span className="text-amber-300/80"> · {i.notes}</span>}
@@ -585,6 +622,15 @@ function ComandaBlock({
               )}
             </span>
             <span className={i.canceled ? 'line-through' : ''}>{formatBRL(i.amountCents)}</span>
+            {open && !i.canceled && (
+              <button
+                onClick={() => onTakeaway(i)}
+                className="rounded px-2 py-0.5 text-xs text-orange-300 hover:bg-orange-950"
+                title={i.takeaway ? 'Desmarcar para viagem (o lançamento todo)' : 'Marcar para viagem (o lançamento todo)'}
+              >
+                🥡
+              </button>
+            )}
             {open && i.canceled && (
               <button
                 onClick={() => onRestoreItem(i)}

@@ -8,6 +8,7 @@ import { useOutboxEntries } from '../../lib/offline/hooks';
 import { pendingOrdersFor } from '../../lib/offline/local';
 import { errorMessage, useApiMutation } from '../../lib/queries';
 import { EditComandaModal } from '../cashier/EditComandaModal';
+import { PeopleModal } from '../cashier/PeopleModal';
 import { WaiterHeader } from './WaiterHeader';
 
 export function ComandaPage() {
@@ -20,6 +21,7 @@ export function ComandaPage() {
   const detail = useCachedQuery<ComandaDetail>(path, { enabled: !localOpen });
   const requestClose = useApiMutation([path, '/waiter/tables']);
   const [editing, setEditing] = useState(false);
+  const [editingPeople, setEditingPeople] = useState(false);
   const releaseQr = useApiMutation([path]);
 
   const c = detail.data;
@@ -137,14 +139,29 @@ export function ComandaPage() {
             </p>
 
             {(c.status === 'ABERTA' || c.status === 'EM_FECHAMENTO') && (
-              <Button onClick={() => setEditing(true)} className="w-full py-3">
-                ✏️ Corrigir nome / telefone
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => setEditingPeople(true)} className="py-3">
+                  👥 {c.peopleCount} {c.peopleCount === 1 ? 'pessoa' : 'pessoas'}
+                </Button>
+                <Button onClick={() => setEditing(true)} className="py-3">
+                  ✏️ Nome / telefone
+                </Button>
+              </div>
             )}
             {c.status === 'ABERTA' && (
               <Button onClick={askClose} disabled={requestClose.isPending} className="w-full py-3">
                 Pedir fechamento
               </Button>
+            )}
+            {editingPeople && (
+              <PeopleModal
+                comanda={{ id: c.id, customerName: c.customerName, peopleCount: c.peopleCount }}
+                onClose={() => setEditingPeople(false)}
+                onSaved={() => {
+                  setEditingPeople(false);
+                  void detail.refetch();
+                }}
+              />
             )}
             {editing && (
               <EditComandaModal

@@ -1,4 +1,13 @@
-import { createOrderSchema, MY_ORDERS_HOURS, splitCents, WAITER_ERRORS, type CreateOrderResponse, type MyOrder } from '@sistema-bar/shared';
+import {
+  createOrderSchema,
+  MY_ORDERS_HOURS,
+  orderTakeawaySchema,
+  splitCents,
+  WAITER_ERRORS,
+  type CreateOrderResponse,
+  type MyOrder,
+  type OrderTakeawayResult,
+} from '@sistema-bar/shared';
 import { and, asc, count, desc, eq, gte, inArray, isNull, max, min, or } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { AppDeps } from '../../app';
@@ -16,7 +25,8 @@ import {
 } from '../../db/schema';
 import { audit } from '../../lib/audit';
 import { OPEN_STATUSES } from '../../lib/comandas';
-import { HttpError } from '../../lib/errors';
+import { HttpError, notFound } from '../../lib/errors';
+import { idParams } from '../admin/params';
 import type { ProductionTicket } from '../../printing/tickets';
 
 export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker, license }: AppDeps) {
@@ -62,6 +72,63 @@ export async function waiterOrderRoutes(app: FastifyInstance, { db, printWorker,
         .filter((i) => i.orderId === order.id)
         .map((i) => ({ qty: i.qty, name: i.name, notes: i.notes, canceled: i.status === 'CANCELADO' })),
     }));
+  });
+
+  /**
+   * Marcar (ou desmarcar) para viagem um lançamento já enviado (o garçom esqueceu). O painel da
+   * cozinha muda na hora; cupom ainda na fila sai já certo; cupom já impresso ganha um aviso
+   * no setor com os itens do pedido.
+   */
+  app.post('/:id/takeaway', async (request): Promise<OrderTakeawayResult> => {
+    const { id } = idParams.parse(request.params);
+    const { takeaway } = orderTakeawaySchema.parse(request.body);
+    const [order] = await db.select().from(orders).where(eq(orders.id, id));
+    if (!order) throw notFound('Pedido');
+    const items = await db
+      .select({ id: orderItems.id, status: orderItems.status })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, id));
+    const open = items.length
+      ? await db
+          .select({ id: comandas.id })
+          .from(orderItemShares)
+          .innerJoin(comandas, eq(comandas.id, orderItemShares.comandaId))
+          .where(and(inArray(orderItemShares.orderItemId, items.map((i) => i.id)), inArray(comandas.status, [...OPEN_STATUSES])))
+          .limit(1)
+      : [];
+    if (!open.length) throw new HttpError(409, WAITER_ERRORS.COMANDA_NOT_OPEN, 'A comanda deste pedido já foi encerrada.');
+    if (order.takeaway === takeaway) return { orderId: id, takeaway, changed: false, notified: 0 };
+
+    const active = new Set(items.filter((i) => i.status === 'ATIVO').map((i) => i.id));
+    const notified = await db.transaction(async (tx) => {
+      await tx.update(orders).set({ takeaway }).where(eq(orders.id, id));
+      const jobs = await tx.select().from(printJobs).where(and(eq(printJobs.referenceId, id), eq(printJobs.type, 'PRODUCAO')));
+      const notices: (typeof printJobs.$inferInsert)[] = [];
+      for (const job of jobs) {
+        const ticket = job.payload as ProductionTicket;
+        if (ticket.notice) continue; // avisos anteriores ficam como estão
+        const updated: ProductionTicket = { ...ticket, takeaway: takeaway || undefined };
+        if (job.status === 'PAINEL' || job.status === 'PENDENTE' || job.status === 'ERRO') {
+          await tx.update(printJobs).set({ payload: updated }).where(eq(printJobs.id, job.id));
+          continue;
+        }
+        // Já impresso: aviso no setor com os itens ainda valendo.
+        const still = ticket.items.filter((i) => !i.itemId || active.has(i.itemId));
+        if (!still.length) continue;
+        notices.push({
+          printerId: job.printerId,
+          type: 'PRODUCAO',
+          payload: { ...updated, items: still, notice: takeaway ? 'AGORA É PARA VIAGEM' : 'NÃO É MAIS PARA VIAGEM', createdAt: new Date().toISOString() },
+          referenceId: id,
+          status: 'PENDENTE',
+        });
+      }
+      if (notices.length) await tx.insert(printJobs).values(notices);
+      await audit(tx, request, { action: 'PEDIDO_VIAGEM', entity: 'order', entityId: id, before: { takeaway: order.takeaway }, after: { takeaway, notified: notices.length } });
+      return notices.length;
+    });
+    if (notified) printWorker.kick();
+    return { orderId: id, takeaway, changed: true, notified };
   });
 
   async function duplicateResponse(orderId: string): Promise<CreateOrderResponse> {

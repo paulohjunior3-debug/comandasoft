@@ -65,6 +65,8 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
         amountCents: orderItemShares.amountCents,
         sharedWith: shareCount.n,
         receivedAt: orders.receivedAt,
+        orderId: orders.id,
+        takeaway: orders.takeaway,
         waiterName: users.name,
       })
       .from(orderItemShares)
@@ -119,6 +121,8 @@ export async function loadBill(db: Queryable, comandaIds: string[], settings: Se
     const paidFraction = paid.reduce<Fraction>((acc, p) => addFractions(acc, { num: p.num, den: p.den }), { num: 0, den: 1 });
     return {
       orderItemId: r.orderItemId,
+      orderId: r.orderId,
+      takeaway: r.takeaway,
       comandaId: r.comandaId,
       productName: r.productName,
       qty: r.qty,
