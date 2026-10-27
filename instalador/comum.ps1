@@ -9,6 +9,7 @@ $TarefaBackup = 'Sistema Bar - Backup diario'
 $TarefaVigia = 'Sistema Bar - Vigia'
 $RegraFirewall = 'Sistema Bar - Servidor'
 $RegraFirewallCliente = 'Sistema Bar - Cliente (QR)'
+$RegraFirewallPadrao = 'Sistema Bar - Endereço próprio (443)'
 $PortaClientePadrao = 8080
 
 function Passo([string]$texto) {
@@ -98,6 +99,13 @@ function Ler-Env([string]$arquivo) {
 function Liberar-Porta-Cliente([int]$porta) {
   Get-NetFirewallRule -DisplayName $RegraFirewallCliente -ErrorAction SilentlyContinue | Remove-NetFirewallRule
   New-NetFirewallRule -DisplayName $RegraFirewallCliente -Direction Inbound -Protocol TCP -LocalPort $porta `
+    -Action Allow -Profile Private, Public -RemoteAddress LocalSubnet | Out-Null
+}
+
+# Porta padrão do HTTPS (443) para o endereço próprio funcionar sem ":8443"; só rede local.
+function Liberar-Porta-Padrao {
+  Get-NetFirewallRule -DisplayName $RegraFirewallPadrao -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+  New-NetFirewallRule -DisplayName $RegraFirewallPadrao -Direction Inbound -Protocol TCP -LocalPort 443 `
     -Action Allow -Profile Private, Public -RemoteAddress LocalSubnet | Out-Null
 }
 

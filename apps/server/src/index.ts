@@ -6,6 +6,7 @@ import { buildPublicApp } from './public-app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { startDomainCert } from './lib/domain-cert';
+import { listenExtraHttps } from './lib/extra-port';
 import { paths } from './paths';
 import { emulatorTransport, windowsTransport } from './printing/transport';
 
@@ -52,8 +53,10 @@ const publicApp = config.PUBLIC_PORT
   ? await buildPublicApp({ db: conn.db, jwtSecret: config.JWT_SECRET, mainPort: config.PORT, fastify: { loggerInstance: app.log } })
   : null;
 
+let extraServer: import('node:https').Server | null = null;
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, async () => {
+    extraServer?.close();
     await publicApp?.close();
     await app.close();
     await conn.close();
@@ -81,5 +84,8 @@ if (domain && https) {
       domainContext = createSecureContext({ cert: c.cert, key: c.key });
     },
   });
-  app.log.info(`Endereço próprio: https://${domain}:${config.PORT}`);
+  // Porta padrão do HTTPS: o endereço fica sem ":8443" (o com a porta continua valendo).
+  const extraPort = config.EXTRA_HTTPS_PORT ?? 443;
+  if (extraPort && extraPort !== config.PORT) extraServer = await listenExtraHttps(app, https, extraPort, config.HOST);
+  app.log.info(`Endereço próprio: https://${domain}${extraServer ? '' : `:${config.PORT}`}`);
 }

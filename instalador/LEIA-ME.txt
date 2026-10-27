@@ -84,7 +84,7 @@ Se a internet do bar cair, só o QR para; o resto do sistema segue normal.
 ENDEREÇO PRÓPRIO DO SISTEMA (sem instalar certificado nos celulares)
 --------------------------------------------------------------------
 Com um domínio na Cloudflare, o sistema ganha um endereço como
-https://sistema.seudominio.com.br:8443 com certificado da Let's Encrypt:
+https://sistema.seudominio.com.br (sem porta) com certificado da Let's Encrypt:
 celulares e computadores confiam direto e o app instala no Android.
 1. Cloudflare > My Profile > API Tokens > Create Token > modelo
    "Edit zone DNS" > escolha o seu domínio > Create > copie o token.
