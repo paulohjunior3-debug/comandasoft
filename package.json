@@ -1,6 +1,6 @@
 {
   "name": "sistema-bar",
-  "version": "0.14.17",
+  "version": "0.14.18",
   "private": true,
   "packageManager": "pnpm@10.34.7",
   "engines": {

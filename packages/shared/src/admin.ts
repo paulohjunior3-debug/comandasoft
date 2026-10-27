@@ -45,6 +45,20 @@ export interface Category {
 
 // ---------- Produtos ----------
 
+/** Selos do cardápio do cliente (até 3 por produto). */
+export const MENU_BADGES = ['MAIS_PEDIDO', 'SERVE_2', 'NOVIDADE', 'PROMOCAO', 'PICANTE', 'VEGETARIANO'] as const;
+export type MenuBadge = (typeof MENU_BADGES)[number];
+export const MENU_BADGE_LABELS: Record<MenuBadge, string> = {
+  MAIS_PEDIDO: 'Mais pedido',
+  SERVE_2: 'Serve 2',
+  NOVIDADE: 'Novidade',
+  PROMOCAO: 'Promoção',
+  PICANTE: 'Picante',
+  VEGETARIANO: 'Vegetariano',
+};
+/** Quantos destaques aparecem no topo do cardápio do cliente. */
+export const MAX_FEATURED = 8;
+
 export const productInputSchema = z.object({
   categoryId: id.or(z.literal('')).refine((v) => v !== '', 'Escolha a categoria'),
   name: name('o nome do produto', 120),
@@ -54,6 +68,9 @@ export const productInputSchema = z.object({
   sku: optionalText(40),
   active: z.boolean().default(true),
   soldOut: z.boolean().default(false),
+  /** Destaque (⭐) no topo do cardápio do cliente; precisa de foto para aparecer. */
+  featured: z.boolean().default(false),
+  badges: z.array(z.enum(MENU_BADGES)).max(3, 'No máximo 3 selos por produto').default([]),
   // Dados fiscais para a NFC-e (fase 5). Opcionais por enquanto.
   ncm: z
     .string()
@@ -92,6 +109,8 @@ export interface Product {
   sku: string | null;
   active: boolean;
   soldOut: boolean;
+  featured: boolean;
+  badges: MenuBadge[];
   ncm: string | null;
   cfop: string | null;
   csosn: string | null;

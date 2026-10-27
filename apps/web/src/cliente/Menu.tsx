@@ -1,4 +1,4 @@
-import { formatBRL, matchesSearch, type MenuProduct, type PublicTableInfo } from '@sistema-bar/shared';
+import { formatBRL, matchesSearch, MAX_FEATURED, MENU_BADGE_LABELS, type MenuBadge, type MenuProduct, type PublicTableInfo } from '@sistema-bar/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 type Item = MenuProduct & { categoryName: string; color: string };
@@ -22,7 +22,9 @@ export function Menu({ info }: { info: PublicTableInfo }) {
   );
   // Cardápio sem nenhuma foto: lista compacta, sem quadros vazios.
   const withPhotos = all.some((p) => p.imageUrl);
-  const featured = all.filter((p) => p.imageUrl).slice(0, 8);
+  // Destaques: os marcados com ⭐ (com foto); sem nenhum marcado, os primeiros com foto.
+  const marked = all.filter((p) => p.featured && p.imageUrl);
+  const featured = (marked.length ? marked : all.filter((p) => p.imageUrl)).slice(0, MAX_FEATURED);
   const found = q ? all.filter((p) => matchesSearch(p.name, q) || matchesSearch(p.description ?? '', q)) : [];
 
   // Destaca a categoria que está na tela enquanto rola.
@@ -99,7 +101,7 @@ export function Menu({ info }: { info: PublicTableInfo }) {
             </div>
           </div>
 
-          {featured.length >= 3 && (
+          {featured.length >= (marked.length ? 1 : 3) && (
             <section className="pt-5">
               <h2 className="mb-3 px-4 text-lg font-bold">Destaques</h2>
               <div className="flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
@@ -107,6 +109,7 @@ export function Menu({ info }: { info: PublicTableInfo }) {
                   <button key={p.id} onClick={() => setOpen(p)} className="relative w-44 shrink-0 snap-start overflow-hidden rounded-2xl bg-slate-900 text-left">
                     <img src={p.imageUrl!} alt="" loading="lazy" decoding="async" className="aspect-[4/5] w-full object-cover" />
                     <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-3 pt-10">
+                      {p.badges[0] && <BadgeChip badge={p.badges[0]} className="mb-1.5" />}
                       <span className="line-clamp-2 block text-sm leading-tight font-semibold">{p.name}</span>
                       <span className="mt-1 block text-sm font-bold text-amber-300">{formatBRL(p.priceCents)}</span>
                     </span>
@@ -146,6 +149,13 @@ function ProductList({ items, withPhotos, onOpen }: { items: Item[]; withPhotos:
           <button onClick={() => onOpen(p)} className="flex w-full items-stretch gap-3 rounded-2xl bg-slate-900 p-3 text-left active:bg-slate-800">
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="font-semibold">{p.name}</span>
+              {p.badges.length > 0 && (
+                <span className="mt-1 flex flex-wrap gap-1">
+                  {p.badges.map((b) => (
+                    <BadgeChip key={b} badge={b} />
+                  ))}
+                </span>
+              )}
               {p.description && <span className="mt-0.5 line-clamp-2 text-sm text-slate-400">{p.description}</span>}
               <span className="mt-auto pt-2 font-bold text-amber-300 tabular-nums">{formatBRL(p.priceCents)}</span>
             </span>
@@ -154,6 +164,25 @@ function ProductList({ items, withPhotos, onOpen }: { items: Item[]; withPhotos:
         </li>
       ))}
     </ul>
+  );
+}
+
+const BADGE_STYLE: Record<MenuBadge, string> = {
+  MAIS_PEDIDO: 'bg-amber-400 text-slate-950',
+  SERVE_2: 'bg-sky-500/20 text-sky-200',
+  NOVIDADE: 'bg-emerald-500/20 text-emerald-200',
+  PROMOCAO: 'bg-rose-500 text-white',
+  PICANTE: 'bg-orange-600/30 text-orange-200',
+  VEGETARIANO: 'bg-lime-500/20 text-lime-200',
+};
+const BADGE_ICON: Partial<Record<MenuBadge, string>> = { MAIS_PEDIDO: '★ ', PICANTE: '🌶 ', VEGETARIANO: '🌱 ' };
+
+function BadgeChip({ badge, className = '' }: { badge: MenuBadge; className?: string }) {
+  return (
+    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] leading-4 font-semibold ${BADGE_STYLE[badge]} ${className}`}>
+      {BADGE_ICON[badge] ?? ''}
+      {MENU_BADGE_LABELS[badge]}
+    </span>
   );
 }
 
@@ -207,6 +236,13 @@ function ProductSheet({ item, serviceFee, onClose }: { item: Item; serviceFee: b
         <div className="space-y-2 px-5 pt-4">
           <p className="text-xs font-medium tracking-wider text-slate-400 uppercase">{item.categoryName}</p>
           <h3 className="text-2xl font-bold">{item.name}</h3>
+          {item.badges.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {item.badges.map((b) => (
+                <BadgeChip key={b} badge={b} />
+              ))}
+            </div>
+          )}
           {item.description && <p className="text-slate-300">{item.description}</p>}
           <p className="pt-1 text-2xl font-bold text-amber-300 tabular-nums">{formatBRL(item.priceCents)}</p>
           <p className="pt-2 text-sm text-slate-500">Para pedir, chame o garçom.{serviceFee ? ' Taxa de serviço de 10% não incluída.' : ''}</p>

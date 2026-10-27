@@ -1,4 +1,15 @@
-import { centsToInput, formatBRL, parseBRL, type Category, type Product, type ProductInput } from '@sistema-bar/shared';
+import {
+  centsToInput,
+  formatBRL,
+  MAX_FEATURED,
+  MENU_BADGE_LABELS,
+  MENU_BADGES,
+  parseBRL,
+  type Category,
+  type MenuBadge,
+  type Product,
+  type ProductInput,
+} from '@sistema-bar/shared';
 import { useMemo, useState } from 'react';
 import {
   Badge,
@@ -27,6 +38,8 @@ interface Form {
   sku: string;
   active: boolean;
   soldOut: boolean;
+  featured: boolean;
+  badges: MenuBadge[];
   ncm: string;
   cfop: string;
   csosn: string;
@@ -43,6 +56,8 @@ const toForm = (p: Product | null, categoryId: string): Form => ({
   sku: p?.sku ?? '',
   active: p?.active ?? true,
   soldOut: p?.soldOut ?? false,
+  featured: p?.featured ?? false,
+  badges: p?.badges ?? [],
   ncm: p?.ncm ?? '',
   cfop: p?.cfop ?? '',
   csosn: p?.csosn ?? '',
@@ -124,10 +139,14 @@ export function ProductsPage() {
                           )}
                         </button>
                         <button onClick={() => setEditing({ product: p })} className="min-w-0 flex-1 text-left">
-                          <span className={`block truncate font-medium ${p.active ? '' : 'text-slate-500 line-through'}`}>{p.name}</span>
+                          <span className={`block truncate font-medium ${p.active ? '' : 'text-slate-500 line-through'}`}>
+                            {p.featured && <span title="Destaque no cardápio do cliente">⭐ </span>}
+                            {p.name}
+                          </span>
                           <span className="block text-sm text-slate-400">
                             {formatBRL(p.priceCents)}
                             {p.sku && <span className="text-slate-500"> · {p.sku}</span>}
+                            {p.badges.length > 0 && <span className="text-amber-300/80"> · {p.badges.map((b) => MENU_BADGE_LABELS[b]).join(', ')}</span>}
                           </span>
                         </button>
                         {!p.active && <Badge>Inativo</Badge>}
@@ -152,6 +171,7 @@ export function ProductsPage() {
       {editing && (
         <ProductModal
           product={editing.product}
+          featuredCount={(products.data ?? []).filter((p) => p.featured && p.imageUrl && p.id !== editing.product?.id).length}
           categories={categories.data ?? []}
           defaultCategory={filter || categories.data?.[0]?.id || ''}
           onClose={() => setEditing(null)}
@@ -165,9 +185,11 @@ function ProductModal({
   product,
   categories,
   defaultCategory,
+  featuredCount,
   onClose,
 }: {
   product: Product | null;
+  featuredCount: number;
   categories: Category[];
   defaultCategory: string;
   onClose: () => void;
@@ -285,6 +307,40 @@ function ProductModal({
       <TextField label="Descrição" value={form.description} onChange={(e) => set('description', e.target.value)} hint="Aparece no cardápio do cliente" />
       <Toggle label="Ativo" checked={form.active} onChange={(v) => set('active', v)} />
       <Toggle label="Esgotado" checked={form.soldOut} onChange={(v) => set('soldOut', v)} hint="Bloqueia o item para o garçom" />
+
+      <p className="pt-1 text-sm font-medium text-slate-300">Cardápio do cliente (QR)</p>
+      <Toggle
+        label="⭐ Destacar no topo do cardápio"
+        checked={form.featured}
+        onChange={(v) => set('featured', v)}
+        hint={
+          !shownPhoto
+            ? 'Só aparece nos destaques com foto.'
+            : form.featured && featuredCount >= MAX_FEATURED
+              ? `Já há ${featuredCount} destaques: aparecem os ${MAX_FEATURED} primeiros do cardápio.`
+              : `Fotos grandes no topo (até ${MAX_FEATURED}). Bom para o carro-chefe e as promoções.`
+        }
+      />
+      <div>
+        <span className="mb-1 block text-sm text-slate-300">Selos (até 3)</span>
+        <div className="flex flex-wrap gap-2">
+          {MENU_BADGES.map((b) => {
+            const on = form.badges.includes(b);
+            return (
+              <button
+                key={b}
+                type="button"
+                aria-pressed={on}
+                disabled={!on && form.badges.length >= 3}
+                onClick={() => set('badges', on ? form.badges.filter((x) => x !== b) : [...form.badges, b])}
+                className={`rounded-full border px-3 py-1 text-sm disabled:opacity-40 ${on ? 'border-amber-500 bg-amber-500/15 text-amber-200' : 'border-slate-700 text-slate-300'}`}
+              >
+                {MENU_BADGE_LABELS[b]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <button type="button" onClick={() => setShowFiscal((s) => !s)} className="text-sm text-amber-400">
         {showFiscal ? '▾' : '▸'} Dados fiscais (NFC-e)

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidCpf, onlyDigits } from './cpf';
+import type { MenuBadge } from './admin';
 
 // Contratos do app do garçom: comandas, mapa de mesas e lançamento de pedidos (SPEC 5.2–5.4).
 // Toda escrita carrega um `clientUuid` gerado no aparelho: reenviar nunca duplica (SPEC 5.4).
@@ -118,6 +119,9 @@ export interface MenuProduct {
   soldOut: boolean;
   /** Foto (/fotos/<id>?v=…), quando cadastrada. */
   imageUrl: string | null;
+  /** Destaque (⭐) no topo do cardápio do cliente e selos ("Mais pedido", "Serve 2"…). */
+  featured: boolean;
+  badges: MenuBadge[];
 }
 
 // ---------- Pedidos ----------
