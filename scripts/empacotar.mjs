@@ -94,6 +94,8 @@ const installerFiles = [
   'REINICIAR.bat',
   'cardapio-internet.ps1',
   'CARDAPIO-INTERNET.bat',
+  'dominio.ps1',
+  'DOMINIO.bat',
   'LEIA-ME.txt',
 ];
 for (const f of installerFiles) {
