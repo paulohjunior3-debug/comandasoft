@@ -1,9 +1,11 @@
 import { mkdirSync, readFileSync } from 'node:fs';
+import { createSecureContext, type SecureContext } from 'node:tls';
 import { dirname } from 'node:path';
 import { buildApp, defaultEmulatorDir } from './app';
 import { buildPublicApp } from './public-app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { startDomainCert } from './lib/domain-cert';
 import { paths } from './paths';
 import { emulatorTransport, windowsTransport } from './printing/transport';
 
@@ -13,9 +15,18 @@ if (logFile) mkdirSync(dirname(logFile), { recursive: true });
 const conn = createDb(config.DATABASE_URL);
 await conn.migrate();
 
+// Endereço próprio: quem chega pelo nome (SNI) recebe o certificado da Let's Encrypt; pelo IP,
+// continua o certificado do próprio sistema (aparelhos que já instalaram seguem funcionando).
+let domainContext: SecureContext | null = null;
+const domain = config.DOMINIO && config.CLOUDFLARE_TOKEN ? config.DOMINIO : null;
 const https =
   config.HTTPS_CERT && config.HTTPS_KEY
-    ? { cert: readFileSync(paths.fromHome(config.HTTPS_CERT)), key: readFileSync(paths.fromHome(config.HTTPS_KEY)) }
+    ? {
+        cert: readFileSync(paths.fromHome(config.HTTPS_CERT)),
+        key: readFileSync(paths.fromHome(config.HTTPS_KEY)),
+        SNICallback: (servername: string, cb: (err: Error | null, ctx?: SecureContext) => void) =>
+          cb(null, domain && domainContext && servername.toLowerCase() === domain ? domainContext : undefined),
+      }
     : null;
 
 const app = await buildApp({
@@ -58,3 +69,18 @@ if (publicApp && config.PUBLIC_PORT) {
   app.log.info(`QR do cliente: http na porta ${config.PUBLIC_PORT}`);
 }
 app.log.info(`Impressão: modo ${config.PRINT_MODE}`);
+if (domain && https) {
+  // O timer de renovação não segura o processo (unref): parar o serviço não espera por ele.
+  startDomainCert({
+    hostname: domain,
+    token: config.CLOUDFLARE_TOKEN!,
+    dir: paths.fromHome('certs/dominio'),
+    email: config.ACME_EMAIL,
+    staging: config.ACME_STAGING === '1',
+    log: app.log,
+    onCert: (c) => {
+      domainContext = createSecureContext({ cert: c.cert, key: c.key });
+    },
+  });
+  app.log.info(`Endereço próprio: https://${domain}:${config.PORT}`);
+}

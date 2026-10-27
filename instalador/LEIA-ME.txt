@@ -90,6 +90,22 @@ cozinha continuam só na rede local. Precisa de um domínio na Cloudflare.
    https://cardapio-bardoze.seudominio.com.br  > Salvar > reimprima.
 Se a internet do bar cair, só o QR para; o resto do sistema segue normal.
 
+ENDEREÇO PRÓPRIO DO SISTEMA (sem instalar certificado nos celulares)
+--------------------------------------------------------------------
+Com um domínio na Cloudflare, o sistema ganha um endereço como
+https://sistema.seudominio.com.br:8443 com certificado da Let's Encrypt:
+celulares e computadores confiam direto e o app instala no Android.
+1. Cloudflare > My Profile > API Tokens > Create Token > modelo
+   "Edit zone DNS" > escolha o seu domínio > Create > copie o token.
+2. No PC do caixa: dois cliques em DOMINIO.bat, digite o endereço
+   (ex.: sistema.seudominio.com.br) e cole o token.
+3. Abra o endereço nos aparelhos (na rede do bar) e instale o app de novo.
+O sistema aponta o endereço para o IP deste PC sozinho (se o IP mudar,
+acompanha) e renova o certificado antes de vencer. Continua funcionando
+sem internet dentro do bar; o endereço pelo IP também segue valendo.
+Se o roteador bloquear o endereço (proteção "DNS rebinding"), libere o
+domínio nessa opção do roteador.
+
 PROBLEMAS
 ---------
 - Log do servidor: C:\SistemaBar\data\logs\servidor.log
