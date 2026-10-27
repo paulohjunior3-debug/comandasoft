@@ -5,10 +5,11 @@ import { z } from 'zod';
 import type { AppDeps } from '../../app';
 import { categories, productImages, products } from '../../db/schema';
 import { audit } from '../../lib/audit';
+import { extrasOf, getMenuExtras, setProductExtras, type MenuExtras } from '../../lib/menu-extras';
 import { HttpError, notFound } from '../../lib/errors';
 import { idParams } from './params';
 
-const toProduct = ({ createdAt: _c, updatedAt: _u, ...p }: typeof products.$inferSelect): Product => p;
+const toProduct = ({ createdAt: _c, updatedAt: _u, ...p }: typeof products.$inferSelect, extras: MenuExtras): Product => ({ ...p, ...extrasOf(extras, p.id) });
 
 export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
   async function find(id: string) {
@@ -30,34 +31,37 @@ export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
       .innerJoin(categories, eq(categories.id, products.categoryId))
       .where(categoryId ? eq(products.categoryId, categoryId) : undefined)
       .orderBy(asc(categories.sortOrder), asc(categories.name), asc(products.name));
-    return rows.map((r) => toProduct(r.product));
+    const extras = await getMenuExtras(db);
+    return rows.map((r) => toProduct(r.product, extras));
   });
 
   app.post('/', async (request, reply) => {
     // A foto tem rota própria (PUT /:id/image); o formulário não mexe nela.
-    const { imageUrl: _image, ...data } = productInputSchema.parse(request.body);
+    const { imageUrl: _image, featured, badges, ...data } = productInputSchema.parse(request.body);
     await assertCategory(data.categoryId);
     const row = await db.transaction(async (tx) => {
       const [created] = await tx.insert(products).values(data).returning();
-      await audit(tx, request, { action: 'PRODUTO_CRIADO', entity: 'product', entityId: created!.id, after: toProduct(created!) });
+      await setProductExtras(tx, created!.id, { featured, badges });
+      await audit(tx, request, { action: 'PRODUTO_CRIADO', entity: 'product', entityId: created!.id, after: toProduct(created!, await getMenuExtras(tx)) });
       return created!;
     });
-    return reply.code(201).send(toProduct(row));
+    return reply.code(201).send(toProduct(row, await getMenuExtras(db)));
   });
 
   app.put('/:id', async (request) => {
     const { id } = idParams.parse(request.params);
-    const { imageUrl: _image, ...data } = productInputSchema.parse(request.body);
-    const before = toProduct(await find(id));
+    const { imageUrl: _image, featured, badges, ...data } = productInputSchema.parse(request.body);
+    const before = toProduct(await find(id), await getMenuExtras(db));
     await assertCategory(data.categoryId);
     const row = await db.transaction(async (tx) => {
       const [updated] = await tx.update(products).set(data).where(eq(products.id, id)).returning();
+      await setProductExtras(tx, id, { featured, badges });
       // Alteração de preço tem ação própria na auditoria (SPEC 5.10).
       const action = before.priceCents !== data.priceCents ? 'PRODUTO_PRECO_ALTERADO' : 'PRODUTO_ALTERADO';
-      await audit(tx, request, { action, entity: 'product', entityId: id, before, after: toProduct(updated!) });
+      await audit(tx, request, { action, entity: 'product', entityId: id, before, after: toProduct(updated!, await getMenuExtras(tx)) });
       return updated!;
     });
-    return toProduct(row);
+    return toProduct(row, await getMenuExtras(db));
   });
 
   /** Foto do produto (cardápio do cliente). Chega reduzida pelo navegador; guardada no banco. */
@@ -104,14 +108,15 @@ export async function productRoutes(app: FastifyInstance, { db }: AppDeps) {
       });
       return updated!;
     });
-    return toProduct(row);
+    return toProduct(row, await getMenuExtras(db));
   });
 
   app.delete('/:id', async (request, reply) => {
     const { id } = idParams.parse(request.params);
-    const before = toProduct(await find(id));
+    const before = toProduct(await find(id), await getMenuExtras(db));
     await db.transaction(async (tx) => {
       await tx.delete(products).where(eq(products.id, id));
+      await setProductExtras(tx, id, null);
       await audit(tx, request, { action: 'PRODUTO_EXCLUIDO', entity: 'product', entityId: id, before });
     });
     return reply.code(204).send();

@@ -2,6 +2,7 @@ import type { MenuCategory } from '@sistema-bar/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { categories, products } from '../db/schema';
 import type { Queryable } from './billing';
+import { extrasOf, getMenuExtras } from './menu-extras';
 
 /** Cardápio ativo agrupado por categoria. `hideSoldOut`: o cliente (QR) não vê o que está esgotado. */
 export async function loadMenu(db: Queryable, { hideSoldOut = false } = {}): Promise<MenuCategory[]> {
@@ -12,6 +13,7 @@ export async function loadMenu(db: Queryable, { hideSoldOut = false } = {}): Pro
     .where(and(eq(products.active, true), eq(categories.active, true), hideSoldOut ? eq(products.soldOut, false) : undefined))
     .orderBy(asc(categories.sortOrder), asc(categories.name), asc(products.name));
 
+  const extras = await getMenuExtras(db);
   const menu = new Map<string, MenuCategory>();
   for (const { category: c, product: p } of rows) {
     let entry = menu.get(c.id);
@@ -19,7 +21,16 @@ export async function loadMenu(db: Queryable, { hideSoldOut = false } = {}): Pro
       entry = { id: c.id, name: c.name, color: c.color, products: [] };
       menu.set(c.id, entry);
     }
-    entry.products.push({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents, soldOut: p.soldOut, imageUrl: p.imageUrl });
+    entry.products.push({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      priceCents: p.priceCents,
+      soldOut: p.soldOut,
+      imageUrl: p.imageUrl,
+      ...extrasOf(extras, p.id),
+    });
   }
   return [...menu.values()];
 }
+

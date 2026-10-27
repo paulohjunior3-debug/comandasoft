@@ -195,6 +195,7 @@ export function OrderPage() {
               const qty = qtyOf(p.id);
               return (
                 <li key={p.id} className={`flex items-center gap-3 py-3 ${p.soldOut ? 'opacity-40' : ''}`}>
+                  {p.imageUrl && <img src={p.imageUrl} alt="" loading="lazy" decoding="async" className="size-12 shrink-0 rounded-lg object-cover" />}
                   <button className="min-w-0 flex-1 text-left" disabled={p.soldOut} onClick={() => add(p)}>
                     <span className="block font-medium">{p.name}</span>
                     <span className="block text-sm text-slate-400">{p.soldOut ? 'Esgotado' : formatBRL(p.priceCents)}</span>
