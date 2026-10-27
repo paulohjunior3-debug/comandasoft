@@ -51,6 +51,10 @@ Passo 'Gravando a configuração e reiniciando o sistema'
 Gravar-Env 'DOMINIO' $dominio
 Gravar-Env 'CLOUDFLARE_TOKEN' $token
 $token = $null
+Liberar-Porta-Padrao
+$ocupada = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName -ne 'node' }
+if ($ocupada) { Aviso "A porta 443 já é usada por outro programa: o endereço vai precisar do :$porta." }
 Iniciar-Manutencao $Destino
 try {
   $r = Reiniciar-Sistema $Destino $porta
@@ -79,7 +83,8 @@ Write-Host ''
 if ($resultado -like 'ok:*') {
   Write-Host '==================== PRONTO ====================' -ForegroundColor Green
   Write-Host "Certificado: $($resultado.Substring(3))"
-  Write-Host "Endereço do sistema:  https://$($dominio):$porta" -ForegroundColor Yellow
+  if ($ocupada) { $url = "https://$($dominio):$porta" } else { $url = "https://$dominio" }
+  Write-Host "Endereço do sistema:  $url" -ForegroundColor Yellow
   Write-Host 'Nos celulares e computadores, abra esse endereço (na rede do bar) e instale o app de novo.'
   Write-Host 'O endereço antigo pelo IP continua funcionando nos aparelhos que já tinham o certificado.'
 } elseif ($resultado -like 'erro:*') {

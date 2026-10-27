@@ -21,6 +21,8 @@ const configSchema = z.object({
   DOMINIO: z.preprocess(emptyToUndefined, z.string().toLowerCase().regex(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/, 'DOMINIO inválido').optional()),
   /** Token da Cloudflare (Zone > DNS > Edit) do domínio: aponta o DNS e prova a posse para a Let's Encrypt. */
   CLOUDFLARE_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
+  /** Porta HTTPS extra (padrão 443 com DOMINIO): o endereço próprio sem ":8443". 0 = desligada. */
+  EXTRA_HTTPS_PORT: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).max(65535).optional()),
   ACME_EMAIL: z.preprocess(emptyToUndefined, z.string().email().optional()),
   /** Usa o ambiente de teste da Let's Encrypt (certificado não confiável; para testar sem gastar o limite). */
   ACME_STAGING: z.preprocess(emptyToUndefined, z.enum(['0', '1']).default('0')),

@@ -51,6 +51,10 @@ if (-not $portaCliente) {
 }
 Liberar-Porta-Cliente $portaCliente
 Ok "Cliente pelo QR na porta $portaCliente (liberada só para a rede local)"
+if ((Ler-Env $envArquivo)['DOMINIO']) {
+  Liberar-Porta-Padrao
+  Ok 'Endereço próprio sem ":8443": porta 443 liberada só para a rede local'
+}
 
 Passo 'Atualizando o banco'
 & $node 'app\cli.mjs' migrate
