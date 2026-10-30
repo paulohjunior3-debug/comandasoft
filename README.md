@@ -1,160 +1,239 @@
-# Sistema Bar
+# ComandaSoft
 
-Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes. A especificação completa está em [SPEC.md](SPEC.md).
+**Sistema de comandas, pedidos, impressão e caixa para bares e restaurantes, em uso diário num restaurante real.**
 
-**Status:** Fases 0 e 1 concluídas no código. Fase 2 (caixa) pronta: abertura/fechamento com diferença, sangria/suprimento, busca por mesa ou CPF, pagamentos parciais (valor, item/fração, dividir por N), troco, descontos e estorno com PIN de gerente, pré-conta e cupom. Falta validar com impressoras Elgin reais.
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-offline--first-5A0FC8?logo=pwa&logoColor=white)
+![Testes](https://img.shields.io/badge/testes-270%2B-success?logo=vitest&logoColor=white)
+![Status](https://img.shields.io/badge/status-em%20produção-brightgreen)
 
-## Estrutura
+O garçom lança o pedido no celular, cada item sai na impressora certa (bar, cozinha), o cliente acompanha a conta pelo QR Code da mesa, e o caixa fecha a conta com pagamento dividido, troco e cupom. Tudo roda num PC com Windows dentro do restaurante e **continua funcionando quando a internet cai**.
 
+<!--
+Capturas de tela: salve as imagens em docs/img/ com estes nomes e apague esta linha e a de baixo.
+
+| Mapa de mesas (garçom) | Lançamento de pedido | Caixa |
+|---|---|---|
+| ![Mapa de mesas](docs/img/mapa-mesas.png) | ![Pedido](docs/img/pedido.png) | ![Caixa](docs/img/caixa.png) |
+
+| Cozinha (KDS) | Cardápio do cliente (QR) | Fila de impressão |
+|---|---|---|
+| ![Cozinha](docs/img/cozinha.png) | ![Cardápio](docs/img/cardapio-qr.png) | ![Fila](docs/img/fila-impressao.png) |
+-->
+
+---
+
+## Sumário
+
+- [O problema](#o-problema)
+- [Em produção](#em-produção)
+- [Funcionalidades](#funcionalidades)
+- [Arquitetura](#arquitetura)
+- [Decisões técnicas que valem destacar](#decisões-técnicas-que-valem-destacar)
+- [Stack](#stack)
+- [Qualidade e testes](#qualidade-e-testes)
+- [Como rodar](#como-rodar)
+- [Estrutura do repositório](#estrutura-do-repositório)
+- [Documentação](#documentação)
+- [Próximos passos](#próximos-passos)
+- [Autor](#autor)
+
+---
+
+## O problema
+
+Num restaurante cheio, a comanda de papel e os sistemas genéricos falham nos mesmos pontos:
+
+- o **Wi-Fi oscila** e o pedido do garçom se perde (ou é lançado duas vezes);
+- o pedido da cozinha e o do bar precisam sair **em impressoras diferentes**;
+- a mesa quer **dividir a conta**: um paga a cerveja, outro paga um terço da porção, o resto vai no Pix;
+- o caixa precisa fechar o dia sabendo **quanto sobrou ou faltou**, e quem deu cada desconto.
+
+O ComandaSoft foi desenhado a partir dessas situações, com o dono do restaurante validando cada decisão.
+
+## Em produção
+
+- Instalado no **PC do caixa de um restaurante** (Windows), usado no dia a dia por garçons, caixa e cozinha.
+- Os garçons usam o sistema como **app instalado no celular** (Android e iPhone).
+- Imprime em **impressoras térmicas Elgin** de rede, roteando por categoria.
+- Atualizações são entregues por um **instalador próprio** (`ATUALIZAR.bat`), que faz backup antes de trocar a versão.
+- Versão atual: **0.15.x**. O histórico de commits mostra a evolução por fases, incluindo os ajustes pedidos depois do primeiro dia de uso na loja.
+
+## Funcionalidades
+
+**Garçom (PWA no celular)**
+- Mapa de mesas com cores por situação (livre, ocupada, conta impressa, pago parcial).
+- Abertura de comanda por nome + mesa, lançamento de pedidos com fotos, observações e "para viagem".
+- **Fila offline**: sem rede, o pedido fica guardado no aparelho e é enviado ao reconectar, sem duplicar.
+- "Minhas mesas", pedido de fechamento e pré-conta.
+
+**Cozinha**
+- Painel de produção (KDS) com atalhos de teclado, entrega parcial e resumo do que está pendente.
+
+**Caixa**
+- Abertura e fechamento com conferência de diferença, sangria e suprimento.
+- Busca da conta por mesa ou CPF.
+- Pagamento **por valor, dividido por N ou por item/fração** (ex.: 1/3 da pizza), em crédito, débito, Pix ou dinheiro com troco.
+- Desconto, estorno e cancelamento com **PIN de gerente** e registro em auditoria.
+- Contas fechadas com o cupom exibido na tela, igual ao papel.
+
+**Cliente (QR Code da mesa)**
+- Cardápio com destaques e selos; acompanhamento da própria comanda com um PIN.
+- Funciona no Wi-Fi da loja e também pelo 4G do cliente (túnel da Cloudflare).
+
+**Administração**
+- Cadastro de categorias, produtos, mesas, usuários e impressoras (lidas do Windows).
+- Fila de impressão com prévia exata do papel, erros por impressora e reimpressão.
+- Relatórios de vendas e por garçom, trilha de auditoria.
+- Licenciamento por cliente para venda a outros estabelecimentos.
+- **NFC-e** direto com a SEFAZ-MG (assinatura XML e comunicação implementadas, em fase de homologação).
+
+## Arquitetura
+
+```mermaid
+flowchart LR
+    subgraph Celulares
+        G[App do garçom<br/>PWA + fila offline]
+        C[Cliente<br/>QR da mesa]
+    end
+
+    subgraph PC["PC do caixa (Windows)"]
+        API[API Fastify]
+        DB[(PostgreSQL)]
+        PW[Worker de impressão]
+        UI[Caixa / Admin / Cozinha<br/>no navegador]
+    end
+
+    G -- HTTPS na rede local --> API
+    C -- Wi-Fi ou 4G via túnel --> API
+    UI --> API
+    API --> DB
+    API -- print_jobs --> PW
+    PW -- ESC/POS RAW --> I1[Impressora bar]
+    PW -- ESC/POS RAW --> I2[Impressora cozinha]
+    PW -- ESC/POS RAW --> I3[Impressora caixa]
+    API -. NFC-e .-> SEFAZ[SEFAZ-MG]
+    API -. renovação diária .-> LIC[Servidor de licenças<br/>Cloudflare Worker]
 ```
-apps/server      API Fastify + Drizzle + PostgreSQL (porta 3000)
-apps/web         PWA React + Vite + Tailwind (porta 5173 em desenvolvimento)
-packages/shared  Schemas Zod e utilitários (CPF, dinheiro) usados pelos dois lados
-packages/escpos  Cupons: comandos ESC/POS, acentuação (CP860/850/437) e prévia em texto
-scripts/         Certificado HTTPS de desenvolvimento, ícones
-```
 
-## 1. Pré-requisitos (uma vez por máquina)
+O servidor roda **dentro do restaurante**: se a internet cair, garçons, caixa e impressoras continuam se falando pela rede local. Só a NFC-e e o QR pelo 4G dependem de internet.
 
-| Ferramenta | Como instalar |
+## Decisões técnicas que valem destacar
+
+| Problema | Solução |
 |---|---|
-| Node.js 22+ | já instalado (v24) |
-| pnpm 10 | `npm install -g pnpm@10` |
-| PostgreSQL 16 | veja abaixo |
-| mkcert | `winget install FiloSottile.mkcert` (só para testar no celular) |
+| Pedido não pode se perder nem duplicar com Wi-Fi instável | Fila local em IndexedDB (Dexie) no celular. Cada escrita leva um `client_uuid`, e o servidor trata o reenvio como **idempotente**. |
+| Pedido gravado mas cupom não impresso (ou o contrário) | Pedido e `print_jobs` são gravados **na mesma transação**. Um worker consome a fila, mantém a ordem por impressora e tenta de novo com backoff (5 s, 10 s, 20 s… até 1 min). |
+| Erro de arredondamento em conta dividida | **Dinheiro sempre em centavos (inteiro)**, nunca float. Rateio por fração de item com distribuição exata dos centavos. |
+| Contrato da API divergir entre front e back | Schemas **Zod** em `packages/shared`, importados pelos dois lados. |
+| CPF do cliente é dado sensível (LGPD) | Nunca gravado em claro: **HMAC** para busca, **AES-256-GCM** para o "CPF na nota", chaves derivadas com HKDF. Rate limit contra força bruta no QR. |
+| Impressoras térmicas com acentuação própria | Pacote próprio `packages/escpos`: comandos ESC/POS, tabelas CP860/850/437 e prévia em texto para testar **sem impressora**. |
+| PWA exige HTTPS, inclusive na rede local | Certificado mkcert com página de instalação para os celulares, ou domínio próprio com **Let's Encrypt** (ACME). |
+| Ação sensível sem controle | Permissão checada **no servidor** por perfil (Admin, Gerente, Caixa, Garçom) e gravada em `audit_logs`. |
+| Vender o sistema sem prender os dados do cliente | Licença assinada com **Ed25519** + lease curto renovado por um Cloudflare Worker. O bloqueio nunca interrompe um movimento em andamento. Desenho em [docs/licenciamento.md](docs/licenciamento.md). |
+| Instalar num PC sem técnico por perto | Instalador PowerShell que instala dependências via `winget`, gera segredos, certificado, firewall, serviço automático, backup diário e um vigia que reinicia o servidor se travar. |
 
-### Instalando o PostgreSQL 16 no Windows
+## Stack
 
-1. Rode no PowerShell:
-   ```powershell
-   winget install PostgreSQL.PostgreSQL.16
-   ```
-   Ou baixe o instalador da EDB em https://www.postgresql.org/download/windows/.
-2. Durante a instalação:
-   - **Senha do superusuário `postgres`**: escolha uma e anote. Ela vai no `.env`.
-   - **Porta**: deixe `5432`.
-   - Stack Builder no final: pode desmarcar.
-3. Adicione o `psql` ao PATH (opcional, mas útil): `C:\Program Files\PostgreSQL\16\bin`.
-4. Crie o banco do sistema:
-   ```powershell
-   & "C:\Program Files\PostgreSQL\16\bin\createdb.exe" -U postgres sistema_bar
-   ```
-   (vai pedir a senha do passo 2)
+| Camada | Tecnologias |
+|---|---|
+| Linguagem | TypeScript (modo estrito) em todo o projeto |
+| Monorepo | pnpm workspaces |
+| Back-end | Node.js 22, Fastify 5, Drizzle ORM, PostgreSQL 16, Zod, JWT (jose), argon2 |
+| Front-end | React 19, Vite 7, Tailwind CSS 4, TanStack Query, React Router 7 |
+| Offline / PWA | vite-plugin-pwa (Workbox), Dexie (IndexedDB) |
+| Impressão | ESC/POS em modo RAW pelo spooler do Windows |
+| Fiscal | XML da NFC-e assinado (node-forge + node:crypto), certificado A1 |
+| Infra | Windows (tarefa agendada + PowerShell), Cloudflare Workers/KV e Tunnel, Let's Encrypt |
+| Testes | Vitest, PGlite (Postgres em memória), fake-indexeddb |
 
-O PostgreSQL fica instalado como serviço do Windows e sobe sozinho junto com o PC.
+## Qualidade e testes
 
-## 2. Configurar o projeto
+- **29 arquivos de teste e mais de 270 casos** cobrindo autenticação, caixa, pagamentos parciais, cancelamentos, transferências, impressão, cozinha, QR do cliente, licenciamento e NFC-e.
+- A API é testada contra um **PostgreSQL real em memória (PGlite)**: os testes não precisam de banco instalado.
+- A fila offline do celular é testada com IndexedDB simulado.
+- A impressão usa um transporte falso nos testes, para conferir o conteúdo exato de cada cupom.
+- Migrations versionadas com drizzle-kit em `apps/server/drizzle/`.
 
-```powershell
+```bash
+pnpm test        # todos os testes
+pnpm typecheck   # checagem de tipos em todos os pacotes
+```
+
+## Como rodar
+
+### Demonstração rápida (sem instalar PostgreSQL)
+
+O modo sandbox sobe a API com banco em memória e um cardápio de exemplo:
+
+```bash
 pnpm install
-copy .env.example .env
+SANDBOX_PASSWORD=demo12345 SANDBOX_DEMO=1 PORT=3100 pnpm --filter @sistema-bar/server sandbox
 ```
 
-Edite o `.env`:
-- `DATABASE_URL`: troque `SUA_SENHA` pela senha do `postgres`.
-- `JWT_SECRET`: gere um com
-  `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`
+Em outro terminal:
 
-Crie as tabelas e o usuário admin:
-
-```powershell
-pnpm db:seed
+```bash
+cd apps/web && PORT=3100 npx vite --port 5175
 ```
 
-O seed mostra a senha do `admin` **uma única vez** no terminal (ou usa `SEED_ADMIN_PASSWORD` do `.env`, se preenchido).
+Abra http://localhost:5175 e entre com o usuário `teste` e a senha definida em `SANDBOX_PASSWORD` (mínimo 8 caracteres).
 
-## 3. Rodar em desenvolvimento
+> No PowerShell, defina as variáveis antes com `$env:SANDBOX_PASSWORD="demo12345"` e assim por diante.
 
-```powershell
-pnpm dev
+### Ambiente completo
+
+Requer Node.js 22+, pnpm 10 e PostgreSQL 16. O passo a passo (banco, `.env`, HTTPS para testar no celular, impressoras e instalação no PC do restaurante) está em **[docs/desenvolvimento.md](docs/desenvolvimento.md)**.
+
+```bash
+pnpm install
+cp .env.example .env   # ajuste DATABASE_URL, JWT_SECRET e CPF_SECRET
+pnpm db:seed           # cria as tabelas e o usuário admin
+pnpm dev               # API em :3000 e PWA em :5173
 ```
 
-Sobe a API (http://localhost:3000) e a PWA (http://localhost:5173). Abra a PWA no navegador do PC e entre com `admin`.
+## Estrutura do repositório
 
-## 4. Testar no celular (HTTPS na rede local)
-
-PWA e Service Worker exigem HTTPS fora do `localhost`.
-
-1. Instale o mkcert e gere o certificado:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts\gerar-certificado.ps1
-   ```
-2. Instale `certs\rootCA.crt` no celular (o script mostra o passo a passo para Android e iPhone).
-3. Rode `pnpm dev` de novo. Agora a PWA sobe em **https://IP-DO-PC:5173**.
-4. Libere as portas no firewall do Windows (o script pede permissão de administrador):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File scripts\liberar-firewall.ps1
-   ```
-   As regras valem para rede Privada e Pública, mas **só aceitam aparelhos da mesma rede local**. Isso cobre o caso comum de o Windows marcar o Wi-Fi como "Público" e não deixar trocar.
-5. No celular, conectado ao mesmo Wi-Fi, abra `https://IP-DO-PC:5173`, faça login e use "Adicionar à tela inicial".
-
-## Instalar no PC do bar
-
-Gere o pacote neste PC de desenvolvimento:
-
-```powershell
-pnpm.cmd empacotar
+```
+apps/
+  server/            API Fastify: rotas por perfil, workers de impressão e fiscal, licenciamento
+    src/routes/      admin, caixa, garçom, cozinha, público (QR)
+    src/printing/    layouts dos cupons, fila e envio às impressoras
+    src/fiscal/      NFC-e: montagem, assinatura, chave, QR Code e comunicação com a SEFAZ
+    test/            testes de integração da API (PGlite)
+  web/               PWA React: telas do garçom, caixa, cozinha, admin e cliente
+    src/lib/offline/ fila offline (outbox) e cache com Dexie
+packages/
+  shared/            schemas Zod, dinheiro, CPF, regras de cobrança e datas
+  escpos/            gerador ESC/POS, acentuação e prévia em texto
+instalador/          scripts de instalação, atualização, backup e manutenção no Windows
+servidor-licencas/   Cloudflare Worker que renova as licenças
+docs/                guias de desenvolvimento, licenciamento e roteiro de testes
+SPEC.md              especificação do produto e decisões tomadas com o dono
 ```
 
-Sai `dist-instaladorSistemaBar-<versão>.zip` (~1,3 MB). No PC do caixa (Windows 10/11, com internet na hora de instalar): extraia o zip e dê dois cliques em **INSTALAR.bat**. O instalador:
+## Documentação
 
-- instala Node.js, PostgreSQL 16 e mkcert pelo `winget`, se faltarem;
-- cria o banco, o `.env` com segredos aleatórios (protegido só para administradores) e o certificado HTTPS para os IPs do PC;
-- cria as tabelas e o usuário `admin` (mostra a senha uma vez) e oferece importar o cardápio;
-- libera a porta 3000 no firewall só para a rede local;
-- agenda o servidor para iniciar com o Windows (reinicia sozinho se cair) e o backup diário às 3h (30 dias em `dataackups`).
-
-Para atualizar: gere um pacote novo, extraia no PC do bar e rode **ATUALIZAR.bat** (faz backup antes e mantém `.env`, certificados e dados). Detalhes para quem instala: `instalador/LEIA-ME.txt`.
-
-Comandos de manutenção (instalado: `node appcli.mjs <comando>`; desenvolvimento: `pnpm --filter @sistema-bar/server cli <comando>`): `migrate`, `criar-admin`, `backup [--manter 30]`, `importar-cardapio <arquivo.json>`.
-
-## 5. Caixa
-
-Em **Caixa** (perfis Caixa, Gerente e Admin):
-1. Abra o caixa com o fundo de troco.
-2. Busque pela **mesa** (ex.: `10`) ou pelo **CPF** do cliente; a lista ao lado mostra as mesas abertas, com as que pediram a conta em azul.
-3. Escolha quem paga (uma, várias comandas ou a mesa inteira) e receba **por valor**, **dividido por N** ou **por item/fração** (ex.: 1/3 da pizza), em crédito, débito, Pix ou dinheiro (com troco).
-4. Desconto, retirada da taxa de serviço/couvert e estorno pedem o **PIN de um gerente** quando quem está no caixa não é gerente. Cadastre o PIN em Administração > Usuários.
-5. No fim do expediente, **Fechar caixa**: informe o dinheiro contado (e, se quiser, os totais de cartão/Pix) e veja a sobra ou falta.
-
-Escolha a **impressora do caixa** em Administração > Configurações: nela saem a pré-conta, o cupom final, os comprovantes de sangria/suprimento, o relatório de fechamento e o comando da gaveta.
-
-## 6. Impressoras
-
-O modo de impressão fica no `.env`:
-
-| `PRINT_MODE` | O que acontece |
+| Documento | Conteúdo |
 |---|---|
-| `emulador` (padrão) | Os cupons **não** vão para o papel: são gravados em `data/impressoes/<impressora>/` (.txt para ler, .bin com os bytes ESC/POS). Use para desenvolver sem impressora. |
-| `windows` | Os cupons vão para as impressoras instaladas no Windows, pelo nome, em modo RAW. Use no PC do caixa. |
+| [SPEC.md](SPEC.md) | Especificação completa: requisitos, modelo de dados, permissões, roadmap e decisões |
+| [docs/desenvolvimento.md](docs/desenvolvimento.md) | Instalação do ambiente, impressoras, celular, instalador e problemas comuns |
+| [docs/licenciamento.md](docs/licenciamento.md) | Desenho do sistema de licenças |
+| [docs/roteiro-teste-bar.md](docs/roteiro-teste-bar.md) | Roteiro de testes na loja antes de liberar uma versão |
 
-Para ligar uma impressora térmica (Elgin i7/i9 ou similar):
-1. Instale-a no Windows com o driver do fabricante (rede ou USB) e confira o nome em Configurações > Impressoras.
-2. No painel: **Administração > Impressoras > Nova impressora**, escolha-a na lista e marque as categorias que saem nela.
-3. Troque `PRINT_MODE=windows` no `.env` e reinicie o servidor.
-4. Abra a impressora no painel e toque em **Imprimir teste**. Se os acentos saírem trocados, mude a "Acentuação" (CP860 é o padrão das Elgin).
+## Próximos passos
 
-A **Fila de impressão** (menu da administração) mostra cada cupom, a prévia exata do papel, erros por impressora (ex.: sem papel), e permite tentar de novo ou reimprimir. Cupons com erro são tentados de novo sozinhos (5 s, 10 s, 20 s… até a cada 1 min); os da mesma impressora saem sempre na ordem.
+- NFC-e em produção (hoje em homologação com a SEFAZ-MG).
+- Testes end-to-end com Playwright.
+- Controle de estoque e ficha técnica.
 
-## Problemas comuns
+## Autor
 
-| Sintoma | Solução |
-|---|---|
-| `pnpm` não é reconhecido / scripts desabilitados no PowerShell | Use `pnpm.cmd` no lugar de `pnpm` (a política de execução padrão do Windows bloqueia o `pnpm.ps1`). |
-| "Port 5173 is in use" e o Vite sobe em outra porta | Já existe um Vite rodando. Feche o terminal antigo ou encerre o processo `node` que usa a porta. |
-| Celular não abre o endereço | Celular e PC no mesmo Wi-Fi; rode `scripts\liberar-firewall.ps1`; confira o IP do PC com `ipconfig`. Se o IP mudou, gere o certificado de novo. |
-| Impressora não imprime nada (modo `windows`) | Veja o erro na Fila de impressão. "Impressora não encontrada": o nome no cadastro precisa ser igual ao do Windows. Impressoras PDF/XPS não aceitam modo RAW. |
-| Celular avisa "conexão não é particular" | O `certs\rootCA.crt` não foi instalado (ou, no iPhone, a confiança total não foi ativada). |
+**Paulo Faria**
 
-## Comandos úteis
-
-| Comando | O que faz |
-|---|---|
-| `pnpm dev` | API + PWA em modo desenvolvimento |
-| `pnpm test` | Testes (Vitest; a API é testada com PGlite e a fila offline com IndexedDB simulado, sem precisar do PostgreSQL) |
-| `pnpm typecheck` | Checagem de tipos em todos os pacotes |
-| `pnpm build` | Build da PWA (a API passa a servi-la em `pnpm start`) |
-| `pnpm db:generate` | Gera migration após alterar `apps/server/src/db/schema.ts` |
-| `pnpm db:migrate` | Aplica migrations (a API também aplica ao iniciar) |
-| `pnpm db:seed` | Cria o usuário admin, se não existir |
-| `pnpm --filter @sistema-bar/server sandbox` | API com banco em memória para testes (precisa de `SANDBOX_PASSWORD`; usuário `teste`; `SANDBOX_DEMO=1` cria cardápio e mesas de exemplo) |
+- GitHub: [@paulohjunior3-debug](https://github.com/paulohjunior3-debug)
+- LinkedIn: _adicione o link aqui_
+- E-mail: _adicione aqui_
