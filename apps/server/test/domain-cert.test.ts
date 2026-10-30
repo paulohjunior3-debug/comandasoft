@@ -61,10 +61,10 @@ describe('DNS na Cloudflare', () => {
     const dns = cloudflareDns('tok', cf.fetchFn);
     const zone = await dns.zoneFor(HOST);
     expect(zone.id).toBe('z1');
-    expect(await dns.upsertA(zone.id, HOST, '192.168.100.161')).toBe(true);
-    expect(await dns.upsertA(zone.id, HOST, '192.168.100.161')).toBe(false);
-    expect(await dns.upsertA(zone.id, HOST, '192.168.100.236')).toBe(true);
-    expect(cf.records).toMatchObject([{ type: 'A', name: HOST, content: '192.168.100.236', proxied: false }]);
+    expect(await dns.upsertA(zone.id, HOST, '192.168.0.10')).toBe(true);
+    expect(await dns.upsertA(zone.id, HOST, '192.168.0.10')).toBe(false);
+    expect(await dns.upsertA(zone.id, HOST, '192.168.1.20')).toBe(true);
+    expect(cf.records).toMatchObject([{ type: 'A', name: HOST, content: '192.168.1.20', proxied: false }]);
     await expect(dns.zoneFor('sistema.naotenho.com.br')).rejects.toThrow(/não está nesta conta/);
   });
 
@@ -93,7 +93,7 @@ describe('certificado do endereço próprio', () => {
     const cf = fakeCloudflare();
     const issued: string[] = [];
     const got: StoredCert[] = [];
-    let ip = '192.168.100.161';
+    let ip = '192.168.0.10';
     const issue = async ({ hostname }: { hostname: string }) => {
       issued.push(hostname);
       const c = selfSigned(hostname, 90);
@@ -103,12 +103,12 @@ describe('certificado do endereço próprio', () => {
     await w.ready;
     expect(issued).toEqual([HOST]);
     expect(got).toHaveLength(1);
-    expect(cf.records).toMatchObject([{ type: 'A', content: '192.168.100.161' }]);
+    expect(cf.records).toMatchObject([{ type: 'A', content: '192.168.0.10' }]);
 
-    ip = '192.168.100.236'; // levou o notebook para outra rede
+    ip = '192.168.1.20'; // levou o notebook para outra rede
     await w.round();
     expect(issued).toHaveLength(1);
-    expect(cf.records).toMatchObject([{ type: 'A', content: '192.168.100.236' }]);
+    expect(cf.records).toMatchObject([{ type: 'A', content: '192.168.1.20' }]);
     w.stop();
   });
 
@@ -123,7 +123,7 @@ describe('certificado do endereço próprio', () => {
       fetchFn: (async () => {
         throw new TypeError('fetch failed');
       }) as typeof fetch,
-      addresses: () => ['192.168.100.161'],
+      addresses: () => ['192.168.0.10'],
     });
     await w.ready;
     expect(errors[0]).toMatch(/fetch failed/);
